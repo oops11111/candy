@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-control-plane` 为 Candy 控制平面唯一拥有权威的实体打上品牌：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId` 与 `ConversationId`，并定义了 `RunLineage`——记录某次运行父级的记录。它是一个无外部依赖的身份基础包，没有 Cordis 服务，也没有存储：它的存在是为了让之后每一个控制平面包(租户/凭据模型、提供方适配器、编排授权检查、Web 账户 API,以及 Windows Harness Host 设备绑定)从一开始就共用同一套互不可替换的词汇,而不是各自发明自己的 `string` 类型租户 id。同样处于控制平面权威之下的 `SessionId`,则直接复用 [`dsh-session`](../../core/session/README.zh.md) 中已有的定义;本包从不重新定义它。
+`dsh-control-plane` 为 Candy 控制平面唯一拥有权威的实体打上品牌：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId` 与 `ConversationId`，并定义了 `ProviderKind`——一次运行可执行的提供方封闭集合，以及 `RunLineage`——记录某次运行父级的记录。它是一个无外部依赖的身份基础包，没有 Cordis 服务，也没有存储：它的存在是为了让之后每一个控制平面包(租户/凭据模型、提供方适配器、编排授权检查、Web 账户 API,以及 Windows Harness Host 设备绑定)从一开始就共用同一套互不可替换的词汇,而不是各自发明自己的 `string` 类型租户 id。同样处于控制平面权威之下的 `SessionId`,则直接复用 [`dsh-session`](../../core/session/README.zh.md) 中已有的定义;本包从不重新定义它。
 
 ## 目录
 
@@ -63,7 +63,7 @@ const childRun: RunLineage = { runId: RunId('run-2'), parentRunId: rootRun.runId
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`、`RunId` 与 `RunLineage` |
+| [`src/index.ts`](src/index.ts) | `ProviderKind`、`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`、`RunId` 与 `RunLineage` |
 | — | 未发布运行时不变式伴生模块;这个纯工具不拥有事件流或可变运行时数据;其值代数由单元测试强制保证。 |
 
 ### 为什么这里不重新定义 `SessionId`

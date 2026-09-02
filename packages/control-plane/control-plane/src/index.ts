@@ -16,6 +16,17 @@
 
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 
+/**
+ * Which provider a run executes and a provider account authenticates against.
+ *
+ * The set is closed because the delivery plan names exactly these three: the
+ * DeepSeek API, the Claude CLI, and the Codex CLI. A fourth provider is a plan
+ * change, not a configuration value. The kind lives here rather than beside
+ * the runtime-pool key because an account, an assertion, and a pool all name
+ * it, and it is a union of string literals with no dependency of its own.
+ */
+export type ProviderKind = 'deepseek-api' | 'claude-cli' | 'codex-cli'
+
 /** Identifies one authenticated Candy user across devices, provider accounts, and runs. */
 export type UserId = Branded<'UserId'>
 

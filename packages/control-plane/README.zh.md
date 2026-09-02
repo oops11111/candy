@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-control-plane 组为每个未来的 Candy 租户感知包提供一套共享且互不可替换的词汇，命名控制平面唯一拥有权威的实体：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`，以及记录某次运行父级的 `RunLineage`。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义，本组从不重新定义它。本组目前有四个包——一套身份词汇、携带它的按运行凭据、保管租户提供方密钥的保险库，以及为它们的运行时状态分区的池键——且没有正在运行的 Cordis 服务，因为 [已接受的运行时边界页面](../../docs/candy-runtime-boundaries.zh.md) 与 [提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 所描述的控制平面 OAuth、设备配对和加密凭据保险库尚未落地。本页是本组的映射；包 README 负责细节。
+control-plane 组为每个未来的 Candy 租户感知包提供一套共享且互不可替换的词汇，命名控制平面唯一拥有权威的实体：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`，以及记录某次运行父级的 `RunLineage`。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义，本组从不重新定义它。本组目前有五个包——一套身份词汇、携带它的按运行凭据、保管租户提供方密钥的保险库、为它们的运行时状态分区的池键，以及把这四者组合起来的准入调用——且没有正在运行的 Cordis 服务，因为 [已接受的运行时边界页面](../../docs/candy-runtime-boundaries.zh.md) 与 [提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 所描述的控制平面 OAuth、设备配对和加密凭据保险库尚未落地。本页是本组的映射；包 README 负责细节。
 
 ## 目录
 
@@ -26,6 +26,7 @@ control-plane 组为每个未来的 Candy 租户感知包提供一套共享且�
 | [`execution-assertion`](execution-assertion/README.zh.md) | 签发并准入授权一次运行的带签名、短时效断言 |
 | [`credential-vault`](credential-vault/README.zh.md) | 封装租户的提供方账户密钥、轮换其密钥、吊销它,并记录每一次访问 |
 | [`runtime-pool`](runtime-pool/README.zh.md) | 推导隔离键,以及租户的提供方运行时所拥有的那一个目录 |
+| [`run-admission`](run-admission/README.zh.md) | 唯一的调度调用:断言、nonce、凭据与池一并解析 |
 
 <a id="related-documentation"></a>
 ## 相关文档

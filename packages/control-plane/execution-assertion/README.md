@@ -43,6 +43,7 @@ export const token = mintExecutionAssertion({
   userId: UserId('user-1'),
   deviceId: DeviceId('device-1'),
   accountId: ProviderAccountId('account-1'),
+  provider: 'deepseek-api',
   workspaceGrantId: WorkspaceGrantId('grant-1'),
   conversationId: ConversationId('conversation-1'),
   sessionId: SessionId('session-1'),
@@ -54,7 +55,7 @@ export const token = mintExecutionAssertion({
 }, secret)
 ```
 
-The caller supplies every claim: this package signs the control plane's decision and derives no identity of its own. The secret must be at least 32 random bytes, matching what `dsh-client-connection` stores for its browser sessions; a shorter key throws rather than signing weakly.
+The caller supplies every claim: this package signs the control plane's decision and derives no identity of its own. `provider` is signed rather than named by the request because a provider account is provider-specific — pairing one with another provider would place the run in a pool naming a combination the control plane never made. The secret must be at least 32 random bytes, matching what `dsh-client-connection` stores for its browser sessions; a shorter key throws rather than signing weakly.
 
 ### Admitting an assertion in the runtime
 

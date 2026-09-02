@@ -23,22 +23,13 @@
 import { createHash } from 'node:crypto'
 import { isAbsolute, join } from 'node:path'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
-import type { ProviderAccountId, UserId } from '@deepseek-ai/dsh-control-plane'
+import type { ProviderAccountId, ProviderKind, UserId } from '@deepseek-ai/dsh-control-plane'
 
 /** Length of the hex digest a key is spelled as. */
 const KEY_LENGTH = 64
 
 /** The grammar {@link parseRuntimePoolKey} admits: lowercase hex only, so a key can never traverse. */
 const KEY_PATTERN = /^[0-9a-f]{64}$/
-
-/**
- * Which provider a runtime pool runs.
- *
- * The set is closed because the delivery plan names exactly these three: the
- * DeepSeek API, the Claude CLI, and the Codex CLI. A fourth provider is a
- * plan change, not a configuration value.
- */
-export type ProviderKind = 'deepseek-api' | 'claude-cli' | 'codex-cli'
 
 /** The tenant, provider, and account whose runtime state may be shared. */
 export interface RuntimePoolIdentity {

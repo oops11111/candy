@@ -39,7 +39,7 @@ const key = runtimePoolKey({
 export const root = runtimePoolRoot('/srv/candy/pools', key)
 ```
 
-`provider` 取 `deepseek-api`、`claude-cli`、`codex-cli` 之一——这是一个封闭集合,因为交付计划恰好点名了这三个。基准目录必须是绝对路径:相对于工作目录解析出的池根目录是一个部署错误,因此它会抛出错误而不是猜测。
+`provider` 是来自 [`dsh-control-plane`](../control-plane/README.zh.md) 的 `ProviderKind`:取 `deepseek-api`、`claude-cli`、`codex-cli` 之一,这是一个封闭集合,因为交付计划恰好点名了这三个。它放在那里而不是这里,因为账户、断言与池都会命名它。基准目录必须是绝对路径:相对于工作目录解析出的池根目录是一个部署错误,因此它会抛出错误而不是猜测。
 
 ### 什么属于根目录之下,什么不属于
 
@@ -70,7 +70,7 @@ export const usable = key === undefined ? 'reject the record' : key
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `ProviderKind`、`RuntimePoolIdentity`、`RuntimePoolKey`、`runtimePoolKey`、`parseRuntimePoolKey` 与 `runtimePoolRoot` |
+| [`src/index.ts`](src/index.ts) | `RuntimePoolIdentity`、`RuntimePoolKey`、`runtimePoolKey`、`parseRuntimePoolKey` 与 `runtimePoolRoot` |
 | — | 未发布运行时不变式伴生模块;这个纯模块不拥有事件流或可变运行时数据;其键代数由单元测试强制保证。 |
 
 ### 为什么键是摘要而不是三元组

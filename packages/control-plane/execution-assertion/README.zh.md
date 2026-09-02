@@ -43,6 +43,7 @@ export const token = mintExecutionAssertion({
   userId: UserId('user-1'),
   deviceId: DeviceId('device-1'),
   accountId: ProviderAccountId('account-1'),
+  provider: 'deepseek-api',
   workspaceGrantId: WorkspaceGrantId('grant-1'),
   conversationId: ConversationId('conversation-1'),
   sessionId: SessionId('session-1'),
@@ -54,7 +55,7 @@ export const token = mintExecutionAssertion({
 }, secret)
 ```
 
-每一项声明都由调用方提供:本包只为控制平面的决定签名,不自行派生任何身份。密钥必须至少为 32 个随机字节,与 `dsh-client-connection` 为其浏览器会话所存储的长度一致;更短的密钥会抛出错误,而不是以弱强度签名。
+每一项声明都由调用方提供:本包只为控制平面的决定签名,不自行派生任何身份。`provider` 由签名携带而不是由请求指明,因为提供方账户是与提供方绑定的——把它与另一个提供方配对,会把运行放进一个控制平面从未组合过的池中。密钥必须至少为 32 个随机字节,与 `dsh-client-connection` 为其浏览器会话所存储的长度一致;更短的密钥会抛出错误,而不是以弱强度签名。
 
 ### 在运行时中准入断言
 

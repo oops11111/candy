@@ -4222,6 +4222,22 @@ importers:
         specifier: workspace:^
         version: link:../../core/session
 
+  packages/control-plane/run-admission:
+    dependencies:
+      '@deepseek-ai/dsh-credential-vault':
+        specifier: workspace:^
+        version: link:../credential-vault
+      '@deepseek-ai/dsh-execution-assertion':
+        specifier: workspace:^
+        version: link:../execution-assertion
+      '@deepseek-ai/dsh-runtime-pool':
+        specifier: workspace:^
+        version: link:../runtime-pool
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
   packages/control-plane/runtime-pool:
     dependencies:
       '@deepseek-ai/dsh-brand':

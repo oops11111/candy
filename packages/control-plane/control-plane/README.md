@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-control-plane` brands the ids the Candy control plane is the sole authority for — `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, and `ConversationId` — and defines `RunLineage`, the record naming a run's parent. It is a dependency-free identity foundation with no Cordis service and no storage: it exists so every later control-plane package (the tenant/credential model, the provider adapters, the orchestration authorization check, the Web account APIs, and the Windows Harness Host device binding) shares one non-interchangeable vocabulary from the start, instead of each package inventing its own `string`-typed tenant id. `SessionId` — also under control-plane authority — is reused unchanged from [`dsh-session`](../../core/session/README.md); this package never redefines it.
+`dsh-control-plane` brands the ids the Candy control plane is the sole authority for — `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, and `ConversationId` — and defines `ProviderKind`, the closed set of providers a run can execute, plus `RunLineage`, the record naming a run's parent. It is a dependency-free identity foundation with no Cordis service and no storage: it exists so every later control-plane package (the tenant/credential model, the provider adapters, the orchestration authorization check, the Web account APIs, and the Windows Harness Host device binding) shares one non-interchangeable vocabulary from the start, instead of each package inventing its own `string`-typed tenant id. `SessionId` — also under control-plane authority — is reused unchanged from [`dsh-session`](../../core/session/README.md); this package never redefines it.
 
 ## Table of Contents
 
@@ -63,7 +63,7 @@ Every id is a `Branded<'...'>` string from [`dsh-brand`](../../util/brand/README
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, `ConversationId`, `RunId`, and `RunLineage` |
+| [`src/index.ts`](src/index.ts) | `ProviderKind`, `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, `ConversationId`, `RunId`, and `RunLineage` |
 | — | No runtime invariant companion is published; this pure utility owns no event stream or mutable runtime data; its value algebra is enforced by unit tests. |
 
 ### Why `SessionId` is not redefined here

@@ -31,6 +31,7 @@ import {
   UserId,
   WorkspaceGrantId,
 } from '@deepseek-ai/dsh-control-plane'
+import type { ProviderKind } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 
 /** Token prefix; a future claim-set change mints `v2` rather than reinterpreting `v1`. */
@@ -58,6 +59,15 @@ export interface ExecutionAssertionClaims {
   readonly deviceId: DeviceId
   /** Provider account whose credentials the run may use. */
   readonly accountId: ProviderAccountId
+  /**
+   * Provider the run executes.
+   *
+   * Signed rather than named by the request: the account is provider-specific,
+   * and a caller pairing an account with another provider would place the run
+   * in a pool that names an account and provider the control plane never
+   * paired.
+   */
+  readonly provider: ProviderKind
   /** Workspace grant bounding the run's filesystem authority. */
   readonly workspaceGrantId: WorkspaceGrantId
   /** Tenant-visible conversation the run belongs to. */
@@ -151,6 +161,19 @@ function stringClaim(source: Record<string, unknown>, name: string): string | un
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
+/** The closed provider set, admitted from a payload that may name anything. */
+const PROVIDER_KINDS: readonly ProviderKind[] = ['deepseek-api', 'claude-cli', 'codex-cli']
+
+/**
+ * Read the provider claim, rejecting a value outside the closed set.
+ * @param source - the decoded payload.
+ * @returns the provider, or undefined when the claim is absent or unknown.
+ */
+function providerClaim(source: Record<string, unknown>): ProviderKind | undefined {
+  const value = source.provider
+  return PROVIDER_KINDS.find(kind => kind === value)
+}
+
 function safeTimestamp(source: Record<string, unknown>, name: string): number | undefined {
   const value = source[name]
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
@@ -179,13 +202,15 @@ function decodeClaims(payload: string): ExecutionAssertionClaims | undefined {
   const conversationId = stringClaim(parsed, 'conversationId')
   const sessionId = stringClaim(parsed, 'sessionId')
   const runId = stringClaim(parsed, 'runId')
+  const provider = providerClaim(parsed)
   const nonce = stringClaim(parsed, 'nonce')
   const issuedAt = safeTimestamp(parsed, 'issuedAt')
   const expiresAt = safeTimestamp(parsed, 'expiresAt')
   if (issuer === undefined || audience === undefined || userId === undefined
     || deviceId === undefined || accountId === undefined || workspaceGrantId === undefined
     || conversationId === undefined || sessionId === undefined || runId === undefined
-    || nonce === undefined || issuedAt === undefined || expiresAt === undefined) return undefined
+    || nonce === undefined || issuedAt === undefined || expiresAt === undefined
+    || provider === undefined) return undefined
 
   const rawParent = parsed.parentRunId
   if (rawParent !== undefined && (typeof rawParent !== 'string' || rawParent.length === 0)) return undefined
@@ -196,6 +221,7 @@ function decodeClaims(payload: string): ExecutionAssertionClaims | undefined {
     userId: UserId(userId),
     deviceId: DeviceId(deviceId),
     accountId: ProviderAccountId(accountId),
+    provider,
     workspaceGrantId: WorkspaceGrantId(workspaceGrantId),
     conversationId: ConversationId(conversationId),
     sessionId: brandString<SessionId>(sessionId),

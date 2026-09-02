@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The control-plane group gives every future Candy tenant-aware package one shared, non-interchangeable vocabulary for the entities the control plane is the sole authority for: `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, and `ConversationId`, plus a `RunLineage` record naming a run's parent. `SessionId` is reused unchanged from [`dsh-session`](../core/session/README.md), never redefined here. The group has four packages today — an identity vocabulary, the per-run credential that carries it, the vault holding a tenant's provider secrets, and the pool key partitioning their runtime state — and no running Cordis service, because the control plane's OAuth, device pairing, and encrypted credential vault described in [the accepted runtime-boundaries page](../../docs/candy-runtime-boundaries.md) and [the proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md) have not shipped yet. This page maps the group; the package README owns the details.
+The control-plane group gives every future Candy tenant-aware package one shared, non-interchangeable vocabulary for the entities the control plane is the sole authority for: `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, and `ConversationId`, plus a `RunLineage` record naming a run's parent. `SessionId` is reused unchanged from [`dsh-session`](../core/session/README.md), never redefined here. The group has five packages today — an identity vocabulary, the per-run credential that carries it, the vault holding a tenant's provider secrets, the pool key partitioning their runtime state, and the admission call composing all four — and no running Cordis service, because the control plane's OAuth, device pairing, and encrypted credential vault described in [the accepted runtime-boundaries page](../../docs/candy-runtime-boundaries.md) and [the proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md) have not shipped yet. This page maps the group; the package README owns the details.
 
 ## Table of Contents
 
@@ -26,6 +26,7 @@ The control-plane group gives every future Candy tenant-aware package one shared
 | [`execution-assertion`](execution-assertion/README.md) | Mints and admits the signed, short-lived assertion that authorizes one run |
 | [`credential-vault`](credential-vault/README.md) | Seals a tenant's provider-account secret, rotates its key, revokes it, and records every access |
 | [`runtime-pool`](runtime-pool/README.md) | Derives the isolation key and the one directory a tenant's provider runtime owns |
+| [`run-admission`](run-admission/README.md) | The one scheduling call: assertion, nonce, credential, and pool resolved together |
 
 <a id="related-documentation"></a>
 ## Related documentation

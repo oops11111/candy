@@ -1,0 +1,15 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "references": [
+    { "path": "../credential-vault" },
+    { "path": "../execution-assertion" },
+    { "path": "../runtime-pool" }
+  ],
+  "include": [
+    "src"
+  ]
+}

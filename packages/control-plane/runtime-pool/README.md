@@ -39,7 +39,7 @@ const key = runtimePoolKey({
 export const root = runtimePoolRoot('/srv/candy/pools', key)
 ```
 
-`provider` is one of `deepseek-api`, `claude-cli`, or `codex-cli` — a closed set, because the delivery plan names exactly those three. The base must be absolute: a pool root resolved against a working directory is a deployment error, and it throws rather than guessing.
+`provider` is a `ProviderKind` from [`dsh-control-plane`](../control-plane/README.md): one of `deepseek-api`, `claude-cli`, or `codex-cli`, a closed set because the delivery plan names exactly those three. It lives there rather than here because an account, an assertion, and a pool all name it. The base must be absolute: a pool root resolved against a working directory is a deployment error, and it throws rather than guessing.
 
 ### What belongs under the root, and what does not
 
@@ -70,7 +70,7 @@ A stored key arrives as ordinary text, so it is checked against the grammar a mi
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `ProviderKind`, `RuntimePoolIdentity`, `RuntimePoolKey`, `runtimePoolKey`, `parseRuntimePoolKey`, and `runtimePoolRoot` |
+| [`src/index.ts`](src/index.ts) | `RuntimePoolIdentity`, `RuntimePoolKey`, `runtimePoolKey`, `parseRuntimePoolKey`, and `runtimePoolRoot` |
 | — | No runtime invariant companion is published; this pure module owns no event stream or mutable runtime data; its key algebra is enforced by unit tests. |
 
 ### Why the key is a digest and not the triple

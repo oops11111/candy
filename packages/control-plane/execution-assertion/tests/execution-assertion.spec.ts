@@ -35,6 +35,7 @@ function claims(overrides: Partial<ExecutionAssertionClaims> = {}): ExecutionAss
     userId: UserId('user-1'),
     deviceId: DeviceId('device-1'),
     accountId: ProviderAccountId('account-1'),
+    provider: 'deepseek-api',
     workspaceGrantId: WorkspaceGrantId('grant-1'),
     conversationId: ConversationId('conversation-1'),
     sessionId: brandString<SessionId>('session-1'),
@@ -174,6 +175,8 @@ describe('admitExecutionAssertion', () => {
     ['a non-numeric timestamp', { ...claims(), issuedAt: 'soon' }],
     ['a non-string parent run', { ...claims(), parentRunId: 42 }],
     ['an empty parent run', { ...claims(), parentRunId: '' }],
+    ['an absent provider', { ...claims(), provider: undefined }],
+    ['a provider outside the closed set', { ...claims(), provider: 'gemini-cli' }],
   ])('rejects %s as malformed', (_case, payload) => {
     const token = tokenWithPayload(payload as object, SECRET)
 
