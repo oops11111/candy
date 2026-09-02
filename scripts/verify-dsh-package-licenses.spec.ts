@@ -20,7 +20,7 @@ function createWorkspace(): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-package-licenses-'))
   roots.push(root)
   writeManifest(root, 'package.json', {
-    name: '@deepseek-ai/dsh-root',
+    name: 'candy',
     license: 'MIT',
     workspaces: ['apps/*', 'packages/*/*', 'vendor/*'],
   })
@@ -41,7 +41,7 @@ describe('DSH package license gate', () => {
     })
 
     expect(inspectDshPackageLicenses(root)).toEqual({
-      packageCount: 3,
+      packageCount: 2,
       failures: [
         'packages/core/agent/package.json: @deepseek-ai/dsh-agent must declare "license": "MIT"; found "BSD-3-Clause".',
       ],
