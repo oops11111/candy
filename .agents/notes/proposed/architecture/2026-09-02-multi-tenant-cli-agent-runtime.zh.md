@@ -101,7 +101,7 @@ flowchart LR
 
 - [x] 为用户、设备、提供方账户、工作区授权、对话、会话、运行和子运行定义稳定标识符及 schema([`dsh-control-plane`](../../implemented/architecture/2026-09-02-candy-control-plane-identifiers.zh.md))。
 - [ ] 实现带版本封装、密钥轮换、脱敏读取、撤销和审计事件的加密凭据存储。
-- [ ] 实现短期执行断言，并拒绝客户端提供的租户或账户覆盖值。
+- [x] 实现短期执行断言，并拒绝客户端提供的租户或账户覆盖值（[`dsh-execution-assertion`](../../implemented/architecture/2026-09-02-candy-execution-assertions.zh.md)）；nonce 重放存储仍归调度器所有。
 - [ ] 按池键隔离运行时主目录、进程所有权、事件日志、包含私有内容的缓存、配额和清理。
 
 ### R2 — Provider adapters
