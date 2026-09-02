@@ -4,6 +4,8 @@
 
 Candy 是基于开源 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 构建的多 agent CLI 开发平台。为保持上游兼容性，内部包名和 `dsh` CLI 暂时保留。
 
+Candy 的 fork 边界、租户模型和安全审查基线定义在 [Candy 运行时边界](docs/candy-runtime-boundaries.zh.md)。
+
 它构建于**一切皆插件**的架构之上，由 [Cordis](https://github.com/cordiverse/cordis) 驱动，其设计参见论文 [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512)。
 
 文档：[https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)

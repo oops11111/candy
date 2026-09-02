@@ -1,6 +1,6 @@
 # Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write README.md
-README.md: ee532ec7b381a1065182bb8e0ebf8458531126dc
-README.zh.md: 4030ed740c5ecafdf4570952ab47188dd11d9b83
+#   pnpm run verify-translation-pairing --write docs/candy-runtime-boundaries.md
+candy-runtime-boundaries.md: 106ef06ac2fd97705dcddcf501370b89b8632a3b
+candy-runtime-boundaries.zh.md: f90e3a143cfe7a313da002314bf00cd5f6dc6f0a
