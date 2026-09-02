@@ -102,7 +102,7 @@ The runtime pool key is `userId + provider + accountId`. Workers may share immut
 - [x] Define stable identifiers and schemas for user, device, provider account, workspace grant, conversation, session, run, and child run ([`dsh-control-plane`](../../implemented/architecture/2026-09-02-candy-control-plane-identifiers.md)).
 - [x] Implement encrypted credential storage with versioned envelopes, key rotation, redacted reads, revocation, and audit events ([`dsh-credential-vault`](../../implemented/architecture/2026-09-02-candy-credential-vault.md)); audit records are returned, and the store that persists them remains unbuilt.
 - [x] Implement short-lived execution assertions and reject client-supplied tenant or account overrides ([`dsh-execution-assertion`](../../implemented/architecture/2026-09-02-candy-execution-assertions.md)); the nonce replay store remains with the scheduler.
-- [ ] Partition runtime homes, process ownership, event logs, caches with private content, quotas, and cleanup by pool key.
+- [x] Partition runtime homes, process ownership, event logs, caches with private content, quotas, and cleanup by pool key ([`dsh-runtime-pool`](../../implemented/architecture/2026-09-02-candy-runtime-pool-partitioning.md)); the key and each pool's root are derived, while creating directories, placing processes, enforcing quotas, and cleanup stay with the unbuilt pool runtime.
 
 ### R2 — Provider adapters
 

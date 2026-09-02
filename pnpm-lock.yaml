@@ -4222,6 +4222,19 @@ importers:
         specifier: workspace:^
         version: link:../../core/session
 
+  packages/control-plane/runtime-pool:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
   packages/core/agent:
     devDependencies:
       '@deepseek-ai/cordis':

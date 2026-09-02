@@ -97,7 +97,7 @@ These are current package constraints, not a task backlog; each is a later R1 de
 
 - **No validation grammar** — every constructor brands its input without checking format, uniqueness, or origin, because no issuing service exists yet. Adding validation here before an issuer exists would invent an unfounded grammar; the issuing control-plane service owns that check when it lands.
 - **No credential, grant, or account storage** — this package defines ids only. Encrypted credential envelopes, execution-assertion issuance and validation, and workspace-grant records are separate, unbuilt R1 work.
-- **No runtime-pool-key helper** — [Candy Runtime Boundaries](../../../docs/candy-runtime-boundaries.md) names `userId + provider + accountId` as the runtime-pool isolation key, but this package does not derive it: no `provider` representation (a `ProviderKind` enum or similar) exists yet, and inventing one here would anticipate the R2 provider-adapter design instead of following it.
+- **The runtime-pool key lives elsewhere** — [Candy Runtime Boundaries](../../../docs/candy-runtime-boundaries.md) names `userId + provider + accountId` as the runtime-pool isolation key, and [`dsh-runtime-pool`](../runtime-pool/README.md) derives it. It stays out of this package because it needs a `ProviderKind` and a digest, and this package holds only the ids and stays dependency-free.
 - **No Cordis service** — nothing in this package registers on a `Context`; it is imported directly by TypeScript, like `dsh-brand`.
 
 <a id="dev-note"></a>

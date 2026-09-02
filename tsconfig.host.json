@@ -172,6 +172,7 @@
     { "path": "./packages/control-plane/control-plane" },
     { "path": "./packages/control-plane/execution-assertion" },
     { "path": "./packages/control-plane/credential-vault" },
+    { "path": "./packages/control-plane/runtime-pool" },
     { "path": "./packages/session-query/tool-session-query" },
     { "path": "./packages/storage/storage" },
     { "path": "./packages/storage/storage-json" },

@@ -97,7 +97,7 @@ const childRun: RunLineage = { runId: RunId('run-2'), parentRunId: rootRun.runId
 
 - **没有校验语法**——每个构造函数只为输入打上品牌,不检查格式、唯一性或来源,因为目前还没有签发服务。在签发方存在之前在这里添加校验,只会发明一套没有依据的语法;签发方落地后由它拥有这项检查。
 - **没有凭据、授权或账户存储**——本包只定义 id。加密凭据信封、执行断言的签发与校验、工作区授权记录都是尚未构建的独立 R1 工作。
-- **没有运行时池键辅助函数**——[Candy 运行时边界](../../../docs/candy-runtime-boundaries.zh.md) 把 `userId + provider + accountId` 定为运行时池隔离键,但本包并不推导它:目前还没有 `provider` 的表示形式(例如 `ProviderKind` 枚举),在这里发明一个只会抢先替代 R2 提供方适配器的设计,而不是遵循它。
+- **运行时池键在别处**——[Candy 运行时边界](../../../docs/candy-runtime-boundaries.zh.md) 把 `userId + provider + accountId` 定为运行时池隔离键,由 [`dsh-runtime-pool`](../runtime-pool/README.zh.md) 推导。它不放在本包,是因为它需要 `ProviderKind` 与一个摘要,而本包只保存 id 并保持无外部依赖。
 - **没有 Cordis 服务**——本包中没有任何东西注册到 `Context` 上;它像 `dsh-brand` 一样由 TypeScript 直接导入。
 
 <a id="dev-note"></a>
