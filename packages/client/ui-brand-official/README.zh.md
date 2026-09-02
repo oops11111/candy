@@ -1,5 +1,5 @@
 ---
-description: "面向侧栏的官方 DeepSeek Harness 品牌填充，仅在官方构建中生效；供选择或替换品牌呈现的用户与维护者阅读。"
+description: "Candy Web 侧栏品牌填充；供选择或替换产品呈现的用户与维护者阅读。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包向侧栏品牌槽位——`sidebar.brand.mark` 与 `sidebar.brand.name`——填充官方 DeepSeek Harness 标志与名称。它只在客户端以 `official` profile 构建时注册这些填充；其余构建同样加载插件但不注册任何内容，因此外壳回退保持可见。会话首屏槽位（`conversation.hero.brand.mark`）在所有构建中都保持无填充：其声明包以动画首屏鱼（悬停游动形变）作为回退渲染，而官方品牌正是这条鱼。当部署身份就是 DeepSeek 自身时选择本包；自有品牌的部署改为在相同槽位中组合另一个包。它不保留任何运行时状态，也不向模型请求贡献任何内容。
+本包在每种构建 profile 中向侧栏品牌槽位——`sidebar.brand.mark` 与 `sidebar.brand.name`——填充 Candy 标志与名称。会话首屏槽位（`conversation.hero.brand.mark`）保持无填充，并使用其声明包的回退。Candy 产品选择本包；其他部署改为在相同槽位中组合另一个包。它不保留任何运行时状态，也不向模型请求贡献任何内容。
 
 ## 目录
 
@@ -25,15 +25,15 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在身份为 DeepSeek 自身的部署的浏览器名单中挂载本插件，然后以 `official` profile 构建客户端，让填充得以注册。
+在 Candy 的浏览器名单中挂载本插件。其填充会在每种构建 profile 中注册。
 
 ### 选择 profile
 
-`DSH_CLIENT_BUILD_PROFILE` 决定渲染哪个品牌。`official` 构建在侧栏显示官方标志与名称；任何其他取值都让外壳回退——鱼形标志与本地构建标签——保持原样。会话首屏无论 profile 如何都显示来自 `dsh-client-ui-conversation` 的动画首屏鱼，因为这个回退本身就是官方标志。两种情况下插件都会照常加载并通过校验；只有注册受 profile 门控。
+`DSH_CLIENT_BUILD_PROFILE` 不选择 Candy 品牌。每种 profile 都在侧栏渲染 Candy 标志和名称。会话首屏继续使用 `dsh-client-ui-conversation` 提供的回退。
 
 ### 替换品牌
 
-自有身份的部署不组合本包，而是组合另一个占据侧栏槽位——以及本包留给回退的首屏槽位——的包。占据槽位是唯一的组合路径；这里不存在任何品牌配置面。
+拥有其他身份的部署不组合本包，而是组合另一个占据侧栏槽位——以及可选的、本包留给回退的首屏槽位——的包。占据槽位是唯一的组合路径；这里不存在任何品牌配置面。
 
 -----
 

@@ -1,5 +1,5 @@
 ---
-description: "Official DeepSeek Harness brand occupants for the sidebar, active only in official builds; for users and maintainers choosing or replacing brand presentation."
+description: "Candy brand occupants for the Web sidebar; for users and maintainers choosing or replacing product presentation."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package fills the sidebar brand slots — `sidebar.brand.mark` and `sidebar.brand.name` — with the official DeepSeek Harness mark and name. It registers these occupants only when the client bundle builds with the `official` profile; every other build loads the plugin but registers nothing, so the shell fallbacks stay visible. The conversation hero slot (`conversation.hero.brand.mark`) stays unoccupied in every build: its declaring package renders the animated hero fish (hover swim morph) as the fallback, and the official brand is that fish. Choose this package when the deployed identity is DeepSeek's own; a deployment with its own brand composes a different package into the same slots instead. It retains no runtime state and contributes nothing to model requests.
+This package fills the sidebar brand slots — `sidebar.brand.mark` and `sidebar.brand.name` — with the Candy mark and name in every build profile. The conversation hero slot (`conversation.hero.brand.mark`) stays unoccupied and keeps its declaring package's fallback. Choose this package for the Candy product; another deployment composes a different package into the same slots instead. It retains no runtime state and contributes nothing to model requests.
 
 ## Table of Contents
 
@@ -25,15 +25,15 @@ This package fills the sidebar brand slots — `sidebar.brand.mark` and `sidebar
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin in the browser roster of a deployment whose identity is DeepSeek's own, then build the client with the `official` profile so the occupants register.
+Mount this plugin in Candy's browser roster. Its occupants register in every build profile.
 
 ### Choosing the profile
 
-`DSH_CLIENT_BUILD_PROFILE` selects which brand renders. An `official` build shows the official mark and name in the sidebar; any other value leaves the shell fallbacks — the fish mark and the local-build label — in place. The conversation hero shows the animated hero fish from `dsh-client-ui-conversation` regardless of profile, because that fallback is already the official mark. The plugin still loads and validates in both cases; only the registration is profile-gated.
+`DSH_CLIENT_BUILD_PROFILE` does not select the Candy brand. Every profile renders the Candy mark and name in the sidebar. The conversation hero continues to use the fallback from `dsh-client-ui-conversation`.
 
 ### Replacing the brand
 
-A deployment with its own identity leaves this package out and composes another package that occupies the sidebar slots — and the hero slot, which this package leaves on its fallback. Occupying a slot is the only composition route; there is no brand configuration surface here.
+A deployment with another identity leaves this package out and composes another package that occupies the sidebar slots — and optionally the hero slot, which this package leaves on its fallback. Occupying a slot is the only composition route; there is no brand configuration surface here.
 
 -----
 
