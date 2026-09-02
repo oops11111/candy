@@ -4183,6 +4183,16 @@ importers:
         specifier: workspace:^
         version: link:../../core/system-prompt
 
+  packages/control-plane/control-plane:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
   packages/core/agent:
     devDependencies:
       '@deepseek-ai/cordis':
