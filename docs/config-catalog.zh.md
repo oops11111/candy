@@ -3449,6 +3449,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-web`（[`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts)）
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
 - `@deepseek-ai/dsh-control-plane`（[`packages/control-plane/control-plane/src/index.ts`](../packages/control-plane/control-plane/src/index.ts)）
+- `@deepseek-ai/dsh-credential-vault`（[`packages/control-plane/credential-vault/src/index.ts`](../packages/control-plane/credential-vault/src/index.ts)）
 - `@deepseek-ai/dsh-deque`（[`packages/util/deque/src/index.ts`](../packages/util/deque/src/index.ts)）
 - `@deepseek-ai/dsh-execution-assertion`（[`packages/control-plane/execution-assertion/src/index.ts`](../packages/control-plane/execution-assertion/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）

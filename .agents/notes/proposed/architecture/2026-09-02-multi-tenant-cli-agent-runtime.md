@@ -100,7 +100,7 @@ The runtime pool key is `userId + provider + accountId`. Workers may share immut
 ### R1 — Tenant and account foundation
 
 - [x] Define stable identifiers and schemas for user, device, provider account, workspace grant, conversation, session, run, and child run ([`dsh-control-plane`](../../implemented/architecture/2026-09-02-candy-control-plane-identifiers.md)).
-- [ ] Implement encrypted credential storage with versioned envelopes, key rotation, redacted reads, revocation, and audit events.
+- [x] Implement encrypted credential storage with versioned envelopes, key rotation, redacted reads, revocation, and audit events ([`dsh-credential-vault`](../../implemented/architecture/2026-09-02-candy-credential-vault.md)); audit records are returned, and the store that persists them remains unbuilt.
 - [x] Implement short-lived execution assertions and reject client-supplied tenant or account overrides ([`dsh-execution-assertion`](../../implemented/architecture/2026-09-02-candy-execution-assertions.md)); the nonce replay store remains with the scheduler.
 - [ ] Partition runtime homes, process ownership, event logs, caches with private content, quotas, and cleanup by pool key.
 

@@ -197,6 +197,7 @@ flowchart TD
   end
   subgraph group_control_plane["packages/control-plane"]
     pkg_control_plane["control-plane"]
+    pkg_credential_vault["credential-vault"]
     pkg_execution_assertion["execution-assertion"]
   end
   subgraph group_credentials["packages/credentials"]
@@ -1211,6 +1212,7 @@ flowchart TD
 | [`client-web`](../packages/client/web) | `client` | — |
 | [`code-runtime`](../packages/code-runtime/code-runtime) | `code-runtime` | — |
 | [`control-plane`](../packages/control-plane/control-plane) | `control-plane` | — |
+| [`credential-vault`](../packages/control-plane/credential-vault) | `control-plane` | — |
 | [`e2b`](../packages/e2b/e2b) | `e2b` | — |
 | [`experimental-agent-team-profile`](../packages/experimental/agent-team-profile) | `experimental` | — |
 | [`experimental-agent-team-web-profile`](../packages/experimental/agent-team-web-profile) | `experimental` | — |

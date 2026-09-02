@@ -1,0 +1,14 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "references": [
+    { "path": "../control-plane" },
+    { "path": "../../util/brand" }
+  ],
+  "include": [
+    "src"
+  ]
+}
