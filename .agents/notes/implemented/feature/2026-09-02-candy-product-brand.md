@@ -10,7 +10,7 @@ The fork had a Candy repository name but continued to identify itself as DeepSee
 
 ## Decision
 
-User-visible product surfaces identify the application as Candy. The existing browser brand slots carry the Candy mark and name, and the existing Harness theme system continues to own all colors and appearance preferences. Candy does not add a palette or a second theme implementation.
+User-visible product surfaces identify the application as Candy: the Web title, installable application metadata, onboarding notice, primary README, and the sidebar name, which reaches the shell through the `brand.localBuild` locale key. The browser brand slots themselves keep the upstream official occupants, gated to `official` builds, because a product name rendered as artwork in those slots cannot satisfy the Client copy gate ([restored](../bug-fix/2026-09-02-official-brand-occupants-restored.md)). The existing Harness theme system continues to own all colors and appearance preferences, and Candy does not add a palette or a second theme implementation.
 
 The `dsh` command, `DSH_*` compatibility variables, and `@deepseek-ai/dsh-*` internal package names remain unchanged. This keeps runtime protocols and upstream merges stable while product-facing text remains independently branded.
 

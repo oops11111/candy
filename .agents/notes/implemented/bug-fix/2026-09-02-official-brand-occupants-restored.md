@@ -6,7 +6,7 @@ English | [中文](2026-09-02-official-brand-occupants-restored.zh.md)
 
 ## Problem
 
-The Candy shell rebrand replaced `dsh-client-ui-brand-official`'s sidebar occupants with a hand-drawn mark and the literal JSX text `Candy`, and dropped the `DSH_CLIENT_BUILD_PROFILE !== 'official'` guard that had kept those occupants out of non-official builds. Literal product copy in Client source is exactly what `verify-client-ui-i18n` rejects, so `pnpm run hygiene` failed on every branch carrying the rebrand. The gate has no exemption list: locale dictionaries are its only sanctioned owner of translated text, and a product name rendered as JSX text cannot satisfy it.
+The [Candy product brand](../feature/2026-09-02-candy-product-brand.md) rebrand replaced `dsh-client-ui-brand-official`'s sidebar occupants with a hand-drawn mark and the literal JSX text `Candy`, and dropped the `DSH_CLIENT_BUILD_PROFILE !== 'official'` guard that had kept those occupants out of non-official builds. Literal product copy in Client source is exactly what `verify-client-ui-i18n` rejects, so `pnpm run hygiene` failed on every branch carrying the rebrand. The gate has no exemption list: locale dictionaries are its only sanctioned owner of translated text, and a product name rendered as JSX text cannot satisfy it.
 
 ## Decision
 
@@ -14,7 +14,7 @@ The Candy shell rebrand replaced `dsh-client-ui-brand-official`'s sidebar occupa
 
 Restoring the artwork restores its build-profile guard with it. The two are one decision: artwork that spells a specific vendor's name belongs only in that vendor's builds, and the package README's profile prose describes exactly that arrangement. Without the guard, official artwork would render in every deployment that composes this package, including one that meant to keep the shell fallbacks.
 
-The Candy product label is unaffected and stays where it already lived — the `brand.localBuild` locale key, which the sidebar shell and `AppFrame` read for the fallback name and the document title. A build that occupies no brand slot therefore still shows `Candy`, and only an `official` build shows the vendor wordmark.
+The Candy product identity that note records is otherwise unaffected: the title, installable metadata, onboarding notice, and README still read Candy. The sidebar label stays where it already lived, in the `brand.localBuild` locale key that the sidebar shell and `AppFrame` read for the fallback name and the document title. A build occupying no brand slot therefore still shows `Candy`, and only an `official` build shows the vendor wordmark.
 
 ## Alternatives considered
 

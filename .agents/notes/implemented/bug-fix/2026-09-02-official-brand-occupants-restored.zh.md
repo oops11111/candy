@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-Candy 外壳改名把 `dsh-client-ui-brand-official` 的侧边栏占位组件换成了手绘标记与字面 JSX 文本 `Candy`,并去掉了此前把这些占位组件挡在非 official 构建之外的 `DSH_CLIENT_BUILD_PROFILE !== 'official'` 守卫。Client 源码中的字面产品文案正是 `verify-client-ui-i18n` 所拒绝的内容,因此携带该改名的每个分支上 `pnpm run hygiene` 都会失败。该门禁没有豁免名单:locale 字典是它唯一认可的可翻译文本拥有者,而以 JSX 文本渲染的产品名无法满足它。
+[Candy 产品品牌](../feature/2026-09-02-candy-product-brand.zh.md) 改名把 `dsh-client-ui-brand-official` 的侧边栏占位组件换成了手绘标记与字面 JSX 文本 `Candy`,并去掉了此前把这些占位组件挡在非 official 构建之外的 `DSH_CLIENT_BUILD_PROFILE !== 'official'` 守卫。Client 源码中的字面产品文案正是 `verify-client-ui-i18n` 所拒绝的内容,因此携带该改名的每个分支上 `pnpm run hygiene` 都会失败。该门禁没有豁免名单:locale 字典是它唯一认可的可翻译文本拥有者,而以 JSX 文本渲染的产品名无法满足它。
 
 ## Decision
 
@@ -14,7 +14,7 @@ Candy 外壳改名把 `dsh-client-ui-brand-official` 的侧边栏占位组件换
 
 恢复图形的同时也恢复了它的构建 profile 守卫。二者是同一个决定:拼写特定厂商名称的图形只应出现在该厂商的构建中,而包 README 的 profile 段落描述的正是这一安排。没有该守卫,官方图形会在每一个组合了本包的部署中渲染,包括那些本想保留外壳回退内容的部署。
 
-Candy 产品标签不受影响,仍停留在它原本所在的位置——`brand.localBuild` locale 键,侧边栏外壳与 `AppFrame` 从中读取回退名称与文档标题。因此未占用品牌插槽的构建仍显示 `Candy`,只有 `official` 构建显示厂商字标。
+该 Agent Note 所记录的 Candy 产品标识在其余方面不受影响:标题、可安装元数据、引导声明与 README 仍读作 Candy。侧边栏标签也仍停留在它原本所在的位置,即 `brand.localBuild` locale 键,侧边栏外壳与 `AppFrame` 从中读取回退名称与文档标题。因此未占用品牌插槽的构建仍显示 `Candy`,只有 `official` 构建显示厂商字标。
 
 ## Alternatives considered
 
