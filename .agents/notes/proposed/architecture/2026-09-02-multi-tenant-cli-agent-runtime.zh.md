@@ -129,8 +129,8 @@ flowchart LR
 
 ### R5 — Windows Harness Host tenant binding
 
-- [ ] 把每个 Windows Harness Host 注册到一个用户和设备，并将其现有 Remote 能力绑定到短期 Candy 断言。
-- [ ] 在显式工作区根目录和操作类别授权之后，复用 `fs-local`、目录选择、PowerShell、Git、Windows ACL 沙箱和 API Gateway 插件。
+- [ ] 把每个 Windows Harness Host 注册到一个用户和设备，并将其现有 Remote 能力绑定到短期 Candy 断言。Remote 这一层是存在的（`dsh-api-gateway` 承载类型化调用，`dsh-api-remotes` 决定暴露什么），但*被注册的宿主*并不存在：`host/` 是本机 web GUI 的那一半 —— HTTP 服务器、SPA 服务器、目录选择器、插件清单 —— 没有「一台由 server URL 寻址的机器」这个概念；而 harness 唯一的身份是 `dsh-anonymous-user-id`，一个按安装生成、且刻意不标识用户的 UUID。因此这一条要先把远程宿主这个概念建出来，才谈得上把任何东西绑上去；而它需要 R1 的控制平面作为服务运行，而不是本次发布交付的那些库。
+- [ ] 在显式工作区根目录和操作类别授权之后，复用 `fs-local`、目录选择、PowerShell、Windows ACL 沙箱和 API Gateway 插件。这五个都已存在：[`dsh-fs-local`](../../../../packages/fs/fs-local)、带原生/浏览/自适应三种后端的 [`dsh-directory-picker`](../../../../packages/host/directory-picker)、连同其沙箱与持久化工具的 [`dsh-pwsh-local`](../../../../packages/shell/pwsh-local)、[`dsh-sandbox-windows-acl`](../../../../packages/sandbox/sandbox-windows-acl)，以及 [`dsh-api-gateway`](../../../../packages/api/gateway)。ACL 沙箱是其中最难的一块，而它已经是真实实现：受限令牌把写入限制在工作区与一个私有 temp 目录内，每个 Win32 调用都被检查，因此子进程绝不会以不受限的方式启动；它报告 `partial`，因为该令牌必须保留 Everyone 才能完成初始化，而 NTFS 硬链接会让一个文件对象跨路径别名。没有 Git 插件可供复用：仓库里只有 `dsh-webhook-github`，一个无关的 webhook 入口，因此 git 与其他命令一样，经由 bash 与 pwsh 工具抵达工作区。
 - [ ] 增加服务器 URL、配对、连接状态、撤销、离线检测、重连、幂等、输出限制和批准状态，但不定义第二套文件操作协议。
 - [ ] 在 Windows 上测试租户路由、Unicode 与长路径、分支发现、并发编辑、设备撤销、重连、junction 或符号链接逃逸和恶意路径输入。
 
