@@ -39,7 +39,7 @@ export const outcome = admission.admitted
   : admission.rejection
 ```
 
-An admitted run carries the verified claims, the opened credential, the pool key, the pool's directory, and the allowance it may spend. A denial names the stage that produced it — `assertion`, `budget`, `replay`, or `credential` — so an operator can tell a forged token from a revoked account without the caller learning anything it could retry against. Both outcomes carry `audits`: a denied run is the event an audit trail exists for, so no path discards a record the vault produced.
+An admitted run carries the verified claims, the opened credential, the pool key, the pool's directory, and the allowance it may spend. A denial names the stage that produced it — `assertion`, `budget`, `replay`, or `credential` — so an operator can tell a forged token from a revoked account without the caller learning anything it could retry against. Every stage past `assertion` also carries the verified claims, so a caller can say which tenant, account, and run was refused; a replayed nonce is this call's clearest attack signal, and one reported without a tenant records that something happened rather than what. The `assertion` stage carries none, because it denied the token before any claim was verified and the unverified payload is the caller-supplied identity this control plane refuses to repeat. Both outcomes carry `audits`: no path discards a record the vault produced.
 
 ### Supplying the policy
 
@@ -122,7 +122,7 @@ These are current package constraints, not a task backlog.
 
 - **Admission ends at a decision, not an invocation** — the call returns what a provider process needs; spawning it, injecting the secret, bounding its output, and cancelling it belong to the R2 adapters.
 - **Audit records are returned, not persisted** — every outcome carries the vault records the attempt produced, and the caller owns the tenant-partitioned store the boundaries page requires. Nothing here writes, retains, or orders them.
-- **Only vault operations are audited** — a refusal that never reached the vault (an unadmitted token, a spent nonce, an account with no stored credential) carries an empty trail, because no credential was touched. A caller that must record those refusals logs the rejection itself.
+- **Only vault operations are audited** — a refusal that never reached the vault (an unadmitted token, a spent nonce, an account with no stored credential) carries an empty trail, because no credential was touched. A caller that must record those refusals logs the rejection itself, which names the tenant for every stage past `assertion`.
 - **Nonce spending is not transactional with the run** — a nonce is spent before the credential is read, so a run denied at the credential step has already consumed its assertion. That is the safe direction, and it means a client must mint a new assertion rather than retry the same one after fixing an account.
 - **Quotas, concurrency, and parent-subset grants are not checked** — those belong to the scheduler and to R3's orchestration; this call admits one run's identity and resources, not its budget.
 - **No Cordis service** — nothing here registers on a `Context`; it is imported directly.

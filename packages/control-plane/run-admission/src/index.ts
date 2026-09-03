@@ -128,30 +128,55 @@ export interface AdmittedRun {
  *
  * The stage is for operator diagnostics; every value denies the run, and a
  * caller cannot retry into a weaker check.
+ *
+ * Every stage past `assertion` carries the verified claims, because a denial
+ * a caller cannot attribute is not a record of anything: a replayed nonce is
+ * this module's clearest attack signal, and reporting only that some token was
+ * replayed leaves the tenant, account, and run out of the caller's log. The
+ * claims travel on the stage rather than beside it so that reading them is
+ * possible exactly where they exist. The `assertion` stage carries none: it
+ * denied the token before any claim was verified, and the unverified payload
+ * is the caller-supplied identity this control plane refuses to repeat.
  */
 export type RunRejection =
   | { readonly stage: 'assertion'; readonly reason: ExecutionAssertionRejection }
-  | { readonly stage: 'budget'; readonly reason: 'no-budget' | 'exhausted' }
-  | { readonly stage: 'replay'; readonly reason: 'nonce-already-spent' }
-  | { readonly stage: 'credential'; readonly reason: 'not-found' | CredentialRejection }
+  | {
+    readonly stage: 'budget'
+    readonly reason: 'no-budget' | 'exhausted'
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'replay'
+    readonly reason: 'nonce-already-spent'
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'credential'
+    readonly reason: 'not-found' | CredentialRejection
+    readonly claims: ExecutionAssertionClaims
+  }
 
 /**
  * The outcome of one scheduling attempt.
  *
- * Both branches carry `audits`, and that is the point: a denied run is the
- * event an audit trail exists to record. A refused token, a replayed nonce,
- * and above all a credential the vault refused to open for this tenant are
- * what an operator needs afterwards, so no path here discards a record the
- * vault produced. `openCredential` returns an audit on its failing branch as
- * well as its succeeding one; dropping the failing one would lose exactly the
- * cross-tenant access attempt the vault detected.
+ * Both branches carry `audits`, and that is the point: a credential the vault
+ * refused to open for this tenant is what an operator needs afterwards, so no
+ * path here discards a record the vault produced. `openCredential` returns an
+ * audit on its failing branch as well as its succeeding one; dropping the
+ * failing one would lose exactly the cross-tenant access attempt the vault
+ * detected.
+ *
+ * `audits` holds vault records only, so it is empty for a denial that never
+ * reached the vault. Those denials are not unrecorded: a refused token, an
+ * exhausted budget, and a replayed nonce are reported through `rejection`,
+ * which carries the verified claims for every stage that has them.
  */
 export type RunAdmission =
   | { readonly admitted: true; readonly run: AdmittedRun; readonly audits: readonly CredentialAuditEvent[] }
   | {
     readonly admitted: false
     readonly rejection: RunRejection
-    /** Every audit record the attempt produced; empty when it was refused before the vault was reached. */
+    /** Every vault record the attempt produced; empty when it was refused before the vault was reached. */
     readonly audits: readonly CredentialAuditEvent[]
   }
 
@@ -193,28 +218,32 @@ export async function admitRun(
   // control plane. It is also a cheap read that touches no secret.
   const budget = await policy.findBudget(claims)
   if (budget === undefined) {
-    return { admitted: false, rejection: { stage: 'budget', reason: 'no-budget' }, audits: [] }
+    return { admitted: false, rejection: { stage: 'budget', reason: 'no-budget', claims }, audits: [] }
   }
   if (!hasRemainingBudget(budget)) {
-    return { admitted: false, rejection: { stage: 'budget', reason: 'exhausted' }, audits: [] }
+    return { admitted: false, rejection: { stage: 'budget', reason: 'exhausted', claims }, audits: [] }
   }
 
   // The nonce is spent next rather than last: it serializes concurrent
   // duplicates, so two copies of one token cannot both reach the credential.
   if (!await policy.spendNonce(claims)) {
-    return { admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent' }, audits: [] }
+    return { admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent', claims }, audits: [] }
   }
 
   const envelope = await policy.findCredential(claims)
   if (envelope === undefined) {
-    return { admitted: false, rejection: { stage: 'credential', reason: 'not-found' }, audits: [] }
+    return { admitted: false, rejection: { stage: 'credential', reason: 'not-found', claims }, audits: [] }
   }
   const binding = { userId: claims.userId, accountId: claims.accountId }
   const opened = openCredential(envelope, binding, policy.keyring, now)
   if (!opened.opened) {
     // The vault recorded this refusal; a binding mismatch here is a tenant
     // reaching for another tenant's credential, which must not go unlogged.
-    return { admitted: false, rejection: { stage: 'credential', reason: opened.rejection }, audits: [opened.audit] }
+    return {
+      admitted: false,
+      rejection: { stage: 'credential', reason: opened.rejection, claims },
+      audits: [opened.audit],
+    }
   }
 
   const poolKey = runtimePoolKey({

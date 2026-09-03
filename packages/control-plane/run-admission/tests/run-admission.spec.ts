@@ -135,6 +135,40 @@ describe('admitRun', () => {
     expect(looked).toBe(false)
   })
 
+  it('names the tenant behind every denial past the assertion', async () => {
+    // A caller's whole account of a refused attempt is `rejection`; a denial it
+    // cannot attribute records that something was refused and not who by.
+    const subject = claims({ userId: UserId('user-bobby') })
+    const token = mintExecutionAssertion(subject, ASSERTION_SECRET)
+    const shared = policy()
+
+    const unknownCredential = await admitRun({ token }, shared, NOW)
+    const replayed = await admitRun({ token }, shared, NOW)
+    const unfunded = await admitRun(
+      { token: mintExecutionAssertion(subject, ASSERTION_SECRET) },
+      policy({ findBudget: () => Promise.resolve(undefined) }),
+      NOW,
+    )
+
+    for (const denial of [unknownCredential, replayed, unfunded]) {
+      expect(denial.admitted).toBe(false)
+      if (denial.admitted || denial.rejection.stage === 'assertion') throw new Error('expected an attributable denial')
+      expect(denial.rejection.claims).toEqual(subject)
+    }
+  })
+
+  it('attributes no identity to a token it never verified', async () => {
+    // The unverified payload is the caller-supplied tenant this control plane
+    // exists to refuse, so an assertion-stage denial names nobody.
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+
+    const admission = await admitRun({ token }, policy(), NOW + LIFETIME)
+
+    expect(admission).toEqual({
+      admitted: false, rejection: { stage: 'assertion', reason: 'expired' }, audits: [],
+    })
+  })
+
   it('denies a replayed token on its second use', async () => {
     const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
     const shared = policy()
@@ -144,7 +178,9 @@ describe('admitRun', () => {
 
     expect(first.admitted).toBe(true)
     expect(second).toEqual({
-      admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent' }, audits: [],
+      admitted: false,
+      rejection: { stage: 'replay', reason: 'nonce-already-spent', claims: claims() },
+      audits: [],
     })
   })
 
@@ -161,12 +197,15 @@ describe('admitRun', () => {
   })
 
   it('denies a tenant whose account has no stored credential', async () => {
-    const token = mintExecutionAssertion(claims({ userId: UserId('user-bobby') }), ASSERTION_SECRET)
+    const stranger = claims({ userId: UserId('user-bobby') })
+    const token = mintExecutionAssertion(stranger, ASSERTION_SECRET)
 
     const admission = await admitRun({ token }, policy(), NOW)
 
     expect(admission).toEqual({
-      admitted: false, rejection: { stage: 'credential', reason: 'not-found' }, audits: [],
+      admitted: false,
+      rejection: { stage: 'credential', reason: 'not-found', claims: stranger },
+      audits: [],
     })
   })
 
@@ -313,7 +352,9 @@ describe('the budget a run is admitted against', () => {
     }), NOW)
 
     expect(admission).toEqual({
-      admitted: false, rejection: { stage: 'budget', reason: 'exhausted' }, audits: [],
+      admitted: false,
+      rejection: { stage: 'budget', reason: 'exhausted', claims: claims() },
+      audits: [],
     })
   })
 
@@ -335,7 +376,9 @@ describe('the budget a run is admitted against', () => {
     }), NOW)
 
     expect(admission).toEqual({
-      admitted: false, rejection: { stage: 'budget', reason: 'no-budget' }, audits: [],
+      admitted: false,
+      rejection: { stage: 'budget', reason: 'no-budget', claims: claims() },
+      audits: [],
     })
   })
 
