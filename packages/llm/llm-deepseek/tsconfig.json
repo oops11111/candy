@@ -21,6 +21,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../test-support/llm-adapter-contract"
+    },
+    {
       "path": "../../attachment/attachment"
     },
     {

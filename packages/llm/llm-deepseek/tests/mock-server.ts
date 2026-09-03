@@ -6,6 +6,12 @@ export type Behavior =
   | { kind: 'sse'; events: string[]; delayMs?: number }
   | { kind: 'http-error'; status: number; body: string; contentType?: string; headers?: Record<string, string> }
   | { kind: 'close-early'; events: string[] }
+  /**
+   * Write `events`, then hold the connection open indefinitely: a provider
+   * that is still streaming. `held` resolves when the socket closes, which for
+   * an abandoned or cancelled request is the client releasing it.
+   */
+  | { kind: 'hold'; events: string[]; onRelease: () => void }
 
 export interface MockServer {
   url: string
@@ -130,10 +136,12 @@ export async function mockServer(script: Behavior[]): Promise<MockServer> {
           return
         }
         response.writeHead(200, { 'content-type': 'text/event-stream' })
+        if (behavior.kind === 'hold') response.on('close', behavior.onRelease)
         const write = (index: number): void => {
           if (index >= behavior.events.length) {
+            // hold: leave the socket open, so only the client ends this request.
             if (behavior.kind === 'sse') response.end()
-            else response.destroy() // close-early: drop the socket mid-stream
+            else if (behavior.kind === 'close-early') response.destroy()
             return
           }
           response.write(`data: ${behavior.events[index]}\n\n`)

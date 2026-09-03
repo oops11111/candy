@@ -6186,6 +6186,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../llm
+      '@deepseek-ai/dsh-llm-adapter-contract':
+        specifier: workspace:^
+        version: link:../../test-support/llm-adapter-contract
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
@@ -6238,6 +6241,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../llm
+      '@deepseek-ai/dsh-llm-adapter-contract':
+        specifier: workspace:^
+        version: link:../../test-support/llm-adapter-contract
       '@deepseek-ai/dsh-plugin-package-inventory-deepseek':
         specifier: workspace:^
         version: link:../plugin-package-inventory-deepseek
@@ -9042,6 +9048,15 @@ importers:
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+
+  packages/test-support/llm-adapter-contract:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
 
   packages/test-support/llm-mock-server:
     devDependencies:

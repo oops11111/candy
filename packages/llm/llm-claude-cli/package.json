@@ -40,6 +40,7 @@
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-claude-cli-protocol": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-llm-adapter-contract": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^"
   }
 }
