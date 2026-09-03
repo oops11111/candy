@@ -65,7 +65,20 @@ export interface RunAdmissionPolicy {
   /** Absolute directory holding every runtime pool's root. */
   readonly poolBase: string
   /**
-   * Look up the tenant's remaining allowance for this run.
+   * Look up the allowance this run will be started against.
+   *
+   * For a root run that is the tenant's remaining allowance. For a child run —
+   * one whose claims carry a `parentRunId` — it is the PARENT's remaining
+   * allowance, which a deployment reads from its `dsh-run-ledger`. Answering
+   * the tenant's budget for a child would make this check meaningless: a tenant
+   * with plenty left can have an exhausted parent, and the child would then be
+   * refused only when its allowance is reserved — one step after its
+   * single-use nonce was spent and its credential opened.
+   *
+   * The check is "has this run anything at all to spend", not a promise that a
+   * particular child request will fit. A parent with one token left admits a
+   * child that `RunLedger.openChild` then refuses, which is the residue of
+   * checking an allowance before its size is known.
    *
    * Returning `undefined` denies the run: a tenant the budget store does not
    * know is not a tenant with unlimited budget. A deployment that means
@@ -96,10 +109,15 @@ export interface AdmittedRun {
   /** The one directory that pool owns. */
   readonly poolRoot: string
   /**
-   * The allowance this run may consume, as the budget store held it.
+   * The allowance this run was admitted against, exactly as `findBudget`
+   * answered it.
    *
-   * The caller charges against it with `dsh-run-budget`; nothing here
-   * decrements it, because admission is one read and a spend needs the
+   * For a root run it is what the run may spend, and a caller opens it in a
+   * ledger with this. For a child run it is the parent's remaining allowance —
+   * the ceiling on what could be delegated, not what the child gets, which the
+   * caller decides when it reserves the child's own share.
+   *
+   * Nothing here decrements it: admission is one read, and a spend needs the
    * durable write this module does not own.
    */
   readonly budget: RunBudget

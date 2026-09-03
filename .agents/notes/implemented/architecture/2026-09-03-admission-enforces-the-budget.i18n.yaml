@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-03-admission-enforces-the-budget.md
-2026-09-03-admission-enforces-the-budget.md: e16c1c22d636143a520d80bde04caea93200cdfa
-2026-09-03-admission-enforces-the-budget.zh.md: d229bb7a91fd4d4b8039650a499961cef7d68150
+2026-09-03-admission-enforces-the-budget.md: 09ca9513e0b77933b9ab65ae79d169047c4d50b7
+2026-09-03-admission-enforces-the-budget.zh.md: 1777995d89c53aaa38b957843d9e335642f66543

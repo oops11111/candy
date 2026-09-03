@@ -51,19 +51,26 @@ import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'spendNonce' | 'findCredential'>
 declare const store: {
   budgetFor: (userId: string) => Promise<undefined>
+  parentRemaining: (parentRunId: string) => Promise<undefined>
   markSpent: (nonce: string, expiresAt: number) => Promise<boolean>
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
 }
 
 export const policy: RunAdmissionPolicy = {
   ...partial,
-  findBudget: claims => store.budgetFor(claims.userId),
+  findBudget: claims => claims.parentRunId === undefined
+    ? store.budgetFor(claims.userId)
+    : store.parentRemaining(claims.parentRunId),
   spendNonce: claims => store.markSpent(claims.nonce, claims.expiresAt),
   findCredential: claims => store.envelopeFor(claims.userId, claims.accountId),
 }
 ```
 
 `spendNonce` returns true only the first time it sees a nonce. `findBudget` returning `undefined` denies the run: a tenant the store does not know is not a tenant with unlimited budget, and a deployment that means unmetered says so with an explicit large allowance. None of the three ports exists in this repository, which is why all three are parameters: a run cannot start until the deployment has answered budget, replay, and credential lookup.
+
+`findBudget` answers the allowance the run is started against, which is not the same lookup for every run. A child run — one whose claims carry a `parentRunId` — is started against its PARENT's remaining allowance, read from a [`dsh-run-ledger`](../run-ledger/README.md). Answering the tenant's budget for a child makes this check meaningless: a tenant with plenty left can have an exhausted parent, and the child is then refused only when its share is reserved, one step after its single-use nonce was spent and its credential opened.
+
+The check is "has this run anything at all to spend", not a promise a particular child request will fit. A parent with one token left admits a child that `RunLedger.openChild` then refuses, which is what remains of checking an allowance before its size is known.
 
 The budget is read before the nonce is spent. An exhausted budget is the one denial here a caller can fix and retry — top up, present the same still-valid assertion — so burning its single-use token would turn a recoverable refusal into a round trip to the control plane. The nonce is still spent before the credential, because it serializes concurrent duplicates so two copies of one token cannot both reach a secret.
 

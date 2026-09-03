@@ -51,19 +51,26 @@ import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'spendNonce' | 'findCredential'>
 declare const store: {
   budgetFor: (userId: string) => Promise<undefined>
+  parentRemaining: (parentRunId: string) => Promise<undefined>
   markSpent: (nonce: string, expiresAt: number) => Promise<boolean>
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
 }
 
 export const policy: RunAdmissionPolicy = {
   ...partial,
-  findBudget: claims => store.budgetFor(claims.userId),
+  findBudget: claims => claims.parentRunId === undefined
+    ? store.budgetFor(claims.userId)
+    : store.parentRemaining(claims.parentRunId),
   spendNonce: claims => store.markSpent(claims.nonce, claims.expiresAt),
   findCredential: claims => store.envelopeFor(claims.userId, claims.accountId),
 }
 ```
 
 `spendNonce` 只在首次见到某个 nonce 时返回 true。`findBudget` 返回 `undefined` 表示拒绝该运行:存储不认识的租户并不等于额度无限的租户,而意在「不计量」的部署应当用一个显式的大额度来表达。这三个端口在本仓库中都不存在,这正是它们作为参数的原因:在部署方回答了额度、重放与凭据查找之前,运行无法开始。
+
+`findBudget` 回答的是这次运行将据以启动的那份额度，而这对每一种运行并不是同一次查询。子运行 —— claims 携带 `parentRunId` 的那种 —— 据以启动的是它**父运行**的剩余额度，从 [`dsh-run-ledger`](../run-ledger/README.zh.md) 里读出。给子运行回答租户预算会让这项检查失去意义：一个额度充裕的租户完全可能有一个已耗尽的父运行，而子运行要到自己的份额被预留时才会被拒绝 —— 那已经是在它的一次性 nonce 被消费、凭据被打开之后一步了。
+
+这项检查问的是「这次运行还有没有东西可花」，而不是承诺某个具体的子运行请求装得下。只剩一个 token 的父运行仍会让一个子运行通过准入，而 `RunLedger.openChild` 随后会拒绝它 —— 这是在额度的大小尚未可知之前就检查它所留下的残余。
 
 额度在消费 nonce 之前读取。额度耗尽是这里唯一一种调用方能够修复并重试的拒绝——充值后再出示同一个仍然有效的断言——因此烧掉它的一次性令牌,会把一次可恢复的拒绝变成一次回到控制面的往返。nonce 仍然在凭据之前被消费,因为它会把并发的重复请求串行化,使同一个令牌的两份副本不可能都抵达密钥。
 

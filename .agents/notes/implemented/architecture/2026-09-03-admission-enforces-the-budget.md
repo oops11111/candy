@@ -24,6 +24,14 @@ Two packages, each defensible alone, leaving a hole between them. The [enforceme
 
 `hasRemainingBudget` ignores `children`, and admission inherits that. A run with no delegation slots left can still do its own work; it simply cannot start a child. Refusing it would confuse "cannot delegate" with "cannot proceed", and a test pins the distinction.
 
+### A child run is admitted against its parent, not its tenant
+
+`findBudget` answers the allowance a run is *started against*, and that is a different lookup for a child than for a root. A child's claims carry a `parentRunId`, and a deployment answers that parent's remaining allowance from its `dsh-run-ledger`.
+
+Answering the tenant's budget for a child would make this whole check meaningless, which is the failure the port's documentation now names: a tenant with plenty left can have an exhausted parent, so the child would pass here and be refused only when its share is reserved — one step after its single-use nonce was spent and its credential opened. That is exactly the recoverable-denial-after-an-irreversible-step the ordering below exists to prevent, reappearing one level down.
+
+The check remains "has this run anything at all to spend", not a promise that a particular request will fit: a parent with one token left admits a child that `RunLedger.openChild` then refuses. That residue is unavoidable here, because the size of the child's request is not part of the assertion, and a test pins it so it is not mistaken for a bug later.
+
 ### The budget is read before the nonce is spent
 
 This changed the documented order, and the reason is worth keeping. An exhausted budget is the one denial here a caller can fix and retry: top up, present the same still-valid assertion. Spending the nonce first would burn a single-use token on a recoverable refusal and force a round trip to the control plane for a fresh assertion. The budget read is also cheap and touches no secret, so it costs nothing to do early.

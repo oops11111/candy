@@ -10,7 +10,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import { CredentialKeyVersion, sealCredential, type CredentialKeyring } from '@deepseek-ai/dsh-credential-vault'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
-import { admitRun, type AdmittedRun, type RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
+import { admitRun, type AdmittedRun, type RunAdmission, type RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 
@@ -80,19 +80,40 @@ export async function admitFor(
   poolBase: string,
   overrides: Partial<ExecutionAssertionClaims> = {},
 ): Promise<AdmittedRun> {
+  const admission = await admissionFor(secret, poolBase, overrides)
+  if (!admission.admitted) throw new Error(`the fixture run was denied at ${admission.rejection.stage}`)
+  return admission.run
+}
+
+/**
+ * Admit one run and hand back the outcome, denials included.
+ * @param secret - the provider credential the vault will hold for this tenant.
+ * @param poolBase - the absolute directory every pool root sits under.
+ * @param overrides - claims fields this case varies.
+ * @param findBudget - what the deployment answers for this run's allowance;
+ *   the fixture budget unless a case supplies a store of its own.
+ * @param spendNonce - whether this run's nonce was unseen, and the hook a case
+ *   uses to observe whether admission reached the replay store at all.
+ * @returns the admission outcome.
+ */
+export async function admissionFor(
+  secret: Uint8Array,
+  poolBase: string,
+  overrides: Partial<ExecutionAssertionClaims> = {},
+  findBudget: RunAdmissionPolicy['findBudget'] = () => Promise.resolve(BUDGET),
+  spendNonce: RunAdmissionPolicy['spendNonce'] = () => Promise.resolve(true),
+): Promise<RunAdmission> {
   const subject = claims(overrides)
   const policy: RunAdmissionPolicy = {
     expectation: EXPECTATION,
     assertionSecret: ASSERTION_SECRET,
     keyring: KEYRING,
     poolBase,
-    findBudget: () => Promise.resolve(BUDGET),
-    spendNonce: () => Promise.resolve(true),
+    findBudget,
+    spendNonce,
     findCredential: () => Promise.resolve(
       sealCredential(secret, { userId: subject.userId, accountId: subject.accountId }, KEYRING, NOW).envelope,
     ),
   }
-  const admission = await admitRun({ token: mintExecutionAssertion(subject, ASSERTION_SECRET) }, policy, NOW)
-  if (!admission.admitted) throw new Error(`the fixture run was denied at ${admission.rejection.stage}`)
-  return admission.run
+  return admitRun({ token: mintExecutionAssertion(subject, ASSERTION_SECRET) }, policy, NOW)
 }
