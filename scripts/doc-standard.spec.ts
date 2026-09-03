@@ -63,6 +63,7 @@ const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
   'packages/control-plane/run-admission': 'Scheduling composition over the other control-plane packages; plain function exports, no plugin entry.',
   'packages/control-plane/run-budget': 'Budget arithmetic for delegation trees; plain function exports, no plugin entry.',
   'packages/control-plane/run-ledger': 'Live run records and settlement over the budget arithmetic; a plain class export, no plugin entry.',
+  'packages/control-plane/run-replay': 'The single-use nonce record behind admission; a plain class export, no plugin entry.',
   'packages/control-plane/runtime-pool': 'Pool-key derivation and path containment; plain function exports, no plugin entry.',
   'packages/llm/claude-cli-protocol': 'Claude CLI frame translation and launch composition; plain function/class exports, no plugin entry.',
   'packages/core/scope': 'Scoped-context primitives; exports functions and types without a plugin entry.',

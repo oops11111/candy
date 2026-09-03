@@ -28,6 +28,7 @@ control-plane 组为每个未来的 Candy 租户感知包提供一套共享且�
 | [`provider-accounts`](provider-accounts/README.zh.md) | 拥有租户提供方账户元数据、加密凭据生命周期、默认选择与不含密钥的账户视图 |
 | [`run-budget`](run-budget/README.zh.md) | 通过让每个子运行的额度从父运行那里扣除，为委派树的 token、时间、金额与并发设界 |
 | [`run-ledger`](run-ledger/README.zh.md) | 记录每次开启中的运行持有什么、花掉了什么，并精确而非估算地结算被遗弃的占用 |
+| [`run-replay`](run-replay/README.zh.md) | 以一个不可分割的步骤把断言的 nonce 记为已消费，并恰好在该断言仍可被准入期间保留它 |
 | [`runtime-pool`](runtime-pool/README.zh.md) | 推导隔离键,以及租户的提供方运行时所拥有的那一个目录 |
 | [`run-admission`](run-admission/README.zh.md) | 唯一的调度调用:断言、nonce、凭据与池一并解析 |
 | [`claude-cli-binding`](claude-cli-binding/README.zh.md) | 把一次被准入的运行变成将其限制在该租户之内的 Claude CLI 启动事实 |

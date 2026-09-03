@@ -2,7 +2,7 @@
 
 English | [中文](candy-control-plane.zh.md)
 
-The [control-plane group](../../packages/control-plane) is what turns a request from an untrusted client into one provider process that can only spend one tenant's money in one tenant's directory. It is nine packages and no running Cordis service: every package is imported directly, and the OAuth, device pairing, and account store that would make it a service belong to the [proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md), not to this repository yet.
+The [control-plane group](../../packages/control-plane) is what turns a request from an untrusted client into one provider process that can only spend one tenant's money in one tenant's directory. It is ten packages and no running Cordis service: every package is imported directly, and the OAuth, device pairing, and account store that would make it a service belong to the [proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md), not to this repository yet.
 
 That absence is the reason this page exists. The packages compose in exactly one order, each step's output is the next step's only tenant-specific input, and nothing in the repository performs the sequence outside its tests. This page is that sequence. [Candy Runtime Boundaries](../candy-runtime-boundaries.md) owns the trust boundaries and abuse cases the design answers to.
 
@@ -18,14 +18,14 @@ That absence is the reason this page exists. The packages compose in exactly one
 | Charge | [`dsh-run-ledger`](../../packages/control-plane/run-ledger) | what the invocation consumed, and whether the run may make another |
 | Close | [`dsh-run-ledger`](../../packages/control-plane/run-ledger) | what the run cost, and what returns to whoever delegated it |
 
-[`dsh-control-plane`](../../packages/control-plane/control-plane) supplies the branded ids every step names a tenant with, [`dsh-credential-vault`](../../packages/control-plane/credential-vault) seals and opens what admission hands over, [`dsh-runtime-pool`](../../packages/control-plane/runtime-pool) also derives the key and root that admission resolves before Place creates them, and [`dsh-run-budget`](../../packages/control-plane/run-budget) is the reservation arithmetic the ledger records against. [`dsh-provider-accounts`](../../packages/control-plane/provider-accounts) owns the user-visible account metadata a tenant configures before any of this runs.
+[`dsh-control-plane`](../../packages/control-plane/control-plane) supplies the branded ids every step names a tenant with, [`dsh-credential-vault`](../../packages/control-plane/credential-vault) seals and opens what admission hands over, [`dsh-runtime-pool`](../../packages/control-plane/runtime-pool) also derives the key and root that admission resolves before Place creates them, [`dsh-run-budget`](../../packages/control-plane/run-budget) is the reservation arithmetic the ledger records against, and [`dsh-run-replay`](../../packages/control-plane/run-replay) is the single-use record behind the nonce admission spends. [`dsh-provider-accounts`](../../packages/control-plane/provider-accounts) owns the user-visible account metadata a tenant configures before any of this runs.
 
 ## What a deployment must supply
 
-Three stores do not exist in this repository, and `admitRun` takes all three as ports so that a run cannot start until a deployment has answered them:
+Two of the three stores `admitRun` takes as ports do not exist in this repository, and all three stay ports so that a run cannot start until a deployment has answered them:
 
 - **`findBudget`** — the allowance this run is started against. For a root run that is the tenant's remaining allowance; for a run whose claims carry a `parentRunId` it is that **parent's** remaining allowance, read from the ledger. Answering the tenant's budget for a child defeats the check: the child would pass here and be refused only when its share is reserved, after its single-use nonce was spent.
-- **`spendNonce`** — whether this assertion's nonce had been seen. It is durable and tenant-partitioned in a real deployment; nothing here retries a spent one.
+- **`spendNonce`** — whether this assertion's nonce had been seen; nothing here retries a spent one. [`dsh-run-replay`](../../packages/control-plane/run-replay) answers it for one process: the decision is one synchronous step, so two concurrent copies of a token cannot both pass, and a record is held exactly while its assertion stays admissible. A deployment running more than one runtime process needs a durable store satisfying the same three obligations.
 - **`findCredential`** — the sealed envelope for the tenant and account the assertion names.
 
 The pool directory is opened rather than derived: `openRuntimePool` creates one pool root and makes it private to the account this runtime runs as, applying the mode with an explicit change so it is true of a root that already existed. It never creates the pool base — a base that is absent means the deployment never provisioned its storage — and it cannot make a pool private if another local account may write beside it, so provisioning the base privately stays with the deployment.

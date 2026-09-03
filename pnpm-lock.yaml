@@ -4317,6 +4317,24 @@ importers:
         specifier: workspace:^
         version: link:../run-budget
 
+  packages/control-plane/run-replay:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
+      '@deepseek-ai/dsh-execution-assertion':
+        specifier: workspace:^
+        version: link:../execution-assertion
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+
   packages/control-plane/runtime-pool:
     dependencies:
       '@deepseek-ai/dsh-brand':

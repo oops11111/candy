@@ -101,7 +101,7 @@ flowchart LR
 
 - [x] 为用户、设备、提供方账户、工作区授权、对话、会话、运行和子运行定义稳定标识符及 schema([`dsh-control-plane`](../../implemented/architecture/2026-09-02-candy-control-plane-identifiers.zh.md))。
 - [x] 实现带版本封装、密钥轮换、脱敏读取、撤销和审计事件的加密凭据存储（[`dsh-credential-vault`](../../implemented/architecture/2026-09-02-candy-credential-vault.zh.md)）；审计记录会被返回，持久化它们的存储仍未构建。
-- [x] 实现短期执行断言，并拒绝客户端提供的租户或账户覆盖值（[`dsh-execution-assertion`](../../implemented/architecture/2026-09-02-candy-execution-assertions.zh.md)）；nonce 重放存储仍归调度器所有。
+- [x] 实现短期执行断言，并拒绝客户端提供的租户或账户覆盖值（[`dsh-execution-assertion`](../../implemented/architecture/2026-09-02-candy-execution-assertions.zh.md)） —— 而 nonce 所隐含的那个重放存储已经构建（[一个步骤决定一个 nonce](../../implemented/architecture/2026-09-03-one-step-decides-a-nonce.zh.md)）：`admitRun` 要求一个 `spendNonce` 端口，并且从不重试一个已消费的 nonce，因此那个端口就是防护的全部，而它所诱使写出的实现 —— 先查这个 nonce，再插入它 —— 会把被重放令牌的两份副本都准入。`RunReplayStore` 在一个同步步骤里做决定，恰好在断言仍可被准入期间持有记录，并按租户为键，使一个租户无法通过抢先消费某个值来拒绝另一个租户的运行。它服务于一个进程；运行多于一个进程的部署需要一个持久化存储，而那份契约现在是写下来的，不再靠推断。
 - [x] 按池键隔离运行时主目录、进程所有权、事件日志、包含私有内容的缓存、配额和清理（[`dsh-runtime-pool`](../../implemented/architecture/2026-09-02-candy-runtime-pool-partitioning.zh.md)）；键与每个池的根目录已被推导，而一次 Claude CLI 运行现在按构造就被放进它的池里 —— [`dsh-claude-cli-binding`](../../implemented/architecture/2026-09-03-admitted-run-to-claude-cli-launch.zh.md) 从被准入的运行里读出进程的主目录、工作目录、凭据与花费上限，因此没有任何调用方会把一个租户的目录与另一个租户的密钥配在一起。创建目录现在也已归属：`openRuntimePool` 用一个被施加而非被请求的模式把池根目录设为私有，并拒绝凭空造出部署从未准备过的池基目录（[池根目录是被设为私有的](../../implemented/architecture/2026-09-03-a-pool-root-is-made-private.zh.md)）—— 每个调用方手写的那个 `mkdir` 会让一个已经存在的根目录保留它原有的权限，而那个根目录正是租户凭据被写入的地方。强制配额与清理仍属于尚未构建的池运行时，池基目录自身的权限也是。
 
 ### R2 — Provider adapters
