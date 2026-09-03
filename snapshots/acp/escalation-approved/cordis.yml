@@ -13,6 +13,20 @@
       - id: deepseek-v4-flash-vision-exp
         inputModalities: [text, image]
 
+# The dormant multi-provider twin is off for every ACP scenario. Its apply
+# finishes several hundred milliseconds after the rest of the graph, and its
+# configurable-provider registration publishes `llm/adapters-updated` when it
+# does — which reaches an already-created ACP session as a `config_option_update`
+# carrying the option set that session's `session/new` response already
+# returned. The notification is correct ACP (topology may change at any time)
+# and it is not this suite's subject, but its arrival races the compared
+# exchange: whether it lands at all depends on whether boot finishes before the
+# scenario ends, so a committed stdout transcript cannot pin it. These
+# scenarios assert the ACP protocol surface over one adapter's routes, which
+# every expected `configOptions` payload here already shows.
+- id: llm-pi-ai
+  disabled: true
+
 - id: sandbox-policy
   name: '@deepseek-ai/dsh-sandbox-policy'
   config:

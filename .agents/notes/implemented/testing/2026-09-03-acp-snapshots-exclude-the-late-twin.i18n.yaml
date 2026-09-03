@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-03-acp-snapshots-exclude-the-late-twin.md
+2026-09-03-acp-snapshots-exclude-the-late-twin.md: 461d57b8a4a7230294f9f6bfd759d86e2edf7b01
+2026-09-03-acp-snapshots-exclude-the-late-twin.zh.md: b90a10fd9f09b9058e05ddb507ae45cb1e222125
