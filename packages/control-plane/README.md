@@ -35,6 +35,7 @@ The control-plane group gives every future Candy tenant-aware package one shared
 <a id="related-documentation"></a>
 ## Related documentation
 
+- [Candy control plane](../../docs/subsystems/candy-control-plane.md) — how these packages compose into one run, what a deployment must supply, and why the order is the contract.
 - [Candy Runtime Boundaries](../../docs/candy-runtime-boundaries.md) — the accepted trust boundaries and abuse cases this group's ids exist to name.
 - [Multi-tenant CLI agent runtime](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md) — the proposed delivery plan this group's first package (R1) starts.
 - [Core session subsystem](../core/README.md) — the owner of `SessionId`, which this group's ids reference but never redefine.

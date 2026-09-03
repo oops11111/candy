@@ -35,6 +35,7 @@ control-plane 组为每个未来的 Candy 租户感知包提供一套共享且�
 <a id="related-documentation"></a>
 ## 相关文档
 
+- [Candy 控制平面](../../docs/subsystems/candy-control-plane.zh.md)——这些包如何组合成一次运行、部署方必须提供什么，以及为什么这个顺序就是契约。
 - [Candy 运行时边界](../../docs/candy-runtime-boundaries.zh.md)——本组 id 所要命名的、已接受的信任边界与滥用场景。
 - [多租户 CLI 代理运行时](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md)——本组首个包所开启的提议交付计划（R1）。
 - [core session 子系统](../core/README.zh.md)——`SessionId` 的拥有者；本组的 id 引用它但从不重新定义它。
