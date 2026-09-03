@@ -96,9 +96,10 @@ export class ProviderAccountError extends Error {
  *   secret, and whether it should become the provider's default.
  * @param now - epoch milliseconds stamped on the record and its audit entry.
  * @returns the secret-free view and the vault's sealing audit record.
- * @throws ProviderAccountError `account-already-exists` when an account with
- * this id is present and not deleted, or `invalid-label` when the label is
- * empty once trimmed or longer than 120 characters.
+ * @throws ProviderAccountError `account-already-exists` when any account —
+ * including a deleted one — already holds this id, so a deleted account's id
+ * can never be reused for a different one, or `invalid-label` when the label
+ * is empty once trimmed or longer than 120 characters.
  */
 export async function createProviderAccount(
   store: ProviderAccountStore,
@@ -113,8 +114,10 @@ export async function createProviderAccount(
   },
   now: number,
 ): Promise<ProviderAccountMutation<ProviderAccountView>> {
-  const existing = await store.find(input.id)
-  if (existing !== undefined && existing.record.deletedAt === undefined) {
+  // A deleted row keeps its id blocked rather than releasing it: reusing the
+  // id would let a fresh account silently overwrite the very record deletion
+  // promises to retain, misattributing that account's history to a stranger.
+  if (await store.find(input.id) !== undefined) {
     throw new ProviderAccountError('account-already-exists')
   }
   const label = cleanLabel(input.label)
@@ -217,8 +220,9 @@ export async function revokeProviderAccount(
  *
  * The record is retained so audit history keeps a subject, but it stops being
  * listed and its credential is destroyed first — a delete never leaves an
- * openable envelope behind. A deleted default is replaced as in
- * {@link revokeProviderAccount}.
+ * openable envelope behind. {@link createProviderAccount} refuses to reuse a
+ * deleted account's id, so the retained record can never be overwritten by an
+ * unrelated one. A deleted default is replaced as in {@link revokeProviderAccount}.
  * @param store - the deployment's account store.
  * @param userId - the tenant that must own the account.
  * @param id - the account to delete.

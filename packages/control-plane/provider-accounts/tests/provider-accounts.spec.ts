@@ -162,6 +162,25 @@ describe('provider accounts', () => {
     await create(store, 'account-1')
     await expect(create(store, 'account-1')).rejects.toMatchObject({ code: 'account-already-exists' })
   })
+
+  it('never lets a deleted id be reused, even by the tenant that owned it', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+    await deleteProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 1)
+    const retained = await store.find(ProviderAccountId('account-1'))
+
+    await expect(createProviderAccount(store, KEYRING, {
+      id: ProviderAccountId('account-1'),
+      userId: ALICE,
+      provider: DEEPSEEK,
+      label: 'replacement',
+      secret: Buffer.from('secret-replacement', 'utf8'),
+    }, NOW + 2)).rejects.toMatchObject({ code: 'account-already-exists' })
+
+    // The refusal is what protects it: a caller that reused the id would
+    // silently overwrite the very record deletion promises to retain.
+    expect(await store.find(ProviderAccountId('account-1'))).toEqual(retained)
+  })
 })
 
 describe('the paths that refuse an account', () => {
