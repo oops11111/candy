@@ -19,6 +19,7 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { ClaudeCliAdapter } from '@deepseek-ai/dsh-llm-claude-cli'
 import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
+import { openRuntimePool } from '@deepseek-ai/dsh-runtime-pool'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { bindClaudeCliRun, type ClaudeCliDeployment } from '../src/index.ts'
 import { admitFor } from './admit.ts'
@@ -70,6 +71,9 @@ let ctx: Context
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'dsh-tenant-isolation-'))
+  // The pool base is the deployment's storage; `openRuntimePool` creates a
+  // pool inside it and refuses to invent the base itself.
+  await mkdir(join(root, 'pools'), { mode: 0o700 })
   executable = join(root, 'stand-in-claude.mjs')
   await writeFile(executable, STAND_IN, 'utf8')
   ctx = new Context()
@@ -145,7 +149,7 @@ async function runFor(
   const run = await admitted(secret, overrides)
   // Creating the pool directory is the deployment's, not the binding's; a
   // launch into a directory nobody made fails at spawn.
-  await mkdir(run.poolRoot, { recursive: true, mode: 0o700 })
+  await openRuntimePool(join(root, 'pools'), run.poolKey)
   const deployment: ClaudeCliDeployment = { executable: process.execPath, graceMs: 2_000 }
   const result = bindClaudeCliRun(run, deployment, run.budget)
   if (!result.bound) throw new Error(`the fixture run would not bind: ${result.rejection}`)
@@ -181,7 +185,7 @@ async function startHangingRun(signal?: AbortSignal): Promise<{
   pids: { cli: number; child: number }
 }> {
   const run = await admitted('sk-ant-alice')
-  await mkdir(run.poolRoot, { recursive: true, mode: 0o700 })
+  await openRuntimePool(join(root, 'pools'), run.poolKey)
   const result = bindClaudeCliRun(run, { executable: process.execPath, graceMs: 2_000 }, run.budget)
   if (!result.bound) throw new Error(`the fixture run would not bind: ${result.rejection}`)
   const pidFile = join(root, 'stand-in-pids.json')

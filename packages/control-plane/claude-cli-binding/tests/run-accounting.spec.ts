@@ -19,6 +19,7 @@ import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger } from '@deepseek-ai/dsh-run-ledger'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
+import { openRuntimePool } from '@deepseek-ai/dsh-runtime-pool'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { bindClaudeCliRun } from '../src/index.ts'
 import { admitFor, BUDGET, NOW } from './admit.ts'
@@ -46,6 +47,9 @@ let ctx: Context
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'dsh-run-accounting-'))
+  // The pool base is the deployment's storage; `openRuntimePool` creates a
+  // pool inside it and refuses to invent the base itself.
+  await mkdir(join(root, 'pools'), { mode: 0o700 })
   executable = join(root, 'stand-in-claude.mjs')
   await writeFile(executable, STAND_IN, 'utf8')
   ctx = new Context()
@@ -99,7 +103,7 @@ async function invoke(run: AdmittedRun, allowance: RunBudget): Promise<{ ceiling
 describe('charging a run for what it actually spent', () => {
   it('carries the reported cost from the process into the ledger', async () => {
     const run = await admitFor(Buffer.from('sk-ant-alice', 'utf8'), join(root, 'pools'))
-    await mkdir(run.poolRoot, { recursive: true, mode: 0o700 })
+    await openRuntimePool(join(root, 'pools'), run.poolKey)
     const ledger = new RunLedger()
     ledger.openRoot(run.claims.runId, run.budget, LEASE)
 
@@ -115,7 +119,7 @@ describe('charging a run for what it actually spent', () => {
 
   it('caps a second invocation at what the first left', async () => {
     const run = await admitFor(Buffer.from('sk-ant-alice', 'utf8'), join(root, 'pools'))
-    await mkdir(run.poolRoot, { recursive: true, mode: 0o700 })
+    await openRuntimePool(join(root, 'pools'), run.poolKey)
     const ledger = new RunLedger()
     ledger.openRoot(run.claims.runId, run.budget, LEASE)
 
@@ -134,7 +138,7 @@ describe('charging a run for what it actually spent', () => {
 
   it('settles the run for everything it spent across its invocations', async () => {
     const run = await admitFor(Buffer.from('sk-ant-alice', 'utf8'), join(root, 'pools'))
-    await mkdir(run.poolRoot, { recursive: true, mode: 0o700 })
+    await openRuntimePool(join(root, 'pools'), run.poolKey)
     const ledger = new RunLedger()
     ledger.openRoot(run.claims.runId, run.budget, LEASE)
 
