@@ -58,6 +58,7 @@ const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
   'packages/control-plane/control-plane': 'Branded control-plane ids and run-ancestry record; plain type/function exports, no plugin entry.',
   'packages/control-plane/credential-vault': 'Credential sealing and admission; plain function exports, no plugin entry.',
   'packages/control-plane/execution-assertion': 'Assertion minting and admission; plain function exports, no plugin entry.',
+  'packages/control-plane/provider-accounts': 'Tenant provider-account management; plain function exports, no plugin entry.',
   'packages/control-plane/run-admission': 'Scheduling composition over the other control-plane packages; plain function exports, no plugin entry.',
   'packages/control-plane/run-budget': 'Budget arithmetic for delegation trees; plain function exports, no plugin entry.',
   'packages/control-plane/runtime-pool': 'Pool-key derivation and path containment; plain function exports, no plugin entry.',

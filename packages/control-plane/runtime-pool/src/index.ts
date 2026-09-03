@@ -21,7 +21,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { isAbsolute, join } from 'node:path'
+import { isAbsolute, join, posix } from 'node:path'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { ProviderAccountId, ProviderKind, UserId } from '@deepseek-ai/dsh-control-plane'
 
@@ -95,6 +95,7 @@ export function runtimePoolRoot(base: string, key: RuntimePoolKey): string {
   if (!isAbsolute(base)) {
     throw new RangeError(`dsh-runtime-pool: the pool base must be an absolute path, got '${base}'`)
   }
+  if (base.startsWith('/')) return posix.join(base, key)
   return join(base, key)
 }
 
