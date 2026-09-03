@@ -94,7 +94,7 @@ A conformance suite that cannot fail is worse than none, because it reports conf
 ## Further Exploration
 
 - [`dsh-llm`](../../llm/llm/README.md) — the `LlmAdapter` contract, the `StreamChunk` protocol, and the runtime that normalizes an adapter throw.
-- [`dsh-llm-deepseek`](../../llm/llm-deepseek/README.md) and [`dsh-llm-claude-cli`](../../llm/llm-claude-cli/README.md) — the two adapters that run this suite, over HTTP and over a spawned process.
+- [`dsh-llm-deepseek`](../../llm/llm-deepseek/README.md), [`dsh-llm-claude-cli`](../../llm/llm-claude-cli/README.md), and [`dsh-llm-pi-ai`](../../llm/llm-pi-ai/README.md) — every adapter on this seam runs this suite, two over HTTP and one over a spawned process.
 - [Provider adapter conformance](../../../.agents/notes/implemented/architecture/2026-09-03-llm-adapter-conformance.md) — why these properties live in a shared suite and what running it found.
 
 -----
@@ -114,7 +114,7 @@ None; this package neither assembles nor sends a provider request.
 
 These are current package constraints, not a task backlog.
 
-- **The subject supplies its own scenarios** — the suite cannot make a provider fail or hang, so an adapter whose test infrastructure cannot script those runs cannot be covered. Both current subjects script them at the transport (a mock HTTP server, a scripted process handle).
+- **The subject supplies its own scenarios** — the suite cannot make a provider fail or hang, so an adapter whose test infrastructure cannot script those runs cannot be covered. Every current subject scripts them at the transport (a mock HTTP server, a scripted process handle).
 - **A leak is found only where the secret appears verbatim** — a credential that reached a caller encoded, hashed, or truncated passes the search. The check is for the common case of a value passed through, not for an adversarial encoder.
 - **Timeout, quota, and crash are one case, not three** — the plan's fixture list names them separately, but every one of them reaches the adapter as a failed run, and the suite asserts what the adapter must do with a failure rather than how it was caused. An adapter that distinguishes them owes its own tests for the distinction.
 - **Nothing checks the chunk grammar** — that is `dsh-llm/invariant`'s job around registered streams, and duplicating it here would put the same rule in two places.
@@ -128,6 +128,5 @@ These are current package constraints, not a task backlog.
 This Dev Note is non-authoritative working context: undecided directions and notes for maintainers. Shipped behavior and accepted rationale live in the sections above, the package code, and the linked Agent Notes.
 
 - The harness parameter exists because the suite is a library, not a spec file, and vitest's globals are not available to it. If a repo-wide test-globals decision ever lands, the parameter could go.
-- `dsh-llm-pi-ai` is a third adapter on this seam and does not yet run the suite; adding it needs a scripted failing and open run against its own gateway stand-in.
 
 </details>

@@ -43,6 +43,9 @@
     },
     {
       "path": "../../util/timeout"
+    },
+    {
+      "path": "../../test-support/llm-adapter-contract"
     }
   ]
 }

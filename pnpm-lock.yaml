@@ -6318,6 +6318,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../llm
+      '@deepseek-ai/dsh-llm-adapter-contract':
+        specifier: workspace:^
+        version: link:../../test-support/llm-adapter-contract
       '@deepseek-ai/dsh-llm-deepseek':
         specifier: workspace:^
         version: link:../llm-deepseek

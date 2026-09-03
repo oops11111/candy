@@ -94,7 +94,7 @@ testLlmAdapterContract({
 ## 进一步探索
 
 - [`dsh-llm`](../../llm/llm/README.zh.md) —— `LlmAdapter` 契约、`StreamChunk` 协议，以及把适配器抛出规范化的运行时。
-- [`dsh-llm-deepseek`](../../llm/llm-deepseek/README.zh.md) 与 [`dsh-llm-claude-cli`](../../llm/llm-claude-cli/README.zh.md) —— 运行本套件的两个适配器，一个走 HTTP，一个走被启动的进程。
+- [`dsh-llm-deepseek`](../../llm/llm-deepseek/README.zh.md)、[`dsh-llm-claude-cli`](../../llm/llm-claude-cli/README.zh.md) 与 [`dsh-llm-pi-ai`](../../llm/llm-pi-ai/README.zh.md) —— 这条缝隙上的每一个适配器都运行本套件，两个走 HTTP，一个走被启动的进程。
 - [提供方适配器一致性](../../../.agents/notes/implemented/architecture/2026-09-03-llm-adapter-conformance.zh.md) —— 为什么这些性质放在一个共享套件里，以及运行它发现了什么。
 
 -----
@@ -114,7 +114,7 @@ None; this package neither assembles nor sends a provider request.
 
 以下是本包当前的约束，不是任务清单。
 
-- **场景由被测对象自己提供** —— 套件无法让一个提供方失败或挂起，因此测试设施无法编排这些运行的适配器就无法被覆盖。当前两个被测对象都在传输层编排它们（一个模拟 HTTP 服务器、一个被脚本化的进程句柄）。
+- **场景由被测对象自己提供** —— 套件无法让一个提供方失败或挂起，因此测试设施无法编排这些运行的适配器就无法被覆盖。当前每一个被测对象都在传输层编排它们（一个模拟 HTTP 服务器、一个被脚本化的进程句柄）。
 - **只有当密钥原样出现时才会被发现** —— 若凭据经过编码、哈希或截断后到达调用方，则能通过搜索。这项检查针对的是「值被原样透传」这一常见情形，而不是对抗性的编码者。
 - **超时、配额与崩溃是一个用例而不是三个** —— 计划的夹具清单把它们分开列出，但它们到达适配器时都是一次失败的运行，而套件断言的是适配器必须拿一次失败怎么办，而不是它由什么引起。要区分它们的适配器需要为该区分自备测试。
 - **不检查 chunk 文法** —— 那是 `dsh-llm/invariant` 在已注册流周围的职责，在这里重复一遍会让同一条规则出现在两个地方。
@@ -128,6 +128,5 @@ None; this package neither assembles nor sends a provider request.
 本开发备注是不具权威性的工作上下文：尚未决定的探索方向与维护者备注。已交付的行为与既定理由以上文、包代码和相关 Agent Note 为准。
 
 - harness 参数之所以存在，是因为本套件是一个库而不是 spec 文件，vitest 的全局变量对它不可用。若将来落地了仓库级的 test-globals 决定，这个参数就可以去掉。
-- `dsh-llm-pi-ai` 是这条缝隙上的第三个适配器，目前还没有运行本套件；接入它需要针对其自己的网关替身编排出失败运行与开放运行。
 
 </details>
