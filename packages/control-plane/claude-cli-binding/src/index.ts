@@ -20,7 +20,7 @@
 
 import type { ClaudeCliAdapterOptions } from '@deepseek-ai/dsh-llm-claude-cli'
 import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
-import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import { hasRemainingBudget, type RunBudget } from '@deepseek-ai/dsh-run-budget'
 
 /** Micro-USD in one US dollar, the unit `RunBudget.costMicroUsd` counts. */
 const MICRO_USD_PER_USD = 1_000_000
@@ -47,19 +47,23 @@ export interface ClaudeCliDeployment {
 export type ClaudeCliRunBinding = Omit<ClaudeCliAdapterOptions, 'spawn'>
 
 /**
- * Why an opened credential cannot become the CLI's `ANTHROPIC_API_KEY`.
+ * Why an admitted run could not be turned into a launch.
  *
- * Every value names a property of the environment variable, not of the key:
- * a variable holds no NUL, a value spanning lines reads as two variables
- * wherever an environment is rendered as text, and bytes that are not UTF-8
- * have no string form to carry.
+ * The first three name a property of the environment variable an opened
+ * credential has to become, not of the key: a variable holds no NUL, a value
+ * spanning lines reads as two variables wherever an environment is rendered as
+ * text, and bytes that are not UTF-8 have no string form to carry.
+ *
+ * `no-allowance` is the fourth: an invocation with nothing left to spend has no
+ * ceiling the CLI would accept, and the caller has already been told the run is
+ * exhausted by whatever it charged.
  */
-export type ClaudeCliCredentialRejection = 'empty' | 'not-utf8' | 'control-characters'
+export type ClaudeCliBindingRejection = 'empty' | 'not-utf8' | 'control-characters' | 'no-allowance'
 
 /** The outcome of binding an admitted run to a Claude CLI launch. */
 export type ClaudeCliBindingResult =
   | { readonly bound: true; readonly binding: ClaudeCliRunBinding }
-  | { readonly bound: false; readonly rejection: ClaudeCliCredentialRejection }
+  | { readonly bound: false; readonly rejection: ClaudeCliBindingRejection }
 
 /**
  * Decode one opened credential into the exact string an environment variable
@@ -70,7 +74,7 @@ export type ClaudeCliBindingResult =
  * of a byte authenticates as nobody, and that failure would reach an operator
  * as an unexplained provider rejection instead of a named refusal here.
  */
-function decodeCredential(secret: Uint8Array): { key: string } | { rejection: ClaudeCliCredentialRejection } {
+function decodeCredential(secret: Uint8Array): { key: string } | { rejection: ClaudeCliBindingRejection } {
   if (secret.length === 0) return { rejection: 'empty' }
   let key: string
   try {
@@ -108,6 +112,11 @@ export function bindClaudeCliRun(
   deployment: ClaudeCliDeployment,
   allowance: RunBudget,
 ): ClaudeCliBindingResult {
+  // An exhausted allowance is refused here rather than left to become a zero
+  // ceiling: `claudeCliArguments` rejects one, so a caller that binds a spent
+  // run would meet a `RangeError` from inside the adapter at stream time
+  // instead of a named refusal at the point it supplied the allowance.
+  if (!hasRemainingBudget(allowance)) return { bound: false, rejection: 'no-allowance' }
   const decoded = decodeCredential(run.secret)
   if ('rejection' in decoded) return { bound: false, rejection: decoded.rejection }
   return {

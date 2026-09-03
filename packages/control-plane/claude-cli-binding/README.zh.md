@@ -50,7 +50,7 @@ export const options: ClaudeCliAdapterOptions | undefined = result.bound
 
 ### 凭据只会被拒绝，不会被修补
 
-绑定失败只有一种情形：被打开的密钥无法成为环境变量 —— 它为空、它不是 UTF-8，或者它带有 NUL 或换行。拒绝会点名是哪一种，并且不产生任何启动。剥掉那个字节会注入一把谁也认证不了的密钥，而运维人员遇到它时会是一次无从解释的提供方拒绝，而不是这里一次具名的拒绝。
+绑定会在两种情形下失败：被打开的密钥无法成为环境变量 —— 它为空、它不是 UTF-8，或者它带有 NUL 或换行 —— 或者额度已经什么都不剩。拒绝会点名是哪一种，并且不产生任何启动。剥掉某个字节会注入一把谁也认证不了的密钥，而运维人员遇到它时会是一次无从解释的提供方拒绝，而不是这里一次具名的拒绝。
 
 ### 凭据隔离不是部署可选项
 
@@ -68,7 +68,7 @@ export const options: ClaudeCliAdapterOptions | undefined = result.bound
 
 | 文件 | 角色 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `bindClaudeCliRun`、`ClaudeCliDeployment`、`ClaudeCliRunBinding` 与各项凭据拒绝 |
+| [`src/index.ts`](src/index.ts) | `bindClaudeCliRun`、`ClaudeCliDeployment`、`ClaudeCliRunBinding` 与各项绑定拒绝 |
 | [`tests/tenant-isolation.spec.ts`](tests/tenant-isolation.spec.ts) | 端到端的整条链路：签发、准入、绑定，并运行一个会报告自己实际拿到的环境的真实进程；随后检验取消或放弃该运行会把它以及它启动的那个进程一并回收 |
 | — | 不发布运行时 invariant 伴生包；这个纯模块不拥有事件流或可变运行时数据，它组装出的值由单元测试强制。 |
 
@@ -84,7 +84,7 @@ export const options: ClaudeCliAdapterOptions | undefined = result.bound
 
 额度之所以是参数而不是运行的一个字段，是因为运行被准入时的预算只对它的第一次调用是正确的。CLI 把上限施加在一次调用上，因此这个上限必须随运行的花费而下降；一个从不计费的调用方得到的是按调用而非按运行的限额，而 README 在这里把这一点写出来，而不是留给别人去发现。
 
-被准入的运行一定还有钱：准入会拒绝已耗尽的预算，因此 `costMicroUsd` 至少是 1，上限永远不会是零。
+一份什么都不剩的额度会被拒绝，而不是被换算。`claudeCliArguments` 拒绝零上限，因此绑定一次已花光的运行的调用方，会在流开始时从适配器内部撞上一个 `RangeError`，而不是在它提供额度的地方得到一次具名的拒绝。`children` 不在考察之列 —— 没有委派名额的运行仍然可以做自己的工作。
 
 </details>
 

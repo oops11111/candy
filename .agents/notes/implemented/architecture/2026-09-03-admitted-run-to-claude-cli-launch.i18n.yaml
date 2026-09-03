@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-03-admitted-run-to-claude-cli-launch.md
-2026-09-03-admitted-run-to-claude-cli-launch.md: 19999a2ce1e97ad1efcc9d106038c591dbd0df77
-2026-09-03-admitted-run-to-claude-cli-launch.zh.md: b8c9cb221b84de5f36f7834630e797834a2f975a
+2026-09-03-admitted-run-to-claude-cli-launch.md: 308b23734df95b115aa41ef0c8e1a9ce7e422841
+2026-09-03-admitted-run-to-claude-cli-launch.zh.md: 57a0fc4f6b28f5fe37800ed018de032e2c9e3435

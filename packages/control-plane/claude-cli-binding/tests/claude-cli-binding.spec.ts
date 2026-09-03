@@ -102,6 +102,34 @@ describe('binding an admitted run to a Claude CLI launch', () => {
   })
 })
 
+describe('an allowance with nothing left', () => {
+  it('is refused rather than becoming a ceiling the CLI would reject', async () => {
+    const run = await admitted(KEY)
+
+    const result = bindClaudeCliRun(run, DEPLOYMENT, { ...run.budget, costMicroUsd: 0 })
+
+    // `claudeCliArguments` rejects a zero ceiling, so binding a spent run
+    // would surface as a RangeError from inside the adapter at stream time.
+    expect(result).toEqual({ bound: false, rejection: 'no-allowance' })
+  })
+
+  it.each([['tokens'], ['wallMs'], ['costMicroUsd']] as const)('is refused when %s is gone', async (dimension) => {
+    const run = await admitted(KEY)
+
+    expect(bindClaudeCliRun(run, DEPLOYMENT, { ...run.budget, [dimension]: 0 }))
+      .toMatchObject({ bound: false, rejection: 'no-allowance' })
+  })
+
+  it('still binds a run that has only its delegation slots spent', async () => {
+    const run = await admitted(KEY)
+
+    // A run with no child slots left can still do its own work; refusing it
+    // would confuse "cannot delegate" with "cannot proceed".
+    expect(bindClaudeCliRun(run, DEPLOYMENT, { ...run.budget, children: 0 }))
+      .toMatchObject({ bound: true })
+  })
+})
+
 describe('a credential that cannot become an environment variable', () => {
   it.each([
     ['empty', new Uint8Array(0), 'empty'],

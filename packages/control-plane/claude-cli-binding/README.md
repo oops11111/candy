@@ -50,7 +50,7 @@ The third argument is what *this invocation* may spend. A run makes one invocati
 
 ### The credential is refused, never repaired
 
-A binding fails only when the opened secret cannot be an environment variable: it is empty, it is not UTF-8, or it carries a NUL or a line break. The rejection names which, and no launch is produced. Stripping the offending byte would inject a key that authenticates as nobody, and an operator would meet that as an unexplained provider rejection instead of a named refusal here.
+A binding fails when the opened secret cannot be an environment variable — it is empty, it is not UTF-8, or it carries a NUL or a line break — or when the allowance has nothing left. The rejection names which, and no launch is produced. Stripping an offending byte would inject a key that authenticates as nobody, and an operator would meet that as an unexplained provider rejection instead of a named refusal here.
 
 ### Credential isolation is not a deployment choice
 
@@ -68,7 +68,7 @@ The binding always sets `requireCredentialIsolation`, so a run whose CLI reports
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `bindClaudeCliRun`, `ClaudeCliDeployment`, `ClaudeCliRunBinding`, and the credential rejections |
+| [`src/index.ts`](src/index.ts) | `bindClaudeCliRun`, `ClaudeCliDeployment`, `ClaudeCliRunBinding`, and the binding rejections |
 | [`tests/tenant-isolation.spec.ts`](tests/tenant-isolation.spec.ts) | The chain end to end: mint, admit, bind, and run a real process that reports the environment it was handed, then check that cancelling or abandoning the run reaps it and the process it started |
 | — | No runtime invariant companion is published; this pure module owns no event stream or mutable runtime data, and the values it assembles are enforced by unit tests. |
 
@@ -84,7 +84,7 @@ The pool root is absolute by construction: `runtimePoolRoot` refuses a relative 
 
 The allowance is a parameter rather than a field of the run because the run's admitted budget is only correct for its first invocation. The CLI applies its ceiling to one invocation, so the ceiling has to fall as the run spends; a caller that never charges is left with a per-call limit instead of a per-run one, which the README says here rather than leaving to be discovered.
 
-An admitted run always has money left: admission denies an exhausted budget, so `costMicroUsd` is at least 1 and the ceiling is never zero.
+An allowance with nothing left is refused rather than converted. `claudeCliArguments` rejects a zero ceiling, so a caller that binds a spent run would meet a `RangeError` from inside the adapter at stream time instead of a named refusal where it supplied the allowance. `children` is not consulted — a run with no delegation slots left can still do its own work.
 
 </details>
 

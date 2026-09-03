@@ -22,6 +22,8 @@ A run makes one invocation per model call, and the CLI applies `--max-budget-usd
 
 This came from asking how the binding composes with the ledger, not from a failing test. The case that pins it now runs two real invocations and reads the ceiling out of the second process's own arguments.
 
+Making the allowance a parameter also removed a guarantee admission used to supply, so an allowance with nothing left is refused here by name. `claudeCliArguments` rejects a zero ceiling, and without the check a caller that bound a spent run would meet a `RangeError` from inside the adapter at stream time rather than a refusal where it chose the allowance.
+
 ### Credential isolation is not configurable here
 
 `ClaudeCliAdapterOptions.requireCredentialIsolation` is a boolean a deployment sets. This binding always sets it. Every run reaching this module was admitted for exactly one tenant, so a run whose CLI reports authenticating with anything other than the injected key is spending a tenant that did not authorize it. That is a security invariant of the multi-tenant case, and the rule against hardcoded tunables exempts exactly those.

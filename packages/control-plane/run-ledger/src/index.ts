@@ -215,8 +215,7 @@ export class RunLedger {
     if (record === undefined) return { ok: false, rejection: { reason: 'unknown-run', runId } }
     const next: RunRecord = { ...record, spent: plus(record.spent, spend) }
     this.records.set(runId, next)
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- the record was just written under this id
-    const available = this.remaining(runId)!
+    const available = this.allowanceOf(next)
     const exhausted: BudgetDimension[] = (['tokens', 'wallMs', 'costMicroUsd'] as const)
       .filter(dimension => available[dimension] === 0)
     return { ok: true, value: { record: next, exhausted } }
@@ -293,20 +292,7 @@ export class RunLedger {
    */
   remaining(runId: RunId): RunBudget | undefined {
     const record = this.records.get(runId)
-    if (record === undefined) return undefined
-    let held = record.spent
-    let slots = record.reserved.children
-    for (const child of this.records.values()) {
-      if (child.parentRunId !== runId) continue
-      held = plus(held, child.reserved)
-      slots -= 1
-    }
-    return {
-      tokens: Math.max(0, record.reserved.tokens - held.tokens),
-      wallMs: Math.max(0, record.reserved.wallMs - held.wallMs),
-      costMicroUsd: Math.max(0, record.reserved.costMicroUsd - held.costMicroUsd),
-      children: Math.max(0, slots),
-    }
+    return record === undefined ? undefined : this.allowanceOf(record)
   }
 
   /**
@@ -326,6 +312,23 @@ export class RunLedger {
     return [...this.records.values()]
   }
 
+  /** What one open record may still spend, with every open child's hold taken out. */
+  private allowanceOf(record: RunRecord): RunBudget {
+    let held = record.spent
+    let slots = record.reserved.children
+    for (const child of this.records.values()) {
+      if (child.parentRunId !== record.runId) continue
+      held = plus(held, child.reserved)
+      slots -= 1
+    }
+    return {
+      tokens: Math.max(0, record.reserved.tokens - held.tokens),
+      wallMs: Math.max(0, record.reserved.wallMs - held.wallMs),
+      costMicroUsd: Math.max(0, record.reserved.costMicroUsd - held.costMicroUsd),
+      children: Math.max(0, slots),
+    }
+  }
+
   /** Close one record with its descendants and release its hold on its parent. */
   private settle(record: RunRecord): RunSettlement {
     const closed: RunId[] = []
@@ -339,9 +342,9 @@ export class RunLedger {
     // reach a child whose parent it already settled.
     // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
     const parent = this.records.get(record.parentRunId)!
-    this.records.set(parent.runId, { ...parent, spent: plus(parent.spent, cappedAt(spent, record.reserved)) })
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- the parent was just written under its own id
-    return { runId: record.runId, spent, closed, parentRemaining: this.remaining(parent.runId)! }
+    const settledParent: RunRecord = { ...parent, spent: plus(parent.spent, cappedAt(spent, record.reserved)) }
+    this.records.set(parent.runId, settledParent)
+    return { runId: record.runId, spent, closed, parentRemaining: this.allowanceOf(settledParent) }
   }
 
   /**
