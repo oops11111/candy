@@ -125,6 +125,24 @@ describe('settleChild', () => {
 
     expect(settleChild(reservation.parent, reservation.child, spend())).toEqual(parent)
   })
+
+  it('refuses to return a budget outside the safe integer range', () => {
+    expect(() => {
+      settleChild(
+        budget({ children: Number.MAX_SAFE_INTEGER }),
+        budget({ tokens: 0, wallMs: 0, costMicroUsd: 0, children: 0 }),
+        spend(),
+      )
+    }).toThrow(/settled\.children/)
+
+    expect(() => {
+      settleChild(
+        budget({ tokens: Number.MAX_SAFE_INTEGER }),
+        budget({ tokens: 1, wallMs: 0, costMicroUsd: 0, children: 0 }),
+        spend(),
+      )
+    }).toThrow(/settled\.tokens/)
+  })
 })
 
 describe('chargeRun', () => {
