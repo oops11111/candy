@@ -57,6 +57,11 @@ export interface WireResult {
   terminal_reason?: string
   result?: string
   usage?: WireUsage
+  /**
+   * What the CLI billed for the whole invocation, in US dollars, including the
+   * auxiliary models it ran for itself. Only a `result` frame reports one.
+   */
+  total_cost_usd?: number
   session_id?: string
 }
 

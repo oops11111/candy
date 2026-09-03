@@ -37,6 +37,9 @@ describe('a recorded text turn', () => {
           cacheReadTokens: 3289,
           cacheWriteTokens: 8273,
           reasoningTokens: 0,
+          // 0.0347348 USD, the recorded run's own billed total across every
+          // model the CLI ran for it.
+          costMicroUsd: 34_735,
         },
       },
       { type: 'finish', reason: { kind: 'stop' } },
@@ -77,6 +80,14 @@ describe('a recorded authentication failure', () => {
         },
       },
     })
+  })
+
+  it('reports the failed run as having cost nothing, rather than reporting nothing', () => {
+    const usage = replay('auth-failure.jsonl').find(chunk => chunk.type === 'usage')
+
+    // The CLI billed zero for a run whose every request was refused. A charge
+    // of zero and an unknown charge are different facts to a budget.
+    expect(usage).toMatchObject({ usage: { costMicroUsd: 0 } })
   })
 
   it('does not report the failure text as model output', () => {

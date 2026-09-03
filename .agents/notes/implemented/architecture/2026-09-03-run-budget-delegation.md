@@ -44,7 +44,7 @@ A negative, fractional, or unsafe-integer budget is a storage or arithmetic defe
 
 R3's second bullet is now depth (inherited), grants (inherited), and budgets (here), which is a smaller remaining scope than the bullet implied. The scheduler that persists a run's remaining allowance and refuses to start an exhausted run is still unbuilt, and this module deliberately does not reach for it: it is arithmetic over values a caller holds, with no store, no clock, and no service.
 
-Two consequences are worth stating because they bind other work. `wallMs` is charged by the caller, so a run that never charges its elapsed time is never stopped for exceeding it. And `costMicroUsd` is enforceable only if something computes cost — `TokenUsage` carries none, and `dsh-llm-claude-cli` drops the CLI's own `total_cost_usd` for exactly that reason, so today a caller must price tokens itself. Both are recorded as limitations rather than implied as working.
+Two consequences are worth stating because they bind other work. `wallMs` is charged by the caller, so a run that never charges its elapsed time is never stopped for exceeding it. And `costMicroUsd` is enforceable only where something reports cost: `TokenUsage.costMicroUsd` now carries a provider-reported figure and `dsh-llm-claude-cli` supplies it, while an HTTP route reports none and leaves a caller pricing tokens itself. Both are recorded as limitations rather than implied as working.
 
 A reservation is also not a lease: nothing expires an unsettled one, so a child lost without settling holds its parent's allowance until a caller reconciles it. That needs the durable run records R3 owns.
 

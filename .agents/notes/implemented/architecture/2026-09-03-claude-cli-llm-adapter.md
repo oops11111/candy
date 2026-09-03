@@ -44,7 +44,7 @@ The protocol package can say whether the CLI authenticated with the injected key
 
 ## Consequences
 
-The route is genuinely usable for one-shot calls and genuinely unusable for the loop, and the README says so in those words. Two costs follow. Cost accounting is lost: the terminal frame's `total_cost_usd` includes the CLI's own auxiliary calls and `TokenUsage` has no field for it, so `maxBudgetUsd` can cap a run without reporting what it spent. And retry classification is absent: every failure maps to `CLI_EXIT` or the CLI's own `terminal_reason`, while the CLI additionally retries internally before reporting — invisible to `dsh-llm-retry`.
+The route is genuinely usable for one-shot calls and genuinely unusable for the loop, and the README says so in those words. Two costs follow. Cost accounting is terminal-only: the usage chunk carries the terminal frame's `total_cost_usd` as `costMicroUsd`, so a run that dies before that frame reports no cost however much it spent, and `maxBudgetUsd` caps a run independently of what is reported. And retry classification is absent: every failure maps to `CLI_EXIT` or the CLI's own `terminal_reason`, while the CLI additionally retries internally before reporting — invisible to `dsh-llm-retry`.
 
 The composition test opts out of the isolation default, because the only fixture with model output was recorded without `--bare` and therefore reports an ambient credential. That is recorded as a Dev Note rather than hidden: recording an isolated successful run needs an API key, and the machine that produced these fixtures had only an OAuth session, which `--bare` deliberately ignores. The default itself is covered — a separate composition test asserts that it refuses exactly that fixture.
 

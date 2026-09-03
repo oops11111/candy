@@ -130,9 +130,9 @@ A negative, fractional, or unsafe-integer budget is a storage or arithmetic defe
 
 These are current package constraints, not a task backlog.
 
-- **Nothing stores or enforces a budget** — this is arithmetic over values a caller holds. Persisting a run's remaining allowance, reloading it, and refusing to schedule an exhausted run belong to the scheduler and run store that R3 has not built.
+- **Nothing here stores a budget** — this is arithmetic over values a caller holds. [`dsh-run-admission`](../run-admission/README.md) already refuses to start a run whose budget is exhausted, but persisting a run's remaining allowance and reloading it belong to the run store R3 has not built.
 - **No wall-clock source** — `wallMs` is a number the caller measures and charges. Nothing here reads a clock, so a run that never charges its elapsed time is never stopped for exceeding it.
-- **Cost must be supplied, and the adapters cannot supply it** — `costMicroUsd` is enforceable only if something computes it. `TokenUsage` carries no cost, and [`dsh-llm-claude-cli`](../../llm/llm-claude-cli/README.md) drops the CLI's own `total_cost_usd`, so today a caller must price tokens itself.
+- **Only one route reports cost** — `TokenUsage.costMicroUsd` carries a provider-reported figure, and [`dsh-llm-claude-cli`](../../llm/llm-claude-cli/README.md) is the one route that supplies it. A caller charging `costMicroUsd` against an HTTP route still prices tokens itself, and nothing folds the reported figure into a durable total.
 - **A reservation is not a lease** — nothing expires an unsettled reservation, so a child that is lost without settling holds its parent's allowance until the caller reconciles it. A crash-safe hold needs the durable run records R3 owns.
 - **One tree, not a tenant** — these operations bound a delegation tree beneath one run. A tenant-wide cap across concurrent unrelated runs is a different accounting seam and is not this one.
 - **No Cordis service** — nothing here registers on a `Context`; it is imported directly, like `dsh-brand`.

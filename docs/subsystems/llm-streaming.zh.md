@@ -320,7 +320,7 @@ interface AppIdentity {
 
 ## `TokenUsage`
 
-逐调用 token 记账。各计数**互不重叠**：`inputTokens` 只包含未缓存输入；缓存输入单独报告，计费输入是三者之和。若提供方把缓存命中折入单一提示词总数（如 DeepSeek 的 `prompt_tokens`），适配器会再将其扣除。可选的 `totalTokens` 是精确的提示词与输出聚合计数，由适配器保留提供方原值或从权威聚合计数重建；不可用或不一致时省略。`reasoningTokens` 存在时只是信息性细节，已经包含在 `outputTokens` 中；汇总时不得重复相加。
+逐调用 token 记账。各计数**互不重叠**：`inputTokens` 只包含未缓存输入；缓存输入单独报告，计费输入是三者之和。若提供方把缓存命中折入单一提示词总数（如 DeepSeek 的 `prompt_tokens`），适配器会再将其扣除。可选的 `totalTokens` 是精确的提示词与输出聚合计数，由适配器保留提供方原值或从权威聚合计数重建；不可用或不一致时省略。`reasoningTokens` 存在时只是信息性细节，已经包含在 `outputTokens` 中；汇总时不得重复相加。可选的 `costMicroUsd` 是提供方自己为整次调用计费的金额，只有当它报告时才携带 —— 适配器绝不为它旁边的那些计数定价，因此字段缺席意味着提供方保持了沉默，而不是这次调用免费。
 
 ```ts type-equiv
 /**
@@ -345,6 +345,21 @@ interface TokenUsage {
   cacheReadTokens?: number
   cacheWriteTokens?: number
   reasoningTokens?: number
+  /**
+   * What the provider says this call cost, in integer micro-USD.
+   *
+   * Present only when the provider reports a billed figure of its own. An
+   * adapter never derives one from a price list: a computed number would be
+   * indistinguishable from a reported one and wrong wherever the deployment's
+   * contract is not list price. Absent therefore means "not reported", which
+   * is not the same as zero, and a consumer that treats it as zero undercounts
+   * every provider that stays silent.
+   *
+   * The figure is the provider's total for the whole call, so a provider that
+   * runs auxiliary models of its own bills those here too; it is not the price
+   * of the counts in this same object.
+   */
+  costMicroUsd?: number
 }
 ```
 
