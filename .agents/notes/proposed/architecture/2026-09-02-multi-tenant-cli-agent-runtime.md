@@ -122,7 +122,7 @@ Adapters implement the inherited `dsh-llm` seam rather than a Candy-owned one. `
 
 ### R4 — Harness Web and account configuration
 
-- [ ] Add provider-account list, create, validate, select-default, revoke, and delete APIs with ownership checks.
+- [x] Add provider-account list, create, validate, select-default, revoke, and delete APIs with ownership checks ([`dsh-provider-accounts`](../../implemented/architecture/2026-09-03-provider-account-management.md)); the Web controller and provider-specific validation probes remain.
 - [ ] Extend the existing Harness Web settings for DeepSeek API keys and server-side Claude CLI and Codex CLI login states; verify the same routes at desktop and mobile viewport sizes.
 - [ ] Reuse the Harness theme and brand-slot plugins; remove any Candy-specific palette, theme selector, duplicated layout, or separate mobile surface.
 - [ ] Expose safe diagnostics without returning tokens, credential paths, raw environment values, or another tenant's metadata.

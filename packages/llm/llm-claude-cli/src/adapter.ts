@@ -151,14 +151,14 @@ export class ClaudeCliAdapter extends LlmAdapter {
       signal,
       env: claudeCliEnvironment(this.options.isolation),
     })
-    const stdout = child.stdout
-    if (stdout === undefined) throw new LlmError('claude CLI stdout was not piped', CLI_EXIT_CODE)
 
     // Set before every return, and read by the finally below: a consumer that
     // stops iterating closes this generator part-way through, and the CLI it
     // abandons is still running with nothing else to reap it.
     let completed = false
     try {
+      const stdout = child.stdout
+      if (stdout === undefined) throw new LlmError('claude CLI stdout was not piped', CLI_EXIT_CODE)
       yield* this.readRun(child, stdout, signal)
       completed = true
     } finally {

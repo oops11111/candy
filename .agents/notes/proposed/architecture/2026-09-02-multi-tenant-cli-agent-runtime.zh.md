@@ -122,7 +122,7 @@ flowchart LR
 
 ### R4 — Harness Web and account configuration
 
-- [ ] 增加提供方账户列表、创建、验证、默认选择、撤销和删除 API，并执行所有权检查。
+- [x] 增加提供方账户列表、创建、验证、默认选择、撤销和删除 API，并执行所有权检查（[`dsh-provider-accounts`](../../implemented/architecture/2026-09-03-provider-account-management.zh.md)）；Web controller 与各提供方验证探测仍未构建。
 - [ ] 扩展现有 Harness Web 设置以管理 DeepSeek API 密钥以及服务器端 Claude CLI 和 Codex CLI 登录状态；在桌面和手机视口尺寸下验证相同路由。
 - [ ] 复用 Harness 主题和品牌 slot 插件；移除 Candy 专用调色板、主题选择器、重复布局或独立手机界面。
 - [ ] 提供安全诊断，但不返回 token、凭据路径、原始环境值或其他租户的元数据。
