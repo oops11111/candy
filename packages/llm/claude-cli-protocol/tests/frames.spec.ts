@@ -41,6 +41,16 @@ describe('mapUsage', () => {
     expect(mapUsage({ input_tokens: 1.5, output_tokens: 2 })).not.toHaveProperty('totalTokens')
     expect(mapUsage({ input_tokens: -1, output_tokens: 2 })).not.toHaveProperty('totalTokens')
   })
+
+  it('does not surface invalid counters on the public usage fields', () => {
+    expect(mapUsage({
+      input_tokens: -1,
+      output_tokens: 1.5,
+      cache_read_input_tokens: Number.MAX_SAFE_INTEGER + 1,
+      cache_creation_input_tokens: -2,
+      output_tokens_details: { thinking_tokens: -3 },
+    })).toEqual({ inputTokens: 0, outputTokens: 0 })
+  })
 })
 
 describe('mapFinish', () => {

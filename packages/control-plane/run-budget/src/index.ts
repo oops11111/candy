@@ -187,12 +187,14 @@ export function settleChild(parent: RunBudget, reserved: RunBudget, spent: RunSp
   assertRunBudget(parent, 'parent')
   assertRunBudget(reserved, 'reserved')
   assertRunSpend(spent, 'spent')
-  return {
+  const settled = {
     tokens: parent.tokens + Math.max(0, reserved.tokens - spent.tokens),
     wallMs: parent.wallMs + Math.max(0, reserved.wallMs - spent.wallMs),
     costMicroUsd: parent.costMicroUsd + Math.max(0, reserved.costMicroUsd - spent.costMicroUsd),
     children: parent.children + 1,
   }
+  assertRunBudget(settled, 'settled')
+  return settled
 }
 
 /**

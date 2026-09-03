@@ -254,16 +254,18 @@ describe('credential isolation', () => {
 describe('a process the seam gave no stdout pipe', () => {
   it('fails the run rather than reading nothing', async () => {
     const { spawn } = fakeSpawn()
+    let terminated = false
     const instance = new ClaudeCliAdapter({
       executable: '/usr/bin/claude',
       cwd: '/workspace',
       isolation: ISOLATION,
       graceMs: 5_000,
-      spawn: spec => ({ ...spawn(spec), stdout: undefined }),
+      spawn: spec => ({ ...spawn(spec), stdout: undefined, terminate: () => { terminated = true } }),
       requireCredentialIsolation: false,
     })
 
     await expect(collect(instance.stream(request()))).rejects.toThrow(/stdout was not piped/)
+    expect(terminated).toBe(true)
   })
 })
 

@@ -87,20 +87,24 @@ function closeBlock(block: OpenBlock): ContentBlock {
 export function mapUsage(usage: WireUsage): TokenUsage {
   const input = usage.input_tokens ?? 0
   const output = usage.output_tokens ?? 0
-  const cacheRead = usage.cache_read_input_tokens
-  const cacheWrite = usage.cache_creation_input_tokens
-  const reasoning = usage.output_tokens_details?.thinking_tokens
+  const cacheRead = validCount(usage.cache_read_input_tokens)
+  const cacheWrite = validCount(usage.cache_creation_input_tokens)
+  const reasoning = validCount(usage.output_tokens_details?.thinking_tokens)
   const parts = [input, output, cacheRead ?? 0, cacheWrite ?? 0]
   const total = parts.reduce((sum, part) => sum + part, 0)
   const exact = parts.every(part => Number.isSafeInteger(part) && part >= 0) && Number.isSafeInteger(total)
   return {
-    inputTokens: input,
-    outputTokens: output,
+    inputTokens: validCount(input) ?? 0,
+    outputTokens: validCount(output) ?? 0,
     ...exact ? { totalTokens: total } : {},
     ...cacheRead === undefined ? {} : { cacheReadTokens: cacheRead },
     ...cacheWrite === undefined ? {} : { cacheWriteTokens: cacheWrite },
     ...reasoning === undefined ? {} : { reasoningTokens: reasoning },
   }
+}
+
+function validCount(count: number | undefined): number | undefined {
+  return count !== undefined && Number.isSafeInteger(count) && count >= 0 ? count : undefined
 }
 
 /**
