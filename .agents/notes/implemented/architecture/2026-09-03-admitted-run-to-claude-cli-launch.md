@@ -12,9 +12,15 @@ The gap is not a missing feature; it is where the mistake would happen. Every fi
 
 ## Decision
 
-`bindClaudeCliRun(run, deployment)` is the whole package. Its only run-specific argument is the admitted run, so every tenant-varying value is read from one object that was proven consistent by admission: the pool root becomes `HOME` and the working directory, the opened secret becomes the API key, the budget's `costMicroUsd` becomes the dollar ceiling.
+`bindClaudeCliRun(run, deployment, allowance)` is the whole package. Every tenant-varying value is read from the admitted run, one object proven consistent by admission: the pool root becomes `HOME` and the working directory, and the opened secret becomes the API key. The allowance's `costMicroUsd` becomes the dollar ceiling, and it is separate for the reason below.
 
 The deployment argument carries what every tenant on a host shares — the executable path and the process-tree termination grace — and nothing else. A field belongs there only if it cannot vary between tenants, which is what keeps the argument from growing back into the hand-wiring it replaced.
+
+### The ceiling is per invocation, so the allowance is a parameter
+
+A run makes one invocation per model call, and the CLI applies `--max-budget-usd` to the invocation in front of it. Binding every call to the admitted budget would therefore give a run a per-call limit rather than a per-run one: it could spend its whole allowance once per call and nothing would stop it. The allowance is a third argument for that reason — a caller holding a `dsh-run-ledger` record passes that record's remaining allowance, and a run's first invocation passes `run.budget`.
+
+This came from asking how the binding composes with the ledger, not from a failing test. The case that pins it now runs two real invocations and reads the ceiling out of the second process's own arguments.
 
 ### Credential isolation is not configurable here
 
@@ -37,6 +43,8 @@ The path from a token to a running provider process is now continuous: mint, adm
 Nothing boots this yet. The scheduler that would hold one admitted run per adapter instance is R3 work that has not shipped, and the README says so rather than implying a wired path. What exists is the composition and its tests, which is what makes the next step assembly rather than design.
 
 The isolation claim is checked against an operating system rather than against objects. `tests/tenant-isolation.spec.ts` mints an assertion, admits it, binds it, and spawns a real process through `dsh-subprocess`; a stand-in executable reports the `HOME`, working directory, key, and spend ceiling it was actually handed. Two tenants get two homes and neither process can see the other's secret, and an ambient `CLAUDE_CODE_USE_BEDROCK` or `ANTHROPIC_BASE_URL` does not reach the child while an ordinary ambient variable does — so the tombstoning is observed rather than assumed. Reverting the home to a constant fails two of those cases and turning credential isolation off fails a third, which is what makes them evidence.
+
+`tests/run-accounting.spec.ts` closes the loop the other way: it opens the run in a `dsh-run-ledger`, launches it, charges the ledger with the usage and cost the process reported, and settles it. Reverting the ceiling to the admitted budget fails exactly the case that runs a second invocation.
 
 The same harness checks that a run leaves nothing behind. A stand-in told to start a child of its own and then hang is cancelled in one case and abandoned mid-stream in another; both the CLI and the process it started must become unaddressable. The two cases pin different mechanisms and fail independently: removing the adapter's `terminate()` on an abandoned generator fails only the abandonment case, and withholding the caller's signal from the spawn fails only the cancellation one. Killing the CLI alone is not enough — a plain child outlives its parent and is reparented, which is checked rather than assumed.
 

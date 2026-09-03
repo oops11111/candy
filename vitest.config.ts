@@ -145,6 +145,7 @@ const processBoundTests = [
   'packages/llm/llm-pi-ai/tests/adapter.spec.ts',
   'packages/boot/app-boot/tests/app-boot.spec.ts',
   'packages/control-plane/claude-cli-binding/tests/tenant-isolation.spec.ts',
+  'packages/control-plane/claude-cli-binding/tests/run-accounting.spec.ts',
   'packages/workflow/workflow-worker-thread/tests/session.spec.ts',
 ]
 

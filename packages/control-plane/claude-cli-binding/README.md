@@ -36,7 +36,8 @@ import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
 declare const run: AdmittedRun
 declare const spawn: ClaudeCliAdapterOptions['spawn']
 
-const result = bindClaudeCliRun(run, { executable: '/opt/candy/bin/claude', graceMs: 5_000 })
+const deployment = { executable: '/opt/candy/bin/claude', graceMs: 5_000 }
+const result = bindClaudeCliRun(run, deployment, run.budget)
 
 export const options: ClaudeCliAdapterOptions | undefined = result.bound
   ? { ...result.binding, spawn }
@@ -44,6 +45,8 @@ export const options: ClaudeCliAdapterOptions | undefined = result.bound
 ```
 
 The deployment supplies only what every tenant on the host shares — the executable path and the termination grace. Everything that differs between tenants is read from the run.
+
+The third argument is what *this invocation* may spend. A run makes one invocation per model call and the CLI enforces its ceiling per invocation, so a run whose every call carried the admitted budget could spend that budget once per call. A caller holding a [`dsh-run-ledger`](../run-ledger/README.md) record passes that record's remaining allowance; a run's first invocation passes `run.budget`.
 
 ### The credential is refused, never repaired
 
@@ -77,7 +80,9 @@ The pool root is absolute by construction: `runtimePoolRoot` refuses a relative 
 
 ### Why the spend ceiling is derived rather than configured
 
-`RunBudget.costMicroUsd` is what the tenant may spend, in integer micro-USD; the CLI's `--max-budget` is US dollars. Dividing at this one place keeps the integer arithmetic in the budget and the dollar figure at the process argument. A deployment-configured ceiling would be a second limit that could disagree with the admitted one, and the disagreement would be discovered as a bill.
+`RunBudget.costMicroUsd` is what may be spent, in integer micro-USD; the CLI's `--max-budget` is US dollars. Dividing at this one place keeps the integer arithmetic in the budget and the dollar figure at the process argument. A deployment-configured ceiling would be a second limit that could disagree with the admitted one, and the disagreement would be discovered as a bill.
+
+The allowance is a parameter rather than a field of the run because the run's admitted budget is only correct for its first invocation. The CLI applies its ceiling to one invocation, so the ceiling has to fall as the run spends; a caller that never charges is left with a per-call limit instead of a per-run one, which the README says here rather than leaving to be discovered.
 
 An admitted run always has money left: admission denies an exhausted budget, so `costMicroUsd` is at least 1 and the ceiling is never zero.
 

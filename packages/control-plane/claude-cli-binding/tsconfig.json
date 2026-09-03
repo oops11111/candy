@@ -12,6 +12,7 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../run-admission" },
     { "path": "../run-budget" },
+    { "path": "../run-ledger" },
     { "path": "../runtime-pool" },
     { "path": "../credential-vault" },
     { "path": "../execution-assertion" },

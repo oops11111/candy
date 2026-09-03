@@ -29,7 +29,8 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-llm-claude-cli": "workspace:^",
-    "@deepseek-ai/dsh-run-admission": "workspace:^"
+    "@deepseek-ai/dsh-run-admission": "workspace:^",
+    "@deepseek-ai/dsh-run-budget": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -41,6 +42,7 @@
     "@deepseek-ai/dsh-llm-claude-cli": "workspace:^",
     "@deepseek-ai/dsh-run-admission": "workspace:^",
     "@deepseek-ai/dsh-run-budget": "workspace:^",
+    "@deepseek-ai/dsh-run-ledger": "workspace:^",
     "@deepseek-ai/dsh-runtime-pool": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-subprocess": "workspace:^",

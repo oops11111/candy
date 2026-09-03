@@ -20,6 +20,7 @@
 
 import type { ClaudeCliAdapterOptions } from '@deepseek-ai/dsh-llm-claude-cli'
 import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
+import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 
 /** Micro-USD in one US dollar, the unit `RunBudget.costMicroUsd` counts. */
 const MICRO_USD_PER_USD = 1_000_000
@@ -89,13 +90,24 @@ function decodeCredential(secret: Uint8Array): { key: string } | { rejection: Cl
  * `runtimePoolRoot` refuses a relative base, so every admitted run carries an
  * absolute one and this module does not re-check it.
  *
- * @param run - the admitted run, whose pool root, secret, and budget supply
- *   every tenant-varying value.
+ * @param run - the admitted run, whose pool root and secret supply the tenant
+ *   identity this launch runs under.
  * @param deployment - the host facts a run does not carry.
+ * @param allowance - what THIS invocation may spend, which becomes the CLI's
+ *   own ceiling. A run makes one invocation per model call, and the CLI
+ *   enforces the ceiling per invocation, so passing the admitted budget every
+ *   time would let one run spend its whole allowance once per call. A caller
+ *   holding a `dsh-run-ledger` record passes that record's remaining
+ *   allowance; a caller making a run's first and only invocation passes
+ *   `run.budget`.
  * @returns the launch facts, or the reason the opened credential cannot be
  *   injected.
  */
-export function bindClaudeCliRun(run: AdmittedRun, deployment: ClaudeCliDeployment): ClaudeCliBindingResult {
+export function bindClaudeCliRun(
+  run: AdmittedRun,
+  deployment: ClaudeCliDeployment,
+  allowance: RunBudget,
+): ClaudeCliBindingResult {
   const decoded = decodeCredential(run.secret)
   if ('rejection' in decoded) return { bound: false, rejection: decoded.rejection }
   return {
@@ -109,7 +121,7 @@ export function bindClaudeCliRun(run: AdmittedRun, deployment: ClaudeCliDeployme
       cwd: run.poolRoot,
       isolation: { home: run.poolRoot, apiKey: decoded.key },
       graceMs: deployment.graceMs,
-      maxBudgetUsd: run.budget.costMicroUsd / MICRO_USD_PER_USD,
+      maxBudgetUsd: allowance.costMicroUsd / MICRO_USD_PER_USD,
       // Not a deployment choice. A run that authenticated with anything but the
       // injected key is spending a tenant that did not authorize it, and every
       // run reaching this module was admitted for exactly one tenant.

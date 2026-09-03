@@ -36,7 +36,8 @@ import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
 declare const run: AdmittedRun
 declare const spawn: ClaudeCliAdapterOptions['spawn']
 
-const result = bindClaudeCliRun(run, { executable: '/opt/candy/bin/claude', graceMs: 5_000 })
+const deployment = { executable: '/opt/candy/bin/claude', graceMs: 5_000 }
+const result = bindClaudeCliRun(run, deployment, run.budget)
 
 export const options: ClaudeCliAdapterOptions | undefined = result.bound
   ? { ...result.binding, spawn }
@@ -44,6 +45,8 @@ export const options: ClaudeCliAdapterOptions | undefined = result.bound
 ```
 
 部署只提供该主机上每个租户共享的那些值 —— 可执行文件路径和终止宽限时间。一切在租户之间有差异的值都从运行里读取。
+
+第三个参数是*这一次调用*可以花的额度。一次运行每做一次模型调用就发起一次调用，而 CLI 是按调用强制它的上限的，因此一次每回都带着被准入预算的运行，可以每调用一次就花掉一遍那份预算。持有 [`dsh-run-ledger`](../run-ledger/README.zh.md) 记录的调用方传入该记录的剩余额度；一次运行的第一次调用传入 `run.budget`。
 
 ### 凭据只会被拒绝，不会被修补
 
@@ -77,7 +80,9 @@ export const options: ClaudeCliAdapterOptions | undefined = result.bound
 
 ### 为什么花费上限是推导出来的而不是配置出来的
 
-`RunBudget.costMicroUsd` 是租户可以花的额度，单位是整数微美元；而 CLI 的 `--max-budget` 单位是美元。在这一处做除法，让整数算术留在预算里，让美元数字留在进程参数上。一个由部署配置的上限会是第二个限额，它可能与被准入的那个不一致，而这种不一致会以一张账单的形式被发现。
+`RunBudget.costMicroUsd` 是可以花的额度，单位是整数微美元；而 CLI 的 `--max-budget` 单位是美元。在这一处做除法，让整数算术留在预算里，让美元数字留在进程参数上。一个由部署配置的上限会是第二个限额，它可能与被准入的那个不一致，而这种不一致会以一张账单的形式被发现。
+
+额度之所以是参数而不是运行的一个字段，是因为运行被准入时的预算只对它的第一次调用是正确的。CLI 把上限施加在一次调用上，因此这个上限必须随运行的花费而下降；一个从不计费的调用方得到的是按调用而非按运行的限额，而 README 在这里把这一点写出来，而不是留给别人去发现。
 
 被准入的运行一定还有钱：准入会拒绝已耗尽的预算，因此 `costMicroUsd` 至少是 1，上限永远不会是零。
 

@@ -1,75 +1,16 @@
-import { brandString } from '@deepseek-ai/dsh-brand'
-import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
-import {
-  CredentialKeyVersion,
-  sealCredential,
-  type CredentialKeyring,
-} from '@deepseek-ai/dsh-credential-vault'
-import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
-import { admitRun, type AdmittedRun, type RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
-import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { UserId } from '@deepseek-ai/dsh-control-plane'
+import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
 import { describe, expect, it } from 'vitest'
 import { bindClaudeCliRun, type ClaudeCliDeployment } from '../src/index.ts'
-
-const ASSERTION_SECRET = Buffer.alloc(32, 3)
-const KEY_VERSION = CredentialKeyVersion('2026-09-a')
-const NOW = 1_800_000_000_000
-const LIFETIME = 60_000
+import { admitFor } from './admit.ts'
 const POOL_BASE = '/srv/candy/pools'
-const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 2_500_000, children: 4 }
-
 const DEPLOYMENT: ClaudeCliDeployment = { executable: '/opt/candy/bin/claude', graceMs: 5_000 }
 
-const EXPECTATION = {
-  issuer: 'candy-control-plane',
-  audience: 'candy-runtime-debian-1',
-  maxLifetimeMs: LIFETIME,
-} as const
-
-const KEYRING: CredentialKeyring = {
-  currentVersion: KEY_VERSION,
-  keys: new Map([[KEY_VERSION, Buffer.alloc(32, 5)]]),
+/** Admit one run against a fixed pool base; no case here touches the filesystem. */
+async function admitted(secret: Uint8Array, overrides: Parameters<typeof admitFor>[2] = {}): Promise<AdmittedRun> {
+  return admitFor(secret, POOL_BASE, overrides)
 }
 
-function claims(overrides: Partial<ExecutionAssertionClaims> = {}): ExecutionAssertionClaims {
-  return {
-    issuer: EXPECTATION.issuer,
-    audience: EXPECTATION.audience,
-    userId: UserId('user-alice'),
-    deviceId: DeviceId('device-1'),
-    accountId: ProviderAccountId('account-1'),
-    provider: 'claude-cli',
-    workspaceGrantId: WorkspaceGrantId('grant-1'),
-    conversationId: ConversationId('conversation-1'),
-    sessionId: brandString<SessionId>('session-1'),
-    runId: RunId('run-1'),
-    parentRunId: undefined,
-    nonce: `nonce-${String(overrides.userId ?? 'alice')}`,
-    issuedAt: NOW,
-    expiresAt: NOW + LIFETIME,
-    ...overrides,
-  }
-}
-
-/** Admit one run for real, so the binding is built from what admission produces. */
-async function admitted(secret: Uint8Array, overrides: Partial<ExecutionAssertionClaims> = {}): Promise<AdmittedRun> {
-  const subject = claims(overrides)
-  const policy: RunAdmissionPolicy = {
-    expectation: EXPECTATION,
-    assertionSecret: ASSERTION_SECRET,
-    keyring: KEYRING,
-    poolBase: POOL_BASE,
-    findBudget: () => Promise.resolve(BUDGET),
-    spendNonce: () => Promise.resolve(true),
-    findCredential: () => Promise.resolve(
-      sealCredential(secret, { userId: subject.userId, accountId: subject.accountId }, KEYRING, NOW).envelope,
-    ),
-  }
-  const admission = await admitRun({ token: mintExecutionAssertion(subject, ASSERTION_SECRET) }, policy, NOW)
-  if (!admission.admitted) throw new Error(`the fixture run was denied at ${admission.rejection.stage}`)
-  return admission.run
-}
 
 const KEY = Buffer.from('sk-ant-alice', 'utf8')
 
@@ -77,7 +18,7 @@ describe('binding an admitted run to a Claude CLI launch', () => {
   it('takes every tenant-varying value from the admission', async () => {
     const run = await admitted(KEY)
 
-    const result = bindClaudeCliRun(run, DEPLOYMENT)
+    const result = bindClaudeCliRun(run, DEPLOYMENT, run.budget)
 
     expect(result).toEqual({
       bound: true,
@@ -96,8 +37,8 @@ describe('binding an admitted run to a Claude CLI launch', () => {
     const alice = await admitted(Buffer.from('sk-ant-alice', 'utf8'))
     const bob = await admitted(Buffer.from('sk-ant-bob', 'utf8'), { userId: UserId('user-bob') })
 
-    const first = bindClaudeCliRun(alice, DEPLOYMENT)
-    const second = bindClaudeCliRun(bob, DEPLOYMENT)
+    const first = bindClaudeCliRun(alice, DEPLOYMENT, alice.budget)
+    const second = bindClaudeCliRun(bob, DEPLOYMENT, bob.budget)
 
     if (!first.bound || !second.bound) throw new Error('both fixture runs are admitted')
     expect(first.binding.isolation.home).not.toBe(second.binding.isolation.home)
@@ -107,7 +48,7 @@ describe('binding an admitted run to a Claude CLI launch', () => {
   it('puts the process under the pool root the admission resolved, not the deployment base', async () => {
     const run = await admitted(KEY)
 
-    const result = bindClaudeCliRun(run, DEPLOYMENT)
+    const result = bindClaudeCliRun(run, DEPLOYMENT, run.budget)
 
     if (!result.bound) throw new Error('the fixture run is admitted')
     // Confinement is the point: a home left at the shared base would put every
@@ -117,19 +58,32 @@ describe('binding an admitted run to a Claude CLI launch', () => {
     expect(result.binding.cwd).toBe(result.binding.isolation.home)
   })
 
-  it('derives the spend ceiling from the admitted budget', async () => {
+  it('derives the spend ceiling from the allowance this invocation was given', async () => {
     const run = await admitted(KEY)
 
-    const result = bindClaudeCliRun({ ...run, budget: { ...run.budget, costMicroUsd: 1_234_567 } }, DEPLOYMENT)
+    const result = bindClaudeCliRun(run, DEPLOYMENT, { ...run.budget, costMicroUsd: 1_234_567 })
 
     if (!result.bound) throw new Error('the fixture run is admitted')
     expect(result.binding.maxBudgetUsd).toBe(1.234567)
   })
 
+  it('caps a later invocation at what the run has left, not what it started with', async () => {
+    const run = await admitted(KEY)
+
+    const first = bindClaudeCliRun(run, DEPLOYMENT, run.budget)
+    // The CLI enforces its ceiling per invocation, so a run whose every call
+    // carried the admitted budget could spend that budget once per call.
+    const later = bindClaudeCliRun(run, DEPLOYMENT, { ...run.budget, costMicroUsd: 400_000 })
+
+    if (!first.bound || !later.bound) throw new Error('the fixture run is admitted')
+    expect(first.binding.maxBudgetUsd).toBe(2.5)
+    expect(later.binding.maxBudgetUsd).toBe(0.4)
+  })
+
   it('never leaves credential isolation to the deployment', async () => {
     const run = await admitted(KEY)
 
-    const result = bindClaudeCliRun(run, DEPLOYMENT)
+    const result = bindClaudeCliRun(run, DEPLOYMENT, run.budget)
 
     // A run that authenticated with some other credential is billing a tenant
     // that did not authorize it, so no configuration may turn this off.
@@ -140,7 +94,7 @@ describe('binding an admitted run to a Claude CLI launch', () => {
   it('passes the deployment facts through unchanged', async () => {
     const run = await admitted(KEY)
 
-    const result = bindClaudeCliRun(run, { executable: '/usr/local/bin/claude', graceMs: 250 })
+    const result = bindClaudeCliRun(run, { executable: '/usr/local/bin/claude', graceMs: 250 }, run.budget)
 
     if (!result.bound) throw new Error('the fixture run is admitted')
     expect(result.binding.executable).toBe('/usr/local/bin/claude')
@@ -158,7 +112,7 @@ describe('a credential that cannot become an environment variable', () => {
   ])('refuses %s rather than repairing it', async (_case, secret, rejection) => {
     const run = await admitted(KEY)
 
-    const result = bindClaudeCliRun({ ...run, secret }, DEPLOYMENT)
+    const result = bindClaudeCliRun({ ...run, secret }, DEPLOYMENT, run.budget)
 
     expect(result).toEqual({ bound: false, rejection })
   })
@@ -166,7 +120,7 @@ describe('a credential that cannot become an environment variable', () => {
   it('produces no launch at all when it refuses', async () => {
     const run = await admitted(KEY)
 
-    const result = bindClaudeCliRun({ ...run, secret: new Uint8Array(0) }, DEPLOYMENT)
+    const result = bindClaudeCliRun({ ...run, secret: new Uint8Array(0) }, DEPLOYMENT, run.budget)
 
     // A partial launch would run the CLI under the tenant's home with whatever
     // credential the ambient environment happened to hold.

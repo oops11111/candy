@@ -4212,6 +4212,9 @@ importers:
       '@deepseek-ai/dsh-run-budget':
         specifier: workspace:^
         version: link:../run-budget
+      '@deepseek-ai/dsh-run-ledger':
+        specifier: workspace:^
+        version: link:../run-ledger
       '@deepseek-ai/dsh-runtime-pool':
         specifier: workspace:^
         version: link:../runtime-pool
