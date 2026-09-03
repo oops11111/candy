@@ -32,6 +32,10 @@ import {
   type CredentialRejection,
 } from '@deepseek-ai/dsh-credential-vault'
 import {
+  hasRemainingBudget,
+  type RunBudget,
+} from '@deepseek-ai/dsh-run-budget'
+import {
   runtimePoolKey,
   runtimePoolRoot,
   type RuntimePoolKey,
@@ -61,6 +65,15 @@ export interface RunAdmissionPolicy {
   /** Absolute directory holding every runtime pool's root. */
   readonly poolBase: string
   /**
+   * Look up the tenant's remaining allowance for this run.
+   *
+   * Returning `undefined` denies the run: a tenant the budget store does not
+   * know is not a tenant with unlimited budget. A deployment that means
+   * "unmetered" says so with an explicit large allowance rather than by
+   * omitting the record.
+   */
+  readonly findBudget: (claims: ExecutionAssertionClaims) => Promise<RunBudget | undefined>
+  /**
    * Record one assertion's nonce as spent.
    *
    * Returns true when this nonce had not been seen, and false when it had —
@@ -82,6 +95,14 @@ export interface AdmittedRun {
   readonly poolKey: RuntimePoolKey
   /** The one directory that pool owns. */
   readonly poolRoot: string
+  /**
+   * The allowance this run may consume, as the budget store held it.
+   *
+   * The caller charges against it with `dsh-run-budget`; nothing here
+   * decrements it, because admission is one read and a spend needs the
+   * durable write this module does not own.
+   */
+  readonly budget: RunBudget
 }
 
 /**
@@ -92,6 +113,7 @@ export interface AdmittedRun {
  */
 export type RunRejection =
   | { readonly stage: 'assertion'; readonly reason: ExecutionAssertionRejection }
+  | { readonly stage: 'budget'; readonly reason: 'no-budget' | 'exhausted' }
   | { readonly stage: 'replay'; readonly reason: 'nonce-already-spent' }
   | { readonly stage: 'credential'; readonly reason: 'not-found' | CredentialRejection }
 
@@ -120,10 +142,12 @@ export type RunAdmission =
  *
  * Steps run in this order, and the order is the contract. The assertion is
  * verified first, so nothing downstream sees an unauthenticated claim. The
- * nonce is spent second, so a replayed token cannot drive repeated credential
- * reads even though it would fail later anyway. The credential is opened
- * third, under the binding the claims carry. The pool is resolved last,
- * because it needs no secret.
+ * budget is read second: it is the one denial a caller can fix and retry, so
+ * it must not burn the nonce, and it touches no secret. The nonce is spent
+ * third, serializing concurrent duplicates so two copies of one token cannot
+ * both reach the credential. The credential is opened fourth, under the
+ * binding the claims carry. The pool is resolved last, because it needs no
+ * secret.
  *
  * @param request - the scheduling attempt, carrying only a token.
  * @param policy - the runtime's expectation, keys, pool base, and stores.
@@ -144,6 +168,21 @@ export async function admitRun(
   }
   const { claims } = assertion
 
+  // Budget is checked before the nonce is spent, and the order is deliberate.
+  // An exhausted budget is the one denial here a caller can fix and retry —
+  // topping up and presenting the same still-valid assertion — so burning its
+  // single-use token would turn a recoverable refusal into a round trip to the
+  // control plane. It is also a cheap read that touches no secret.
+  const budget = await policy.findBudget(claims)
+  if (budget === undefined) {
+    return { admitted: false, rejection: { stage: 'budget', reason: 'no-budget' }, audits: [] }
+  }
+  if (!hasRemainingBudget(budget)) {
+    return { admitted: false, rejection: { stage: 'budget', reason: 'exhausted' }, audits: [] }
+  }
+
+  // The nonce is spent next rather than last: it serializes concurrent
+  // duplicates, so two copies of one token cannot both reach the credential.
   if (!await policy.spendNonce(claims)) {
     return { admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent' }, audits: [] }
   }
@@ -173,6 +212,7 @@ export async function admitRun(
       secret: opened.secret,
       poolKey,
       poolRoot: runtimePoolRoot(policy.poolBase, poolKey),
+      budget,
     },
   }
 }

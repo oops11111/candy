@@ -8,6 +8,7 @@ import {
   type CredentialKeyring,
 } from '@deepseek-ai/dsh-credential-vault'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
+import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import { runtimePoolKey, runtimePoolRoot } from '@deepseek-ai/dsh-runtime-pool'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
@@ -19,6 +20,7 @@ const NOW = 1_800_000_000_000
 const LIFETIME = 60_000
 const POOL_BASE = '/srv/candy/pools'
 const API_KEY = Buffer.from('sk-alice-deepseek', 'utf8')
+const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 5_000_000, children: 4 }
 
 const EXPECTATION = {
   issuer: 'candy-control-plane',
@@ -65,6 +67,7 @@ function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy
     assertionSecret: ASSERTION_SECRET,
     keyring: KEYRING,
     poolBase: POOL_BASE,
+    findBudget: () => Promise.resolve(BUDGET),
     spendNonce: (subject) => {
       if (spent.has(subject.nonce)) return Promise.resolve(false)
       spent.add(subject.nonce)
@@ -286,5 +289,91 @@ describe('the audit trail a denied run leaves', () => {
     // One store accepts both, so an operator queries a tenant's history
     // without joining two shapes.
     expect(Object.keys(admitted.audits[0] ?? {}).sort()).toEqual(Object.keys(denied.audits[0] ?? {}).sort())
+  })
+})
+
+describe('the budget a run is admitted against', () => {
+  it('hands the caller the allowance to charge against', async () => {
+    const admission = await admitRun(
+      { token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy(), NOW,
+    )
+
+    expect(admission.admitted).toBe(true)
+    if (!admission.admitted) return
+    expect(admission.run.budget).toEqual(BUDGET)
+  })
+
+  it.each([
+    ['tokens', { tokens: 0 }],
+    ['wall time', { wallMs: 0 }],
+    ['money', { costMicroUsd: 0 }],
+  ])('refuses a tenant that has run out of %s', async (_case, spent) => {
+    const admission = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => Promise.resolve({ ...BUDGET, ...spent }),
+    }), NOW)
+
+    expect(admission).toEqual({
+      admitted: false, rejection: { stage: 'budget', reason: 'exhausted' }, audits: [],
+    })
+  })
+
+  it('admits a run whose only exhausted dimension is child slots', async () => {
+    // A run with no delegation left can still do its own work; only the
+    // consumable dimensions stop it.
+    const admission = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => Promise.resolve({ ...BUDGET, children: 0 }),
+    }), NOW)
+
+    expect(admission.admitted).toBe(true)
+  })
+
+  it('refuses a tenant the budget store does not know', async () => {
+    // An absent record is not an unlimited one; a deployment that means
+    // unmetered says so with an explicit allowance.
+    const admission = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => Promise.resolve(undefined),
+    }), NOW)
+
+    expect(admission).toEqual({
+      admitted: false, rejection: { stage: 'budget', reason: 'no-budget' }, audits: [],
+    })
+  })
+
+  it('leaves the nonce unspent so a topped-up tenant can retry the same token', async () => {
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    let remaining: RunBudget = { ...BUDGET, tokens: 0 }
+    const shared = policy({ findBudget: () => Promise.resolve(remaining) })
+
+    const refused = await admitRun({ token }, shared, NOW)
+    expect(refused).toMatchObject({ rejection: { stage: 'budget' } })
+
+    // The tenant tops up and presents the same still-valid assertion.
+    remaining = BUDGET
+    const retried = await admitRun({ token }, shared, NOW)
+
+    expect(retried.admitted).toBe(true)
+  })
+
+  it('reads no credential for a run it refuses on budget', async () => {
+    let looked = false
+    const admission = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => Promise.resolve({ ...BUDGET, tokens: 0 }),
+      findCredential: () => { looked = true; return Promise.resolve(undefined) },
+    }), NOW)
+
+    expect(admission.admitted).toBe(false)
+    expect(looked).toBe(false)
+  })
+
+  it('checks the budget before spending the nonce, and the credential after', async () => {
+    const order: string[] = []
+
+    await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => { order.push('budget'); return Promise.resolve(BUDGET) },
+      spendNonce: () => { order.push('nonce'); return Promise.resolve(true) },
+      findCredential: (subject) => { order.push('credential'); return Promise.resolve(sealedFor(subject)) },
+    }), NOW)
+
+    expect(order).toEqual(['budget', 'nonce', 'credential'])
   })
 })

@@ -39,29 +39,33 @@ export const outcome = admission.admitted
   : admission.rejection
 ```
 
-An admitted run carries the verified claims, the opened credential, the pool key, and the pool's directory. A denial names the stage that produced it — `assertion`, `replay`, or `credential` — so an operator can tell a forged token from a revoked account without the caller learning anything it could retry against. Both outcomes carry `audits`: a denied run is the event an audit trail exists for, so no path discards a record the vault produced.
+An admitted run carries the verified claims, the opened credential, the pool key, the pool's directory, and the allowance it may spend. A denial names the stage that produced it — `assertion`, `budget`, `replay`, or `credential` — so an operator can tell a forged token from a revoked account without the caller learning anything it could retry against. Both outcomes carry `audits`: a denied run is the event an audit trail exists for, so no path discards a record the vault produced.
 
 ### Supplying the policy
 
-`RunAdmissionPolicy` holds this runtime's expectation, its assertion secret, the vault keyring, the pool base directory, and two ports the deployment satisfies:
+`RunAdmissionPolicy` holds this runtime's expectation, its assertion secret, the vault keyring, the pool base directory, and three ports the deployment satisfies:
 
 ```ts
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 
-declare const partial: Omit<RunAdmissionPolicy, 'spendNonce' | 'findCredential'>
+declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'spendNonce' | 'findCredential'>
 declare const store: {
+  budgetFor: (userId: string) => Promise<undefined>
   markSpent: (nonce: string, expiresAt: number) => Promise<boolean>
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
 }
 
 export const policy: RunAdmissionPolicy = {
   ...partial,
+  findBudget: claims => store.budgetFor(claims.userId),
   spendNonce: claims => store.markSpent(claims.nonce, claims.expiresAt),
   findCredential: claims => store.envelopeFor(claims.userId, claims.accountId),
 }
 ```
 
-`spendNonce` returns true only the first time it sees a nonce. Neither port exists in this repository, which is why both are parameters: a run cannot start until the deployment has answered replay and credential lookup.
+`spendNonce` returns true only the first time it sees a nonce. `findBudget` returning `undefined` denies the run: a tenant the store does not know is not a tenant with unlimited budget, and a deployment that means unmetered says so with an explicit large allowance. None of the three ports exists in this repository, which is why all three are parameters: a run cannot start until the deployment has answered budget, replay, and credential lookup.
+
+The budget is read before the nonce is spent. An exhausted budget is the one denial here a caller can fix and retry — top up, present the same still-valid assertion — so burning its single-use token would turn a recoverable refusal into a round trip to the control plane. The nonce is still spent before the credential, because it serializes concurrent duplicates so two copies of one token cannot both reach a secret.
 
 -----
 
@@ -80,7 +84,7 @@ export const policy: RunAdmissionPolicy = {
 
 ### The order is the contract
 
-The assertion is verified first, so nothing downstream ever sees an unauthenticated claim — a token this runtime does not admit is denied before either port is called. The nonce is spent second, so a replayed token cannot drive repeated credential reads even though it would be denied later anyway. The credential is opened third, under the binding the claims carry. The pool is resolved last, because it needs no secret.
+The assertion is verified first, so nothing downstream ever sees an unauthenticated claim — a token this runtime does not admit is denied before any port is called. The budget is read second: it is the one denial a caller can fix and retry, so it must not burn the nonce, and it touches no secret. The nonce is spent third, serializing concurrent duplicates so two copies of one token cannot both reach the credential. The credential is opened fourth, under the binding the claims carry. The pool is resolved last, because it needs no secret.
 
 ### Why identity cannot be substituted across the composition
 

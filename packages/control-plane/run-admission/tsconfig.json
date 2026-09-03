@@ -7,6 +7,7 @@
   "references": [
     { "path": "../credential-vault" },
     { "path": "../execution-assertion" },
+    { "path": "../run-budget" },
     { "path": "../runtime-pool" }
   ],
   "include": [

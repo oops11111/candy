@@ -27,7 +27,8 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-run-budget": "workspace:^"
   },
   "dependencies": {
     "@deepseek-ai/dsh-credential-vault": "workspace:^",
@@ -35,6 +36,7 @@
     "@deepseek-ai/dsh-runtime-pool": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-run-budget": "workspace:^"
   }
 }

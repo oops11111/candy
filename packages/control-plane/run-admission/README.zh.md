@@ -39,7 +39,7 @@ export const outcome = admission.admitted
   : admission.rejection
 ```
 
-被准入的运行携带已校验的声明、已打开的凭据、池键与池的目录。拒绝会指明产生它的阶段——`assertion`、`replay` 或 `credential`——因此运维人员可以区分伪造令牌与已吊销账户,而调用方不会因此得到任何可用于重试的信息。两种结果都携带 `audits`:被拒绝的运行正是审计轨迹之所以存在的那个事件,因此没有任何路径会丢弃保险库产生的记录。
+被准入的运行携带已校验的声明、已打开的凭据、池键、池的目录,以及它可以花费的额度。拒绝会指明产生它的阶段——`assertion`、`budget`、`replay` 或 `credential`——因此运维人员可以区分伪造令牌与已吊销账户,而调用方不会因此得到任何可用于重试的信息。两种结果都携带 `audits`:被拒绝的运行正是审计轨迹之所以存在的那个事件,因此没有任何路径会丢弃保险库产生的记录。
 
 ### 提供 policy
 
@@ -48,20 +48,24 @@ export const outcome = admission.admitted
 ```ts
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 
-declare const partial: Omit<RunAdmissionPolicy, 'spendNonce' | 'findCredential'>
+declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'spendNonce' | 'findCredential'>
 declare const store: {
+  budgetFor: (userId: string) => Promise<undefined>
   markSpent: (nonce: string, expiresAt: number) => Promise<boolean>
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
 }
 
 export const policy: RunAdmissionPolicy = {
   ...partial,
+  findBudget: claims => store.budgetFor(claims.userId),
   spendNonce: claims => store.markSpent(claims.nonce, claims.expiresAt),
   findCredential: claims => store.envelopeFor(claims.userId, claims.accountId),
 }
 ```
 
-`spendNonce` 只在首次见到某个 nonce 时返回 true。这两个端口在本仓库中都不存在,这正是它们作为参数的原因:在部署方回答了重放与凭据查找之前,运行无法开始。
+`spendNonce` 只在首次见到某个 nonce 时返回 true。`findBudget` 返回 `undefined` 表示拒绝该运行:存储不认识的租户并不等于额度无限的租户,而意在「不计量」的部署应当用一个显式的大额度来表达。这三个端口在本仓库中都不存在,这正是它们作为参数的原因:在部署方回答了额度、重放与凭据查找之前,运行无法开始。
+
+额度在消费 nonce 之前读取。额度耗尽是这里唯一一种调用方能够修复并重试的拒绝——充值后再出示同一个仍然有效的断言——因此烧掉它的一次性令牌,会把一次可恢复的拒绝变成一次回到控制面的往返。nonce 仍然在凭据之前被消费,因为它会把并发的重复请求串行化,使同一个令牌的两份副本不可能都抵达密钥。
 
 -----
 
@@ -80,7 +84,7 @@ export const policy: RunAdmissionPolicy = {
 
 ### 顺序就是约定
 
-断言最先被校验,因此下游永远不会看到未经认证的声明——本运行时不接受的令牌,会在两个端口中的任何一个被调用之前就被拒绝。nonce 第二个被消费,因此即便被重放的令牌之后终究会被拒绝,它也无法驱动重复的凭据读取。凭据第三个被打开,使用声明所携带的绑定。池最后被解析,因为它不需要任何密钥。
+断言最先被校验,因此下游永远不会看到未经认证的声明——本运行时不接受的令牌,会在任何一个端口被调用之前就被拒绝。额度第二个被读取:它是调用方唯一能够修复并重试的拒绝,因此绝不能烧掉 nonce,而且它不触碰任何密钥。nonce 第三个被消费,把并发的重复请求串行化,使同一个令牌的两份副本不可能都抵达凭据。凭据第四个被打开,使用声明所携带的绑定。池最后被解析,因为它不需要任何密钥。
 
 ### 为什么身份无法在组合过程中被替换
 
