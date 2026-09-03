@@ -106,10 +106,12 @@ flowchart LR
 
 ### R2 — Provider adapters
 
-- [ ] 实现 DeepSeek API 适配器，覆盖流式传输、工具调用、用量、重试分类、取消和脱敏错误。
-- [ ] 实现 Claude CLI 适配器，覆盖隔离主目录、非交互输入、结构化输出解析、取消和进程树清理。
+适配器实现的是继承而来的 `dsh-llm` seam，而不是 Candy 自有的 seam。`LlmAdapter` 是提供方基类，`StreamChunk` 已经承载块开始、文本、推理、工具调用增量、用量与一次终止 finish，而 `dsh-llm/invariant` 会在每条提供方流周围强制执行该语法。Candy 只向该 seam 增加提供方，不定义第二套生命周期词汇。
+
+- [x] 实现 DeepSeek API 适配器，覆盖流式传输、工具调用、用量、重试分类、取消和脱敏错误——已作为 `dsh-llm-deepseek`（`DeepSeekAdapter`）继承而来，`dsh-llm-pi-ai` 是同一 seam 的第二个实现。
+- [ ] 实现 Claude CLI 适配器，覆盖隔离主目录、非交互输入、结构化输出解析、取消和进程树清理。两个继承而来的适配器都基于 HTTP，因此没有可供参照的 CLI 型 `LlmAdapter`；本条目需要先确定该 CLI 已固定的机器可读输出格式与版本探测，才能编写严格解析器及其 fixture。
 - [ ] 使用相同的隔离和生命周期保证实现 Codex CLI 适配器。
-- [ ] 构建统一的提供方约定测试套件，覆盖成功、畸形输出、超时、配额、取消、崩溃和秘密泄漏 fixture（测试前置数据）。
+- [ ] 构建统一的提供方约定测试套件，覆盖成功、畸形输出、超时、配额、取消、崩溃和秘密泄漏 fixture（测试前置数据）。其中流语法这一半已由 `dsh-llm/invariant` 强制执行；本条目拥有的是该 invariant 未检查的生命周期与秘密泄漏覆盖。
 
 ### R3 — Multi-agent orchestration
 

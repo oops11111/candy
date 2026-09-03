@@ -106,10 +106,12 @@ The runtime pool key is `userId + provider + accountId`. Workers may share immut
 
 ### R2 — Provider adapters
 
-- [ ] Implement the DeepSeek API adapter with streaming, tool calls, usage, retry classification, cancellation, and redacted errors.
-- [ ] Implement the Claude CLI adapter with isolated home, non-interactive input, structured output parsing, cancellation, and process-tree cleanup.
+Adapters implement the inherited `dsh-llm` seam rather than a Candy-owned one. `LlmAdapter` is the provider base, `StreamChunk` already carries block start, text, reasoning, tool-call deltas, usage, and one terminal finish, and `dsh-llm/invariant` enforces that grammar around every provider stream. Candy adds providers to that seam and does not define a second lifecycle vocabulary.
+
+- [x] Implement the DeepSeek API adapter with streaming, tool calls, usage, retry classification, cancellation, and redacted errors — inherited as `dsh-llm-deepseek` (`DeepSeekAdapter`), with `dsh-llm-pi-ai` a second implementation of the same seam.
+- [ ] Implement the Claude CLI adapter with isolated home, non-interactive input, structured output parsing, cancellation, and process-tree cleanup. Both inherited adapters are HTTP-backed, so no CLI-backed `LlmAdapter` exists to follow; this bullet needs the CLI's pinned machine-readable output format and version probe before a strict parser and its fixtures can be written.
 - [ ] Implement the Codex CLI adapter with the same isolation and lifecycle guarantees.
-- [ ] Build one provider contract suite with success, malformed output, timeout, quota, cancellation, crash, and secret-leak fixtures.
+- [ ] Build one provider contract suite with success, malformed output, timeout, quota, cancellation, crash, and secret-leak fixtures. The stream-grammar half is already enforced by `dsh-llm/invariant`; this bullet owns the lifecycle and secret-leak coverage that invariant does not check.
 
 ### R3 — Multi-agent orchestration
 
