@@ -4183,6 +4183,33 @@ importers:
         specifier: workspace:^
         version: link:../../core/system-prompt
 
+  packages/control-plane/claude-cli-binding:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
+      '@deepseek-ai/dsh-credential-vault':
+        specifier: workspace:^
+        version: link:../credential-vault
+      '@deepseek-ai/dsh-execution-assertion':
+        specifier: workspace:^
+        version: link:../execution-assertion
+      '@deepseek-ai/dsh-llm-claude-cli':
+        specifier: workspace:^
+        version: link:../../llm/llm-claude-cli
+      '@deepseek-ai/dsh-run-admission':
+        specifier: workspace:^
+        version: link:../run-admission
+      '@deepseek-ai/dsh-run-budget':
+        specifier: workspace:^
+        version: link:../run-budget
+      '@deepseek-ai/dsh-runtime-pool':
+        specifier: workspace:^
+        version: link:../runtime-pool
+
   packages/control-plane/control-plane:
     dependencies:
       '@deepseek-ai/dsh-brand':

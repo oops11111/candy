@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The control-plane group gives every future Candy tenant-aware package one shared, non-interchangeable vocabulary for the entities the control plane is the sole authority for: `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, and `ConversationId`, plus a `RunLineage` record naming a run's parent. `SessionId` is reused unchanged from [`dsh-session`](../core/session/README.md), never redefined here. The group has six packages today — an identity vocabulary, the per-run credential that carries it, the vault holding a tenant's provider secrets, the account manager that owns user-visible provider-account metadata, the pool key partitioning runtime state, and the admission call composing run authority — and no running Cordis service, because the control plane's OAuth, device pairing, and persistent account store described in [the accepted runtime-boundaries page](../../docs/candy-runtime-boundaries.md) and [the proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md) have not shipped yet. This page maps the group; the package README owns the details.
+The control-plane group gives every future Candy tenant-aware package one shared, non-interchangeable vocabulary for the entities the control plane is the sole authority for: `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, and `ConversationId`, plus a `RunLineage` record naming a run's parent. `SessionId` is reused unchanged from [`dsh-session`](../core/session/README.md), never redefined here. The group has eight packages today — an identity vocabulary, the per-run credential that carries it, the vault holding a tenant's provider secrets, the account manager that owns user-visible provider-account metadata, the delegation-tree budget, the pool key partitioning runtime state, the admission call composing run authority, and the binding that turns an admitted run into a confined Claude CLI launch — and no running Cordis service, because the control plane's OAuth, device pairing, and persistent account store described in [the accepted runtime-boundaries page](../../docs/candy-runtime-boundaries.md) and [the proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md) have not shipped yet. This page maps the group; the package README owns the details.
 
 ## Table of Contents
 
@@ -29,6 +29,7 @@ The control-plane group gives every future Candy tenant-aware package one shared
 | [`run-budget`](run-budget/README.md) | Bounds a delegation tree's tokens, time, money, and concurrency by drawing each child's allowance out of its parent's |
 | [`runtime-pool`](runtime-pool/README.md) | Derives the isolation key and the one directory a tenant's provider runtime owns |
 | [`run-admission`](run-admission/README.md) | The one scheduling call: assertion, nonce, credential, and pool resolved together |
+| [`claude-cli-binding`](claude-cli-binding/README.md) | Turns an admitted run into the Claude CLI launch facts that confine it to that tenant |
 
 <a id="related-documentation"></a>
 ## Related documentation

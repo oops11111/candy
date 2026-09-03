@@ -105,8 +105,16 @@ describe('runtimePoolRoot', () => {
     expect(root).not.toContain('..')
   })
 
-  it('refuses a base that is not absolute', () => {
-    expect(() => runtimePoolRoot('pools', runtimePoolKey(identity())))
-      .toThrow(/must be an absolute path, got 'pools'/)
+  it('joins a Windows base in Windows syntax, wherever it runs', () => {
+    const key = runtimePoolKey(identity())
+
+    // A control plane on Linux resolves a Windows host's pool root, so the
+    // base's own syntax decides the separator rather than this platform's.
+    expect(runtimePoolRoot('C:\\candy\\pools', key)).toBe(`C:\\candy\\pools\\${key}`)
+  })
+
+  it.each([['pools'], ['./pools'], ['pools/candy'], ['C:pools']])('refuses the base %s, absolute in neither syntax', (base) => {
+    expect(() => runtimePoolRoot(base, runtimePoolKey(identity())))
+      .toThrow(/must be an absolute path/)
   })
 })

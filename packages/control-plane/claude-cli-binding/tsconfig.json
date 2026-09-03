@@ -1,0 +1,21 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../run-admission" },
+    { "path": "../run-budget" },
+    { "path": "../runtime-pool" },
+    { "path": "../credential-vault" },
+    { "path": "../execution-assertion" },
+    { "path": "../control-plane" },
+    { "path": "../../llm/llm-claude-cli" }
+  ]
+}

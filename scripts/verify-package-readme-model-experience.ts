@@ -31,6 +31,7 @@ interface SentenceContract {
  */
 const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/core/scope': 'The package is a model-agnostic registration and lifecycle primitive; model-facing consumers own any context selection.',
+  'packages/control-plane/claude-cli-binding': 'The package only assembles launch facts for a provider process; nothing it produces reaches a model request.',
   'packages/control-plane/control-plane': 'The package only brands plain string ids and records run ancestry; model-facing consumers own any rendered use.',
   'packages/control-plane/credential-vault': 'The package only seals and opens stored secrets; nothing it produces reaches a model request.',
   'packages/control-plane/execution-assertion': 'The package only mints and checks a run credential; nothing it produces reaches a model request.',

@@ -39,7 +39,7 @@ const key = runtimePoolKey({
 export const root = runtimePoolRoot('/srv/candy/pools', key)
 ```
 
-`provider` 是来自 [`dsh-control-plane`](../control-plane/README.zh.md) 的 `ProviderKind`:取 `deepseek-api`、`claude-cli`、`codex-cli` 之一,这是一个封闭集合,因为交付计划恰好点名了这三个。它放在那里而不是这里,因为账户、断言与池都会命名它。基准目录必须是绝对路径:相对于工作目录解析出的池根目录是一个部署错误,因此它会抛出错误而不是猜测。
+`provider` 是来自 [`dsh-control-plane`](../control-plane/README.zh.md) 的 `ProviderKind`:取 `deepseek-api`、`claude-cli`、`codex-cli` 之一,这是一个封闭集合,因为交付计划恰好点名了这三个。它放在那里而不是这里,因为账户、断言与池都会命名它。基准目录必须在 POSIX 或 Win32 语法下是绝对路径，并且由基准目录自身的语法决定如何拼接 —— 一个跑在 Linux 上的控制平面会解析某台 Windows 主机的池根目录，而本平台的 `path.join` 会给出另一种分隔符。两种语法下都不是绝对路径的基准目录会抛出错误，而不是被相对于工作目录解析。
 
 ### 什么属于根目录之下,什么不属于
 

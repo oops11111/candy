@@ -21,7 +21,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { isAbsolute, join, posix } from 'node:path'
+import { posix, win32 } from 'node:path'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { ProviderAccountId, ProviderKind, UserId } from '@deepseek-ai/dsh-control-plane'
 
@@ -86,17 +86,21 @@ export function parseRuntimePoolKey(value: string): RuntimePoolKey | undefined {
  * shared package caches live outside it, which is what the boundaries page
  * permits pools to share.
  *
- * @param base - absolute directory holding every pool's root.
+ * The base's own syntax decides how the path is joined, not the platform this
+ * runs on: a control plane on Linux resolves a Windows host's pool root, and
+ * `path.join` on that host would produce the other separator. POSIX is tried
+ * first because the Win32 rules also accept a leading slash.
+ *
+ * @param base - absolute directory holding every pool's root, in POSIX or Win32 syntax.
  * @param key - the pool's key.
- * @returns the pool's own directory, always directly under `base`.
- * @throws RangeError when `base` is not absolute, since a pool root resolved against a working directory is a deployment error.
+ * @returns the pool's own directory, always directly under `base`, in the base's own syntax.
+ * @throws RangeError when `base` is absolute in neither syntax, since a pool root
+ *   resolved against a working directory is a deployment error.
  */
 export function runtimePoolRoot(base: string, key: RuntimePoolKey): string {
-  if (!isAbsolute(base)) {
-    throw new RangeError(`dsh-runtime-pool: the pool base must be an absolute path, got '${base}'`)
-  }
-  if (base.startsWith('/')) return posix.join(base, key)
-  return join(base, key)
+  if (posix.isAbsolute(base)) return posix.join(base, key)
+  if (win32.isAbsolute(base)) return win32.join(base, key)
+  throw new RangeError(`dsh-runtime-pool: the pool base must be an absolute path, got '${base}'`)
 }
 
 /** How many characters a key is spelled with, for callers sizing a column or a path budget. */

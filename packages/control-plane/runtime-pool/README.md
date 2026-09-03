@@ -39,7 +39,7 @@ const key = runtimePoolKey({
 export const root = runtimePoolRoot('/srv/candy/pools', key)
 ```
 
-`provider` is a `ProviderKind` from [`dsh-control-plane`](../control-plane/README.md): one of `deepseek-api`, `claude-cli`, or `codex-cli`, a closed set because the delivery plan names exactly those three. It lives there rather than here because an account, an assertion, and a pool all name it. The base must be absolute: a pool root resolved against a working directory is a deployment error, and it throws rather than guessing.
+`provider` is a `ProviderKind` from [`dsh-control-plane`](../control-plane/README.md): one of `deepseek-api`, `claude-cli`, or `codex-cli`, a closed set because the delivery plan names exactly those three. It lives there rather than here because an account, an assertion, and a pool all name it. The base must be absolute in POSIX or Win32 syntax, and the base's own syntax decides how the path is joined — a control plane on Linux resolves a Windows host's pool root, where this platform's `path.join` would produce the other separator. A base absolute in neither syntax throws rather than being resolved against a working directory.
 
 ### What belongs under the root, and what does not
 
