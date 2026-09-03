@@ -109,7 +109,7 @@ flowchart LR
 适配器实现的是继承而来的 `dsh-llm` seam，而不是 Candy 自有的 seam。`LlmAdapter` 是提供方基类，`StreamChunk` 已经承载块开始、文本、推理、工具调用增量、用量与一次终止 finish，而 `dsh-llm/invariant` 会在每条提供方流周围强制执行该语法。Candy 只向该 seam 增加提供方，不定义第二套生命周期词汇。
 
 - [x] 实现 DeepSeek API 适配器，覆盖流式传输、工具调用、用量、重试分类、取消和脱敏错误——已作为 `dsh-llm-deepseek`（`DeepSeekAdapter`）继承而来，`dsh-llm-pi-ai` 是同一 seam 的第二个实现。
-- [ ] 实现 Claude CLI 适配器，覆盖隔离主目录、非交互输入、结构化输出解析、取消和进程树清理。两个继承而来的 `LlmAdapter` 都基于 HTTP，因此没有一个驱动 CLI。但可用的 Claude CLI 集成确实存在——`dsh-subagent-claude-code` 通过官方 Agent SDK、在共享子进程属主之下运行真实 CLI——只是它注册的是 subagent 提供方而不是 `LlmAdapter`，并且使用了本说明置于设计之外的那个 SDK。Candy 是自行编写 `--output-format` 解析器，还是复用该 SDK 路径，是本条目首先要定的开放决策；此后才能编写严格解析器、版本探测及其 fixture。
+- [ ] 实现 Claude CLI 适配器，具备隔离的 home、非交互输入、结构化输出解析、取消与进程树清理。直接解析的决定已经确定：Candy 自行解析 `--output-format stream-json`，而不复用 `dsh-subagent-claude-code` 所走的 Agent SDK 路径，因为该 SDK 提供的是一个智能体循环，而这条缝隙需要的是一次模型调用。协议这一半已经完成，并针对真实 CLI 做了实测（[`dsh-claude-cli-protocol`](../../implemented/architecture/2026-09-03-claude-cli-stream-protocol.zh.md)）：帧解码、`StreamChunk` 翻译，以及把一次运行限定在单一租户凭据上的参数向量与环境，并以两次录制的运行作为夹具。剩下的是 `LlmAdapter` 本身 —— 通过 `ctx.subprocess` 启动进程、把 harness 请求投影到 CLI 那个唯一的位置参数提示词上、遵守 `options.signal`，以及进程树清理。
 - [ ] 使用相同的隔离和生命周期保证实现 Codex CLI 适配器。
 - [ ] 构建统一的提供方约定测试套件，覆盖成功、畸形输出、超时、配额、取消、崩溃和秘密泄漏 fixture（测试前置数据）。其中流语法这一半已由 `dsh-llm/invariant` 强制执行；本条目拥有的是该 invariant 未检查的生命周期与秘密泄漏覆盖。
 
