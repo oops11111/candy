@@ -46,7 +46,9 @@ async function create(
     provider,
     label: ` ${id} `,
     secret: Buffer.from(`secret-${id}`, 'utf8'),
-    makeDefault,
+    // Omitted rather than passed undefined: the request declares makeDefault
+    // optional, and exactOptionalPropertyTypes distinguishes the two.
+    ...makeDefault === undefined ? {} : { makeDefault },
   }, NOW)
 }
 
@@ -132,10 +134,13 @@ describe('provider accounts', () => {
       KEYRING,
       ALICE,
       ProviderAccountId('account-1'),
-      (provider, secret) => Promise.resolve({
-        valid: provider === DEEPSEEK && Buffer.from(secret).toString('utf8') === 'secret-account-1',
-        diagnostic: 'x'.repeat(500),
-      }),
+      (provider, secret) => Promise.resolve(
+        provider === DEEPSEEK && Buffer.from(secret).toString('utf8') === 'secret-account-1'
+          ? { valid: true, diagnostic: 'x'.repeat(500) }
+          // The union requires a reason on the failing side, so the branch is
+          // explicit rather than a computed `valid` the compiler cannot narrow.
+          : { valid: false, reason: 'invalid-credential', diagnostic: 'x'.repeat(500) },
+      ),
       NOW + 1,
     )
 

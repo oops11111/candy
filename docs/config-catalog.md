@@ -3492,6 +3492,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-loader-smoke` ([`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts))
 - `@deepseek-ai/dsh-native-command` ([`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts))
 - `@deepseek-ai/dsh-output-retention` ([`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts))
+- `@deepseek-ai/dsh-provider-accounts` ([`packages/control-plane/provider-accounts/src/index.ts`](../packages/control-plane/provider-accounts/src/index.ts))
 - `@deepseek-ai/dsh-run-admission` ([`packages/control-plane/run-admission/src/index.ts`](../packages/control-plane/run-admission/src/index.ts))
 - `@deepseek-ai/dsh-run-budget` ([`packages/control-plane/run-budget/src/index.ts`](../packages/control-plane/run-budget/src/index.ts))
 - `@deepseek-ai/dsh-runtime-pool` ([`packages/control-plane/runtime-pool/src/index.ts`](../packages/control-plane/runtime-pool/src/index.ts))
