@@ -177,6 +177,7 @@
     { "path": "./packages/control-plane/provider-accounts" },
     { "path": "./packages/control-plane/run-admission" },
     { "path": "./packages/control-plane/claude-cli-binding" },
+    { "path": "./packages/control-plane/run-ledger" },
     { "path": "./packages/session-query/tool-session-query" },
     { "path": "./packages/storage/storage" },
     { "path": "./packages/storage/storage-json" },

@@ -3496,6 +3496,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-provider-accounts` ([`packages/control-plane/provider-accounts/src/index.ts`](../packages/control-plane/provider-accounts/src/index.ts))
 - `@deepseek-ai/dsh-run-admission` ([`packages/control-plane/run-admission/src/index.ts`](../packages/control-plane/run-admission/src/index.ts))
 - `@deepseek-ai/dsh-run-budget` ([`packages/control-plane/run-budget/src/index.ts`](../packages/control-plane/run-budget/src/index.ts))
+- `@deepseek-ai/dsh-run-ledger` ([`packages/control-plane/run-ledger/src/index.ts`](../packages/control-plane/run-ledger/src/index.ts))
 - `@deepseek-ai/dsh-runtime-pool` ([`packages/control-plane/runtime-pool/src/index.ts`](../packages/control-plane/runtime-pool/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-windows-acl` ([`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts))
 - `@deepseek-ai/dsh-scope` ([`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts))

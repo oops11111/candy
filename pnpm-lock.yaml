@@ -4302,6 +4302,18 @@ importers:
         specifier: workspace:^
         version: link:../../../vendor/cordis
 
+  packages/control-plane/run-ledger:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
+      '@deepseek-ai/dsh-run-budget':
+        specifier: workspace:^
+        version: link:../run-budget
+
   packages/control-plane/runtime-pool:
     dependencies:
       '@deepseek-ai/dsh-brand':

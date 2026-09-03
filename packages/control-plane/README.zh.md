@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-control-plane 组为每个未来的 Candy 租户感知包提供一套共享且互不可替换的词汇，命名控制平面唯一拥有权威的实体：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`，以及记录某次运行父级的 `RunLineage`。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义，本组从不重新定义它。本组目前有八个包——一套身份词汇、携带它的按运行凭据、保管租户提供方密钥的保险库、拥有用户可见提供方账户元数据的账户管理器、委派树预算、为运行时状态分区的池键、组合运行授权的准入调用，以及把被准入的运行变成受限 Claude CLI 启动的绑定——且没有正在运行的 Cordis 服务，因为 [已接受的运行时边界页面](../../docs/candy-runtime-boundaries.zh.md) 与 [提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 所描述的控制平面 OAuth、设备配对和持久账户存储尚未落地。本页是本组的映射；包 README 负责细节。
+control-plane 组为每个未来的 Candy 租户感知包提供一套共享且互不可替换的词汇，命名控制平面唯一拥有权威的实体：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`，以及记录某次运行父级的 `RunLineage`。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义，本组从不重新定义它。本组目前有九个包——一套身份词汇、携带它的按运行凭据、保管租户提供方密钥的保险库、拥有用户可见提供方账户元数据的账户管理器、委派树预算、结算被遗弃占用的实时运行账本、为运行时状态分区的池键、组合运行授权的准入调用，以及把被准入的运行变成受限 Claude CLI 启动的绑定——且没有正在运行的 Cordis 服务，因为 [已接受的运行时边界页面](../../docs/candy-runtime-boundaries.zh.md) 与 [提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 所描述的控制平面 OAuth、设备配对和持久账户存储尚未落地。本页是本组的映射；包 README 负责细节。
 
 ## 目录
 
@@ -27,6 +27,7 @@ control-plane 组为每个未来的 Candy 租户感知包提供一套共享且�
 | [`credential-vault`](credential-vault/README.zh.md) | 封装租户的提供方账户密钥、轮换其密钥、吊销它,并记录每一次访问 |
 | [`provider-accounts`](provider-accounts/README.zh.md) | 拥有租户提供方账户元数据、加密凭据生命周期、默认选择与不含密钥的账户视图 |
 | [`run-budget`](run-budget/README.zh.md) | 通过让每个子运行的额度从父运行那里扣除，为委派树的 token、时间、金额与并发设界 |
+| [`run-ledger`](run-ledger/README.zh.md) | 记录每次开启中的运行持有什么、花掉了什么，并精确而非估算地结算被遗弃的占用 |
 | [`runtime-pool`](runtime-pool/README.zh.md) | 推导隔离键,以及租户的提供方运行时所拥有的那一个目录 |
 | [`run-admission`](run-admission/README.zh.md) | 唯一的调度调用:断言、nonce、凭据与池一并解析 |
 | [`claude-cli-binding`](claude-cli-binding/README.zh.md) | 把一次被准入的运行变成将其限制在该租户之内的 Claude CLI 启动事实 |
