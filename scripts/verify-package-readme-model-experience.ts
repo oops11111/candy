@@ -35,6 +35,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/control-plane/credential-vault': 'The package only seals and opens stored secrets; nothing it produces reaches a model request.',
   'packages/control-plane/execution-assertion': 'The package only mints and checks a run credential; nothing it produces reaches a model request.',
   'packages/control-plane/run-admission': 'The package only decides whether a run may start; nothing it produces reaches a model request.',
+  'packages/control-plane/run-budget': 'The package only does arithmetic over allowances; nothing it produces reaches a model request.',
   'packages/control-plane/runtime-pool': 'The package only derives an isolation key and a directory path; nothing it produces reaches a model request.',
   'packages/util/brand': 'The package only constructs plain string values and registers nothing model-facing.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
