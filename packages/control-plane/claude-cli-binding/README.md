@@ -66,6 +66,7 @@ The binding always sets `requireCredentialIsolation`, so a run whose CLI reports
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `bindClaudeCliRun`, `ClaudeCliDeployment`, `ClaudeCliRunBinding`, and the credential rejections |
+| [`tests/tenant-isolation.spec.ts`](tests/tenant-isolation.spec.ts) | The chain end to end: mint, admit, bind, and run a real process that reports the environment it was handed |
 | — | No runtime invariant companion is published; this pure module owns no event stream or mutable runtime data, and the values it assembles are enforced by unit tests. |
 
 ### Why the pool root is the working directory as well as the home
@@ -100,7 +101,7 @@ An admitted run always has money left: admission denies an exhausted budget, so 
 
 These are current package constraints, not a task backlog.
 
-- **Nothing creates or verifies the pool directory** — the binding names it as the CLI's home. Creating it with the right owner and mode, and proving no other tenant can read it, belongs to the deployment that owns the filesystem.
+- **Nothing creates or verifies the pool directory** — the binding names it as the CLI's home, and a launch into a directory nobody created fails at spawn. Creating it with the right owner and mode, and proving no other tenant can read it, belongs to the deployment that owns the filesystem.
 - **The credential's lifetime stays with the caller** — the binding copies the opened secret into a string that lives as long as the adapter does. Zeroing the caller's `Uint8Array` afterwards does not reach that copy.
 - **No consumer wires this yet** — nothing in the repository boots a per-run Claude CLI adapter, because the scheduler that would hold one admitted run per process is R3 work that has not shipped.
 - **Claude CLI only** — a Codex CLI run needs its own binding against its own launch facts, which cannot be written until that adapter exists.

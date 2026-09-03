@@ -66,6 +66,7 @@ export const options: ClaudeCliAdapterOptions | undefined = result.bound
 | 文件 | 角色 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `bindClaudeCliRun`、`ClaudeCliDeployment`、`ClaudeCliRunBinding` 与各项凭据拒绝 |
+| [`tests/tenant-isolation.spec.ts`](tests/tenant-isolation.spec.ts) | 端到端的整条链路：签发、准入、绑定，并运行一个会报告自己实际拿到的环境的真实进程 |
 | — | 不发布运行时 invariant 伴生包；这个纯模块不拥有事件流或可变运行时数据，它组装出的值由单元测试强制。 |
 
 ### 为什么池根目录既是工作目录也是主目录
@@ -100,7 +101,7 @@ export const options: ClaudeCliAdapterOptions | undefined = result.bound
 
 以下是本包当前的约束，不是任务清单。
 
-- **不创建也不校验池目录** —— 绑定把它点名为 CLI 的主目录。用正确的属主与权限位创建它、并证明没有别的租户能读它，属于拥有文件系统的那个部署。
+- **不创建也不校验池目录** —— 绑定把它点名为 CLI 的主目录，而启动到一个没人创建过的目录会在 spawn 处失败。用正确的属主与权限位创建它、并证明没有别的租户能读它，属于拥有文件系统的那个部署。
 - **凭据的生命周期仍归调用方** —— 绑定把被打开的密钥复制进一个与适配器同寿的字符串。事后把调用方的 `Uint8Array` 清零并不会触及那份副本。
 - **目前还没有消费者接上它** —— 仓库里没有任何东西启动按运行划分的 Claude CLI 适配器，因为那个会持有「一次被准入的运行对应一个进程」的调度器属于尚未交付的 R3 工作。
 - **只覆盖 Claude CLI** —— 一次 Codex CLI 运行需要针对它自己的启动事实写自己的绑定，而那在该适配器存在之前无法写出。

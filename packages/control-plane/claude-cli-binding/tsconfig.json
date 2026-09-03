@@ -16,6 +16,11 @@
     { "path": "../credential-vault" },
     { "path": "../execution-assertion" },
     { "path": "../control-plane" },
-    { "path": "../../llm/llm-claude-cli" }
+    { "path": "../../llm/llm-claude-cli" },
+    { "path": "../../llm/llm" },
+    { "path": "../../core/session" },
+    { "path": "../../subprocess/subprocess" },
+    { "path": "../../subprocess/subprocess-local" },
+    { "path": "../../util/brand" }
   ]
 }

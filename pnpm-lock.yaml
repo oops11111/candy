@@ -4188,6 +4188,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
       '@deepseek-ai/dsh-control-plane':
         specifier: workspace:^
         version: link:../control-plane
@@ -4197,6 +4200,9 @@ importers:
       '@deepseek-ai/dsh-execution-assertion':
         specifier: workspace:^
         version: link:../execution-assertion
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
       '@deepseek-ai/dsh-llm-claude-cli':
         specifier: workspace:^
         version: link:../../llm/llm-claude-cli
@@ -4209,6 +4215,15 @@ importers:
       '@deepseek-ai/dsh-runtime-pool':
         specifier: workspace:^
         version: link:../runtime-pool
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
+      '@deepseek-ai/dsh-subprocess-local':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess-local
 
   packages/control-plane/control-plane:
     dependencies:

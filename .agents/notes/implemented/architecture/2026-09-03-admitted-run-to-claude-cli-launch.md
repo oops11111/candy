@@ -36,6 +36,8 @@ The path from a token to a running provider process is now continuous: mint, adm
 
 Nothing boots this yet. The scheduler that would hold one admitted run per adapter instance is R3 work that has not shipped, and the README says so rather than implying a wired path. What exists is the composition and its tests, which is what makes the next step assembly rather than design.
 
+The isolation claim is checked against an operating system rather than against objects. `tests/tenant-isolation.spec.ts` mints an assertion, admits it, binds it, and spawns a real process through `dsh-subprocess`; a stand-in executable reports the `HOME`, working directory, key, and spend ceiling it was actually handed. Two tenants get two homes and neither process can see the other's secret, and an ambient `CLAUDE_CODE_USE_BEDROCK` or `ANTHROPIC_BASE_URL` does not reach the child while an ordinary ambient variable does — so the tombstoning is observed rather than assumed. Reverting the home to a constant fails two of those cases and turning credential isolation off fails a third, which is what makes them evidence.
+
 A Codex CLI run will need its own binding. The launch facts differ — that CLI's isolation, budget flag, and credential variable are not these — and the shared part is a shape, not code, so writing one function over both would invent a common launch vocabulary neither adapter has.
 
 ## Alternatives considered
