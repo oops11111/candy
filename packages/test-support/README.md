@@ -28,6 +28,7 @@ The test-support group gives repository tests deterministic, keyless ways to exe
 | [`agent-loop-testkit`](agent-loop-testkit/README.md) | Provides the shared prerequisite services for tests that exercise the concrete AgentLoop |
 | [`client-runtime`](client-runtime/README.md) | Provides the jsdom slot test bench for browser feature specs |
 | [`loader-smoke`](loader-smoke/README.md) | Boots Loader-composed applications and drives fixture turns for smoke tests |
+| [`llm-adapter-contract`](llm-adapter-contract/README.md) | Runs the shared lifecycle and secret-handling contract against one `dsh-llm` adapter |
 | [`llm-mock-server`](llm-mock-server/README.md) | Provides a scriptable OpenAI-compatible fault server for recovery tests |
 | [`llm-replay`](llm-replay/README.md) | Replays recorded model streams for keyless tests and demos |
 

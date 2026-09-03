@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-面向用户的产品界面把应用标识为 Candy。现有浏览器品牌 slot 承载 Candy 标志和名称，现有 Harness 主题系统继续负责所有颜色和外观偏好。Candy 不增加调色板或第二套主题实现。
+面向用户的产品界面把应用标识为 Candy：Web 标题、可安装应用元数据、引导声明、主 README，以及侧栏名称——后者通过 `brand.localBuild` locale 键到达外壳。浏览器品牌 slot 本身保留上游官方占位组件，并门控在 `official` 构建中，因为在这些 slot 中以图形渲染的产品名无法满足 Client 文案门禁（[已恢复](../bug-fix/2026-09-02-official-brand-occupants-restored.zh.md)）。现有 Harness 主题系统继续负责所有颜色和外观偏好，Candy 不增加调色板或第二套主题实现。
 
 `dsh` 命令、`DSH_*` 兼容变量和 `@deepseek-ai/dsh-*` 内部包名保持不变。这样可以稳定运行时协议和上游合并，同时让面向产品的文本保持独立品牌。
 

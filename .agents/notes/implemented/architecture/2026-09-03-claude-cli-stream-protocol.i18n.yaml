@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-03-claude-cli-stream-protocol.md
+2026-09-03-claude-cli-stream-protocol.md: e83a56ce0201c64ab895b2ed99cb10ee7969bab4
+2026-09-03-claude-cli-stream-protocol.zh.md: c03d30ea1c6a01f4fea8228d834216cd36668d05

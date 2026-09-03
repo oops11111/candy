@@ -935,6 +935,34 @@ export interface Config {
 
 Source: [`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
 
+<a id="deepseek-aidsh-llm-claude-cli"></a>
+
+## `@deepseek-ai/dsh-llm-claude-cli`
+
+Requires: `llm` · `subprocess`
+
+```ts config-catalog
+/** Deployment-varying facts for one Claude CLI route. */
+export interface Config {
+  /** Absolute path to the `claude` executable; defaults to `claude` on PATH. */
+  executable?: string
+  /** Working directory for each run. */
+  cwd: string
+  /** `HOME` for each run: the runtime pool root whose provider state this route owns. */
+  home: string
+  /** Environment variable holding the API key to inject. */
+  apiKeyEnv?: string
+  /** Process-tree termination grace in milliseconds. */
+  graceMs?: number
+  /** Per-invocation spend ceiling in US dollars; omitted applies none. */
+  maxBudgetUsd?: number
+  /** Fail a run the CLI authenticated with another credential; defaults to true. */
+  requireCredentialIsolation?: boolean
+}
+```
+
+Source: [`packages/llm/llm-claude-cli/src/index.ts:30`](../packages/llm/llm-claude-cli/src/index.ts)
+
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
 ## `@deepseek-ai/dsh-llm-deepseek`
@@ -3441,13 +3469,17 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-atomic-write` ([`packages/util/atomic-write/src/index.ts`](../packages/util/atomic-write/src/index.ts))
 - `@deepseek-ai/dsh-base` ([`packages/bundle/base/src/index.ts`](../packages/bundle/base/src/index.ts))
 - `@deepseek-ai/dsh-brand` ([`packages/util/brand/src/index.ts`](../packages/util/brand/src/index.ts))
+- `@deepseek-ai/dsh-claude-cli-protocol` ([`packages/llm/claude-cli-protocol/src/index.ts`](../packages/llm/claude-cli-protocol/src/index.ts))
 - `@deepseek-ai/dsh-client-store` ([`packages/client/store/src/index.ts`](../packages/client/store/src/index.ts))
 - `@deepseek-ai/dsh-client-test-runtime` ([`packages/test-support/client-runtime/src/index.ts`](../packages/test-support/client-runtime/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-primitives` ([`packages/client/ui-primitives/src/index.ts`](../packages/client/ui-primitives/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-slots` ([`packages/client/ui-slots/src/index.ts`](../packages/client/ui-slots/src/index.ts))
 - `@deepseek-ai/dsh-client-web` ([`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts))
 - `@deepseek-ai/dsh-cmdline` ([`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts))
+- `@deepseek-ai/dsh-control-plane` ([`packages/control-plane/control-plane/src/index.ts`](../packages/control-plane/control-plane/src/index.ts))
+- `@deepseek-ai/dsh-credential-vault` ([`packages/control-plane/credential-vault/src/index.ts`](../packages/control-plane/credential-vault/src/index.ts))
 - `@deepseek-ai/dsh-deque` ([`packages/util/deque/src/index.ts`](../packages/util/deque/src/index.ts))
+- `@deepseek-ai/dsh-execution-assertion` ([`packages/control-plane/execution-assertion/src/index.ts`](../packages/control-plane/execution-assertion/src/index.ts))
 - `@deepseek-ai/dsh-experimental-agent-team-profile` ([`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts))
 - `@deepseek-ai/dsh-experimental-agent-team-web-profile` ([`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts))
 - `@deepseek-ai/dsh-experimental-webworker-packer` ([`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts))
@@ -3455,10 +3487,14 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-home-paths` ([`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts))
 - `@deepseek-ai/dsh-hook-protocol` ([`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts))
 - `@deepseek-ai/dsh-launch-environment` ([`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts))
+- `@deepseek-ai/dsh-llm-adapter-contract` ([`packages/test-support/llm-adapter-contract/src/index.ts`](../packages/test-support/llm-adapter-contract/src/index.ts))
 - `@deepseek-ai/dsh-llm-mock-server` ([`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts))
 - `@deepseek-ai/dsh-loader-smoke` ([`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts))
 - `@deepseek-ai/dsh-native-command` ([`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts))
 - `@deepseek-ai/dsh-output-retention` ([`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts))
+- `@deepseek-ai/dsh-run-admission` ([`packages/control-plane/run-admission/src/index.ts`](../packages/control-plane/run-admission/src/index.ts))
+- `@deepseek-ai/dsh-run-budget` ([`packages/control-plane/run-budget/src/index.ts`](../packages/control-plane/run-budget/src/index.ts))
+- `@deepseek-ai/dsh-runtime-pool` ([`packages/control-plane/runtime-pool/src/index.ts`](../packages/control-plane/runtime-pool/src/index.ts))
 - `@deepseek-ai/dsh-sandbox-windows-acl` ([`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts))
 - `@deepseek-ai/dsh-scope` ([`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts))
 - `@deepseek-ai/dsh-sdk-client` ([`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts))

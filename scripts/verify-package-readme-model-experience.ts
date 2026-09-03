@@ -31,6 +31,12 @@ interface SentenceContract {
  */
 const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/core/scope': 'The package is a model-agnostic registration and lifecycle primitive; model-facing consumers own any context selection.',
+  'packages/control-plane/control-plane': 'The package only brands plain string ids and records run ancestry; model-facing consumers own any rendered use.',
+  'packages/control-plane/credential-vault': 'The package only seals and opens stored secrets; nothing it produces reaches a model request.',
+  'packages/control-plane/execution-assertion': 'The package only mints and checks a run credential; nothing it produces reaches a model request.',
+  'packages/control-plane/run-admission': 'The package only decides whether a run may start; nothing it produces reaches a model request.',
+  'packages/control-plane/run-budget': 'The package only does arithmetic over allowances; nothing it produces reaches a model request.',
+  'packages/control-plane/runtime-pool': 'The package only derives an isolation key and a directory path; nothing it produces reaches a model request.',
   'packages/util/brand': 'The package only constructs plain string values and registers nothing model-facing.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
@@ -163,6 +169,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/runtime-diagnostics/invariants': { kind: 'none', reason: 'The observer validates requests but never rewrites their context.' },
   'packages/test-support/loader-smoke': { kind: 'none', reason: 'The test harness submits an ordinary user task but delegates prompt and tool composition to the loaded tree.' },
   'packages/test-support/llm-mock-server': { kind: 'none', reason: 'The test server substitutes provider wire behavior without invoking a real model.' },
+  'packages/test-support/llm-adapter-contract': { kind: 'none', reason: 'The test-only conformance suite observes chunks an adapter already produced and invokes no provider model.' },
   'packages/test-support/llm-replay': { kind: 'none', reason: 'The keyless adapter invokes no provider model.' },
   'packages/api/gateway': { kind: 'none', reason: 'Remote dispatch infrastructure; invoked business methods own any model-visible effect.' },
   'packages/api/session-controller': { kind: 'none', reason: 'Session API and transport owner; invoked Agent commands own any model-visible effect.' },

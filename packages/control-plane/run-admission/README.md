@@ -1,0 +1,126 @@
+---
+description: "The Candy scheduling path from an execution assertion to an admitted run: assertion, nonce, credential, and runtime pool resolved in one call."
+kind: "package-library"
+---
+
+# @deepseek-ai/dsh-run-admission
+
+English | [中文](README.zh.md)
+
+## Summary
+
+`dsh-run-admission` is the one call a Candy scheduler makes before it starts work. `admitRun` verifies the execution assertion, spends its nonce, opens the provider credential the assertion names, and resolves the runtime pool that credential may run in — returning either everything a provider invocation needs or the step that denied it. It exists so the order of those checks is a contract rather than something each scheduling path remembers, and so identity flows from the verified token to the credential and the directory with no parameter a caller could substitute. `RunRequest` carries a token and nothing else.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+### Admitting a run
+
+```ts
+import { admitRun, type RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
+
+declare const policy: RunAdmissionPolicy
+declare const token: string
+
+const admission = await admitRun({ token }, policy, Date.now())
+
+export const outcome = admission.admitted
+  ? { pool: admission.run.poolRoot, claims: admission.run.claims }
+  : admission.rejection
+```
+
+An admitted run carries the verified claims, the opened credential, the pool key, the pool's directory, and the vault's audit record for the read. A denial names the stage that produced it — `assertion`, `replay`, or `credential` — so an operator can tell a forged token from a revoked account without the caller learning anything it could retry against.
+
+### Supplying the policy
+
+`RunAdmissionPolicy` holds this runtime's expectation, its assertion secret, the vault keyring, the pool base directory, and two ports the deployment satisfies:
+
+```ts
+import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
+
+declare const partial: Omit<RunAdmissionPolicy, 'spendNonce' | 'findCredential'>
+declare const store: {
+  markSpent: (nonce: string, expiresAt: number) => Promise<boolean>
+  envelopeFor: (userId: string, accountId: string) => Promise<undefined>
+}
+
+export const policy: RunAdmissionPolicy = {
+  ...partial,
+  spendNonce: claims => store.markSpent(claims.nonce, claims.expiresAt),
+  findCredential: claims => store.envelopeFor(claims.userId, claims.accountId),
+}
+```
+
+`spendNonce` returns true only the first time it sees a nonce. Neither port exists in this repository, which is why both are parameters: a run cannot start until the deployment has answered replay and credential lookup.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+### Source map
+
+| File | Role |
+|---|---|
+| [`src/index.ts`](src/index.ts) | `RunRequest`, `RunAdmissionPolicy`, `AdmittedRun`, `RunRejection`, and `admitRun` |
+| — | No runtime invariant companion is published; this module owns no event stream or mutable runtime data; its admission order is enforced by unit tests. |
+
+### The order is the contract
+
+The assertion is verified first, so nothing downstream ever sees an unauthenticated claim — a token this runtime does not admit is denied before either port is called. The nonce is spent second, so a replayed token cannot drive repeated credential reads even though it would be denied later anyway. The credential is opened third, under the binding the claims carry. The pool is resolved last, because it needs no secret.
+
+### Why identity cannot be substituted across the composition
+
+Each part refuses a caller-named tenant on its own, and composing them could still have reintroduced the hole: a scheduler that opened a credential for a tenant the request named, using an assertion that authenticated a different one, would satisfy every part while defeating all of them. `RunRequest` carries only a token, and the credential binding and pool identity are both read from the admitted claims, so that pairing cannot be expressed.
+
+The `provider` in those claims is signed for the same reason. A provider account is provider-specific, so pairing one with another provider would place a run in a pool naming a combination the control plane never made.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+Read these pages for the parts this call composes and the architecture it serves.
+
+- [Candy Runtime Boundaries](../../../docs/candy-runtime-boundaries.md) — the accepted trust boundaries, including the confused-deputy rule this composition keeps closed end to end.
+- [`dsh-execution-assertion`](../execution-assertion/README.md) — the token this call verifies first.
+- [`dsh-credential-vault`](../credential-vault/README.md) — the envelope it opens under the admitted binding.
+- [`dsh-runtime-pool`](../runtime-pool/README.md) — the key and directory it resolves last.
+
+-----
+
+<a id="known-limitations-and-deferred-work"></a>
+## Known Limitations and Deferred Work
+
+These are current package constraints, not a task backlog.
+
+- **Admission ends at a decision, not an invocation** — the call returns what a provider process needs; spawning it, injecting the secret, bounding its output, and cancelling it belong to the R2 adapters.
+- **The audit record is returned, not persisted** — `AdmittedRun` carries the vault's record of the read, and the caller owns the tenant-partitioned store the boundaries page requires. A denial returns no audit record at all, so a caller that must log refusals records the rejection itself.
+- **Nonce spending is not transactional with the run** — a nonce is spent before the credential is read, so a run denied at the credential step has already consumed its assertion. That is the safe direction, and it means a client must mint a new assertion rather than retry the same one after fixing an account.
+- **Quotas, concurrency, and parent-subset grants are not checked** — those belong to the scheduler and to R3's orchestration; this call admits one run's identity and resources, not its budget.
+- **No Cordis service** — nothing here registers on a `Context`; it is imported directly.
+
+<a id="dev-note"></a>
+## Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
