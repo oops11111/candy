@@ -13,11 +13,12 @@ That absence is the reason this page exists. The packages compose in exactly one
 | Mint | [`dsh-execution-assertion`](../../packages/control-plane/execution-assertion) | that the control plane authorized this run, for this tenant, for this long |
 | Admit | [`dsh-run-admission`](../../packages/control-plane/run-admission) | that the assertion is genuine, the allowance is not spent, the nonce is fresh, and the credential opens |
 | Open | [`dsh-run-ledger`](../../packages/control-plane/run-ledger) | that the run holds an allowance nothing else can hand out twice |
+| Place | [`dsh-runtime-pool`](../../packages/control-plane/runtime-pool) | that the directory the invocation runs in exists and is private to the account this runtime runs as |
 | Bind | [`dsh-claude-cli-binding`](../../packages/control-plane/claude-cli-binding) | the home, working directory, key, and ceiling one provider invocation runs under |
 | Charge | [`dsh-run-ledger`](../../packages/control-plane/run-ledger) | what the invocation consumed, and whether the run may make another |
 | Close | [`dsh-run-ledger`](../../packages/control-plane/run-ledger) | what the run cost, and what returns to whoever delegated it |
 
-[`dsh-control-plane`](../../packages/control-plane/control-plane) supplies the branded ids every step names a tenant with, [`dsh-credential-vault`](../../packages/control-plane/credential-vault) seals and opens what admission hands over, [`dsh-runtime-pool`](../../packages/control-plane/runtime-pool) derives the directory a pool owns, and [`dsh-run-budget`](../../packages/control-plane/run-budget) is the reservation arithmetic the ledger records against. [`dsh-provider-accounts`](../../packages/control-plane/provider-accounts) owns the user-visible account metadata a tenant configures before any of this runs.
+[`dsh-control-plane`](../../packages/control-plane/control-plane) supplies the branded ids every step names a tenant with, [`dsh-credential-vault`](../../packages/control-plane/credential-vault) seals and opens what admission hands over, [`dsh-runtime-pool`](../../packages/control-plane/runtime-pool) also derives the key and root that admission resolves before Place creates them, and [`dsh-run-budget`](../../packages/control-plane/run-budget) is the reservation arithmetic the ledger records against. [`dsh-provider-accounts`](../../packages/control-plane/provider-accounts) owns the user-visible account metadata a tenant configures before any of this runs.
 
 ## What a deployment must supply
 
@@ -27,7 +28,9 @@ Three stores do not exist in this repository, and `admitRun` takes all three as 
 - **`spendNonce`** — whether this assertion's nonce had been seen. It is durable and tenant-partitioned in a real deployment; nothing here retries a spent one.
 - **`findCredential`** — the sealed envelope for the tenant and account the assertion names.
 
-Two more things a deployment owns outright: the pool directory (this group names it, nothing creates it, and a launch into a directory nobody made fails at spawn), and the clock that calls `RunLedger.expire`, which is a call rather than a timer.
+The pool directory is opened rather than derived: `openRuntimePool` creates one pool root and makes it private to the account this runtime runs as, applying the mode with an explicit change so it is true of a root that already existed. It never creates the pool base — a base that is absent means the deployment never provisioned its storage — and it cannot make a pool private if another local account may write beside it, so provisioning the base privately stays with the deployment.
+
+Two things a deployment still owns outright: the pool base's own permissions, and the clock that calls `RunLedger.expire`, which is a call rather than a timer.
 
 ## Why the order is the contract
 

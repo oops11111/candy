@@ -13,11 +13,12 @@
 | 签发 | [`dsh-execution-assertion`](../../packages/control-plane/execution-assertion) | 控制平面授权了这次运行，为这个租户，授权这么久 |
 | 准入 | [`dsh-run-admission`](../../packages/control-plane/run-admission) | 断言是真的、额度没花光、nonce 是新的、凭据能打开 |
 | 开启 | [`dsh-run-ledger`](../../packages/control-plane/run-ledger) | 这次运行持有一份别处无法再发一次的额度 |
+| 放置 | [`dsh-runtime-pool`](../../packages/control-plane/runtime-pool) | 这次调用所运行的目录已经存在，并且只对本运行时所属的账户私有 |
 | 绑定 | [`dsh-claude-cli-binding`](../../packages/control-plane/claude-cli-binding) | 一次提供方调用所处的主目录、工作目录、密钥与上限 |
 | 计费 | [`dsh-run-ledger`](../../packages/control-plane/run-ledger) | 这次调用消耗了什么，以及这次运行还能不能再来一次 |
 | 关闭 | [`dsh-run-ledger`](../../packages/control-plane/run-ledger) | 这次运行花了多少，以及有多少归还给委派它的那一方 |
 
-[`dsh-control-plane`](../../packages/control-plane/control-plane) 提供每一步用来指称租户的品牌化 id，[`dsh-credential-vault`](../../packages/control-plane/credential-vault) 密封并打开准入所交付的东西，[`dsh-runtime-pool`](../../packages/control-plane/runtime-pool) 推导出一个池所拥有的目录，而 [`dsh-run-budget`](../../packages/control-plane/run-budget) 是账本据以记账的预留算术。[`dsh-provider-accounts`](../../packages/control-plane/provider-accounts) 拥有租户在这一切开始之前所配置的、用户可见的账户元数据。
+[`dsh-control-plane`](../../packages/control-plane/control-plane) 提供每一步用来指称租户的品牌化 id，[`dsh-credential-vault`](../../packages/control-plane/credential-vault) 密封并打开准入所交付的东西，[`dsh-runtime-pool`](../../packages/control-plane/runtime-pool) 同时还推导出准入所解析的那个键与根目录 —— 放置这一步随后才创建它们 —— 而 [`dsh-run-budget`](../../packages/control-plane/run-budget) 是账本据以记账的预留算术。[`dsh-provider-accounts`](../../packages/control-plane/provider-accounts) 拥有租户在这一切开始之前所配置的、用户可见的账户元数据。
 
 ## 部署方必须提供什么
 
@@ -27,7 +28,9 @@
 - **`spendNonce`** —— 这份断言的 nonce 是否曾被见过。在真实部署中它是持久且按租户分区的；这里不会重试一个已被消费的 nonce。
 - **`findCredential`** —— 断言所指名的租户与账户对应的密封信封。
 
-还有两样东西完全归部署方所有：池目录（本组只为它命名，没有任何东西创建它，而启动到一个没人创建过的目录会在 spawn 处失败），以及调用 `RunLedger.expire` 的那个时钟 —— 它是一次调用，不是一个定时器。
+池目录是被打开的，而不只是被推导出来的：`openRuntimePool` 创建一个池根目录，并把它设为只对本运行时所属的账户私有，用一次显式的修改来施加模式，因此该模式对一个原本就已存在的根目录同样成立。它从不创建池基目录 —— 基目录缺失意味着部署从未准备好它的存储 —— 而且如果另一个本地账户可以在它旁边写入，它也无法把一个池设为私有，因此把基目录准备成私有的仍归部署所有。
+
+还有两样东西仍完全归部署方所有：池基目录自身的权限，以及调用 `RunLedger.expire` 的那个时钟 —— 它是一次调用，不是一个定时器。
 
 ## 为什么这个顺序就是契约
 
