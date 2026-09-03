@@ -30,7 +30,7 @@ A budget compared or decremented in floating point drifts, and a spend limit tha
 
 ### An overspend is not credited back
 
-`settleChild` returns `max(0, reserved - spent)`. A child that consumed more than it reserved has already cost the tenant that money, and crediting the difference would invent budget for the parent to spend a second time. Overspend is prevented during the run by `chargeRun` — which is the reason a run is charged as it goes rather than reconciled at the end — and a refused charge deducts nothing, so a caller that stops on a denial never finds its budget partly spent by the charge it rejected.
+A child that consumed more than it reserved has already cost the tenant that money, and crediting the difference back would invent budget for the parent to spend a second time. Settling on that rule needs records of live runs rather than values a caller passes around, so it moved to [`dsh-run-ledger`](2026-09-03-run-ledger-settles-exactly.md) along with the charge that accumulates a run's spend; what stays here is the reservation, the emptiness check, and the values all three share.
 
 ### Requests are refused, never shrunk
 

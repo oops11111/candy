@@ -8,11 +8,12 @@
  * holding one never settles — a child that crashes keeps its parent's tokens
  * for as long as the parent lives.
  *
- * This module is the record that makes those questions answerable. Every charge
- * goes through it, so a run that is dropped can be settled exactly rather than
- * estimated: the ledger already knows what the run had left. Each record also
- * carries a lease, so an abandoned hold is released on a clock rather than on
- * someone noticing.
+ * This module is the record that makes those questions answerable. Spend is
+ * what a record stores and what it may still spend is derived, so a run that
+ * consumed more than its allowance is recorded truthfully rather than refused,
+ * and a run that is dropped can be settled exactly: the ledger already knows
+ * what it consumed. Each record also carries a lease, so an abandoned hold is
+ * released on a clock rather than on someone noticing.
  *
  * Nothing here persists anything. A `RunRecord` is plain data a caller may
  * store, and a deployment that wants a ledger to survive a restart owns that
@@ -25,9 +26,8 @@ import type { RunId } from '@deepseek-ai/dsh-control-plane'
 import {
   assertRunBudget,
   assertRunSpend,
-  chargeRun,
   reserveChild,
-  settleChild,
+  type BudgetDimension,
   type RunBudget,
   type RunBudgetDenial,
   type RunSpend,
@@ -39,15 +39,18 @@ export interface RunRecord {
   readonly runId: RunId
   /** The run that reserved this one's allowance, or `undefined` for a root. */
   readonly parentRunId: RunId | undefined
-  /** What this run may still spend. */
-  readonly remaining: RunBudget
-  /**
-   * The allowance this run was opened with.
-   *
-   * Settlement needs it and `remaining` together: what came back to the parent
-   * is the difference, and neither number alone gives it.
-   */
+  /** The allowance this run was opened with. */
   readonly reserved: RunBudget
+  /**
+   * Everything charged to this run so far, including what its closed children
+   * consumed.
+   *
+   * It may exceed `reserved`: a provider bills what it billed, and a spend
+   * refused rather than recorded would leave the ledger reporting an allowance
+   * that is already gone. What the run may still spend is derived from this,
+   * never stored beside it.
+   */
+  readonly spent: RunSpend
   /**
    * When an unsettled hold is released, in epoch milliseconds.
    *
@@ -66,31 +69,79 @@ export type RunLedgerRejection =
   | { readonly reason: 'duplicate-run'; readonly runId: RunId }
   /** The parent could not fund the requested child allowance. */
   | { readonly reason: 'parent-exhausted'; readonly denial: RunBudgetDenial }
-  /** The charge would overdraw the run, which is stopped rather than allowed to continue. */
-  | { readonly reason: 'overdrawn'; readonly denial: RunBudgetDenial }
 
 /** The outcome of an operation that changes the ledger. */
 export type RunLedgerResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly rejection: RunLedgerRejection }
 
+/** One recorded spend and what it leaves the run able to do. */
+export interface RunChargeResult {
+  /** The record after the spend was added to it. */
+  readonly record: RunRecord
+  /**
+   * The consumable dimensions this run has now used in full.
+   *
+   * Empty while the run may continue. A caller stops a run whose list is not
+   * empty; the ledger records the spend either way, because the spend already
+   * happened.
+   */
+  readonly exhausted: readonly BudgetDimension[]
+}
+
 /** What one run's spending consumed of its parent's allowance when it closed. */
 export interface RunSettlement {
   /** The run that closed. */
   readonly runId: RunId
-  /** Everything this run and its descendants spent while they were open. */
+  /**
+   * What this run's allowance was charged: its own spend plus each closed
+   * descendant's, capped at what that descendant reserved.
+   *
+   * It is not the tree's billed total when a descendant overdrew — the excess
+   * was spent, but its parent never authorized it, and letting it through here
+   * would take it from that descendant's siblings. The true figure for one run
+   * is its own record's `spent`, read while it is open.
+   */
   readonly spent: RunSpend
   /** Descendants closed with it, deepest first; empty when it had no open children. */
   readonly closed: readonly RunId[]
-  /** The parent's allowance after the unspent remainder returned; absent for a root run. */
+  /** The parent's remaining allowance after this run's hold was released; absent for a root run. */
   readonly parentRemaining: RunBudget | undefined
 }
+
+/** Add two spends together. */
+function plus(left: RunSpend, right: RunSpend): RunSpend {
+  return {
+    tokens: left.tokens + right.tokens,
+    wallMs: left.wallMs + right.wallMs,
+    costMicroUsd: left.costMicroUsd + right.costMicroUsd,
+  }
+}
+
+/**
+ * The part of one run's spend its parent's allowance absorbs.
+ *
+ * A child that consumed more than it reserved has already cost the tenant that
+ * money, but its parent authorized only the reservation. Capping here is what
+ * keeps an overspending child from silently drawing on allowance nobody granted
+ * it, while the settlement still reports the true figure.
+ */
+function cappedAt(spent: RunSpend, reserved: RunBudget): RunSpend {
+  return {
+    tokens: Math.min(spent.tokens, reserved.tokens),
+    wallMs: Math.min(spent.wallMs, reserved.wallMs),
+    costMicroUsd: Math.min(spent.costMicroUsd, reserved.costMicroUsd),
+  }
+}
+
+/** Nothing spent yet. */
+const NOTHING: RunSpend = { tokens: 0, wallMs: 0, costMicroUsd: 0 }
 
 /**
  * The live runs of one delegation tree and the allowance each holds.
  *
  * One ledger owns one tree. A parent and its children must share an instance,
- * because a reservation is a subtraction from the parent's record and two
+ * because a child's reservation is held against its parent's record and two
  * ledgers would each believe they held the whole allowance.
  */
 export class RunLedger {
@@ -107,16 +158,17 @@ export class RunLedger {
   openRoot(runId: RunId, budget: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord> {
     assertRunBudget(budget)
     if (this.records.has(runId)) return { ok: false, rejection: { reason: 'duplicate-run', runId } }
-    const record: RunRecord = { runId, parentRunId: undefined, remaining: budget, reserved: budget, leaseExpiresAt }
+    const record: RunRecord = { runId, parentRunId: undefined, reserved: budget, spent: NOTHING, leaseExpiresAt }
     this.records.set(runId, record)
     return { ok: true, value: record }
   }
 
   /**
-   * Open a child run, taking its allowance out of its parent's.
+   * Open a child run, holding its allowance against its parent's.
    *
-   * The subtraction is the enforcement, so the parent's record is updated
-   * before this returns and cannot fund the same tokens twice.
+   * The hold is the enforcement: the parent's remaining allowance is derived
+   * with every open child's reservation already taken out, so it cannot fund
+   * the same tokens twice however many children it starts.
    * @param parentRunId - the delegating run, which must be open here.
    * @param runId - the child being opened.
    * @param request - the allowance asked for the child.
@@ -131,44 +183,43 @@ export class RunLedger {
     leaseExpiresAt: number,
   ): RunLedgerResult<RunRecord> {
     assertRunBudget(request, 'request')
-    const parent = this.records.get(parentRunId)
-    if (parent === undefined) return { ok: false, rejection: { reason: 'unknown-run', runId: parentRunId } }
+    const available = this.remaining(parentRunId)
+    if (available === undefined) return { ok: false, rejection: { reason: 'unknown-run', runId: parentRunId } }
     if (this.records.has(runId)) return { ok: false, rejection: { reason: 'duplicate-run', runId } }
-    const reservation = reserveChild(parent.remaining, request)
+    const reservation = reserveChild(available, request)
     if (!reservation.reserved) {
       return { ok: false, rejection: { reason: 'parent-exhausted', denial: reservation.denial } }
     }
-    this.records.set(parentRunId, { ...parent, remaining: reservation.parent })
-    const record: RunRecord = {
-      runId,
-      parentRunId,
-      remaining: reservation.child,
-      reserved: reservation.child,
-      leaseExpiresAt,
-    }
+    const record: RunRecord = { runId, parentRunId, reserved: reservation.child, spent: NOTHING, leaseExpiresAt }
     this.records.set(runId, record)
     return { ok: true, value: record }
   }
 
   /**
-   * Charge one open run for what it consumed since its last charge.
+   * Record what one open run consumed since its last charge.
    *
-   * A charge that would overdraw is refused and nothing is deducted, so a
-   * caller that stops the run on a denial never leaves it partly charged.
+   * The spend is added, never refused: a provider bills what it billed, and a
+   * charge the ledger declined to record would leave it reporting an allowance
+   * the run has already used. A run that has exhausted a dimension is reported
+   * as such so its caller can stop it, which is the decision refusing was
+   * standing in for.
    * @param runId - the run to charge.
    * @param spend - what it consumed.
-   * @returns the run's record after the charge, or the reason it was refused.
+   * @returns the updated record and the dimensions it has now used in full, or
+   *   the reason the run is not open.
    * @throws RangeError when the spend is not made of non-negative safe integers.
    */
-  charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunRecord> {
+  charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult> {
     assertRunSpend(spend)
     const record = this.records.get(runId)
     if (record === undefined) return { ok: false, rejection: { reason: 'unknown-run', runId } }
-    const charged = chargeRun(record.remaining, spend)
-    if (!charged.charged) return { ok: false, rejection: { reason: 'overdrawn', denial: charged.denial } }
-    const next: RunRecord = { ...record, remaining: charged.remaining }
+    const next: RunRecord = { ...record, spent: plus(record.spent, spend) }
     this.records.set(runId, next)
-    return { ok: true, value: next }
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- the record was just written under this id
+    const available = this.remaining(runId)!
+    const exhausted: BudgetDimension[] = (['tokens', 'wallMs', 'costMicroUsd'] as const)
+      .filter(dimension => available[dimension] === 0)
+    return { ok: true, value: { record: next, exhausted } }
   }
 
   /**
@@ -190,7 +241,7 @@ export class RunLedger {
   }
 
   /**
-   * Close one run and return its unspent allowance to its parent.
+   * Close one run and release its hold on its parent.
    *
    * A run with open children closes them too: a child's hold belongs to a tree
    * that no longer has a run to serve, and leaving it would strand the parent's
@@ -209,9 +260,9 @@ export class RunLedger {
    * Settle every run whose lease has elapsed, earliest lease first.
    *
    * The settlement is exact rather than estimated, because every charge went
-   * through this ledger: what returns to the parent is what the run had left.
-   * A run whose final charge never arrived is credited that much too
-   * generously, which is bounded by one charge interval.
+   * through this ledger: what the parent absorbs is what the run consumed,
+   * capped at what it was allowed. A run whose final charge never arrived is
+   * credited that much too generously, which is bounded by one charge interval.
    * @param now - the current time in epoch milliseconds.
    * @returns one settlement per expired run, in the order they were settled;
    *   a run closed as a descendant of an expired one has no settlement of its
@@ -227,6 +278,34 @@ export class RunLedger {
         .sort((left, right) => left.leaseExpiresAt - right.leaseExpiresAt)[0]
       if (expired === undefined) return settlements
       settlements.push(this.settle(expired))
+    }
+  }
+
+  /**
+   * What one open run may still spend.
+   *
+   * Derived rather than stored: the record holds what the run was given and
+   * what it has consumed, and every open child's reservation is held out of the
+   * result. Nothing is negative — a run that overdrew reads as zero, and the
+   * overdraw is visible in its own `spent`.
+   * @param runId - the run to measure.
+   * @returns its remaining allowance, or `undefined` when the run is not open.
+   */
+  remaining(runId: RunId): RunBudget | undefined {
+    const record = this.records.get(runId)
+    if (record === undefined) return undefined
+    let held = record.spent
+    let slots = record.reserved.children
+    for (const child of this.records.values()) {
+      if (child.parentRunId !== runId) continue
+      held = plus(held, child.reserved)
+      slots -= 1
+    }
+    return {
+      tokens: Math.max(0, record.reserved.tokens - held.tokens),
+      wallMs: Math.max(0, record.reserved.wallMs - held.wallMs),
+      costMicroUsd: Math.max(0, record.reserved.costMicroUsd - held.costMicroUsd),
+      children: Math.max(0, slots),
     }
   }
 
@@ -247,55 +326,40 @@ export class RunLedger {
     return [...this.records.values()]
   }
 
-  /** Close one record with its descendants and credit whatever reserved it. */
+  /** Close one record with its descendants and release its hold on its parent. */
   private settle(record: RunRecord): RunSettlement {
     const closed: RunId[] = []
     const spent = this.closeSubtree(record, closed)
     this.records.delete(record.runId)
-    return {
-      runId: record.runId,
-      spent,
-      closed,
-      parentRemaining: record.parentRunId === undefined
-        ? undefined
-        : this.creditParent(record.parentRunId, record.reserved, spent),
+    if (record.parentRunId === undefined) {
+      return { runId: record.runId, spent, closed, parentRemaining: undefined }
     }
+    // A record carrying a parent id is only ever settled while that parent is
+    // open: closing a parent closes its children first, and `expire` cannot
+    // reach a child whose parent it already settled.
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
+    const parent = this.records.get(record.parentRunId)!
+    this.records.set(parent.runId, { ...parent, spent: plus(parent.spent, cappedAt(spent, record.reserved)) })
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- the parent was just written under its own id
+    return { runId: record.runId, spent, closed, parentRemaining: this.remaining(parent.runId)! }
   }
 
   /**
-   * Close every descendant of one record and report what its subtree spent.
+   * Close every descendant of one record and report what its subtree consumed.
    *
-   * The remainder is carried in a local rather than written back per child:
-   * the record itself is deleted by the caller, so the only value that has to
-   * survive is the total.
+   * A descendant's spend is capped at what it reserved before it joins its
+   * parent's, for the same reason a settled child's is: the parent authorized
+   * the reservation, not whatever the child managed to spend beyond it.
    */
   private closeSubtree(record: RunRecord, closed: RunId[]): RunSpend {
-    let remaining = record.remaining
+    let spent = record.spent
     for (const child of [...this.records.values()]) {
       if (child.parentRunId !== record.runId) continue
       const childSpent = this.closeSubtree(child, closed)
       this.records.delete(child.runId)
       closed.push(child.runId)
-      remaining = settleChild(remaining, child.reserved, childSpent)
+      spent = plus(spent, cappedAt(childSpent, child.reserved))
     }
-    return {
-      tokens: record.reserved.tokens - remaining.tokens,
-      wallMs: record.reserved.wallMs - remaining.wallMs,
-      costMicroUsd: record.reserved.costMicroUsd - remaining.costMicroUsd,
-    }
-  }
-
-  /**
-   * Return one closed run's unspent allowance to the run that reserved it.
-   *
-   * The parent is open whenever this runs: closing a parent closes its children
-   * first, and `expire` cannot reach a child whose parent it already settled.
-   */
-  private creditParent(parentRunId: RunId, reserved: RunBudget, spent: RunSpend): RunBudget {
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- the doc above states the invariant
-    const parent = this.records.get(parentRunId)!
-    const remaining = settleChild(parent.remaining, reserved, spent)
-    this.records.set(parent.runId, { ...parent, remaining })
-    return remaining
+    return spent
   }
 }

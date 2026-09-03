@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 [`dsh-run-budget`](../run-budget/README.md) is the arithmetic: a child's allowance is subtracted from its parent when it starts, and the unspent remainder returns when it settles. It says nothing about who holds a reservation, or what happens when the run holding one never settles — a child that crashes keeps its parent's tokens for as long as the parent lives.
 
-This package is the record that answers both. Every charge goes through it, so a run that is dropped can be settled *exactly*: the ledger already knows what that run had left, and nothing has to be estimated. Each record also carries a lease, so an abandoned hold comes back on a clock rather than when someone notices.
+This package is the record that answers both. Spend is what a record stores and what a run may still spend is derived, so a provider's bill is recorded as it arrived rather than refused for not fitting, and a run that is dropped can be settled *exactly*: the ledger already knows what it consumed, and nothing has to be estimated. Each record also carries a lease, so an abandoned hold comes back on a clock rather than when someone notices.
 
 Nothing here persists anything. A `RunRecord` is plain data a caller may store; the state machine and the arithmetic are what this package owns.
 
@@ -45,7 +45,9 @@ export const charged = opened.ok
   : opened
 ```
 
-A refused charge deducts nothing and names the dimension that stopped it, so a caller that ends the run on a denial never leaves it partly charged.
+A charge is recorded, never refused: a provider bills what it billed, and a spend the ledger declined to record would leave it reporting allowance the run has already used. What a charge answers instead is `exhausted` — the dimensions the run has now used in full, which is empty while it may continue and is the signal to stop it when it is not.
+
+`ledger.remaining(runId)` is what the run may still spend, derived from its allowance, its recorded spend, and every open child's reservation. It never goes negative; a run that overdrew reads as zero, and the overdraw stays visible in its own record's `spent`.
 
 ### Delegating, and getting the allowance back
 
@@ -68,7 +70,7 @@ const opened = ledger.openChild(parent, child, {
 export const settled = opened.ok ? ledger.close(child) : opened
 ```
 
-Closing a run returns its unspent allowance and its child slot to the parent. A run with open children closes them too: a hold left behind a closed run is a hold nothing will ever settle.
+Closing a run releases its hold, so the parent's derived allowance recovers everything the child did not use, along with its child slot. A run with open children closes them too: a hold left behind a closed run is a hold nothing will ever settle.
 
 ### Releasing what a lost run was holding
 
@@ -95,14 +97,20 @@ export const released = ledger.expire(now)
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `RunLedger`, `RunRecord`, `RunSettlement`, and the ledger rejections |
+| [`src/index.ts`](src/index.ts) | `RunLedger`, `RunRecord`, `RunChargeResult`, `RunSettlement`, and the ledger rejections |
 | — | No runtime invariant companion is published; this module owns no event stream, and the one relation worth checking — that a tree never returns more than it reserved — is arithmetic its unit tests pin directly. |
 
 ### Why an expired run settles exactly
 
-A lease expiry elsewhere has to guess: the holder is gone and nobody knows what it consumed, so a system either credits the whole reservation back (inventing budget the run already spent) or credits nothing (leaking the allowance until the parent ends). Neither is necessary here, because charges and holds live in the same record. What returns to the parent is the run's own `remaining`, which is what it genuinely did not spend.
+A lease expiry elsewhere has to guess: the holder is gone and nobody knows what it consumed, so a system either credits the whole reservation back (inventing budget the run already spent) or credits nothing (leaking the allowance until the parent ends). Neither is necessary here, because charges and holds live in the same record. What the parent absorbs is what the run consumed, capped at what it was allowed.
 
 The one inexactness is bounded and named: a run whose final charge never reached the ledger is credited that much too generously, at most one charge interval's worth.
+
+### Why a spend is recorded rather than refused
+
+Charging happens after a provider has already billed. A ledger that refused a spend for not fitting would keep reporting an allowance the run had spent, and the next invocation would be sized against that phantom — which is the opposite of a cap. The refusal was standing in for a decision the caller has to make anyway, so the charge reports `exhausted` and the caller stops the run.
+
+An overspend is therefore recorded in full, while the parent absorbs only what it authorized. A child that outspent its reservation cost the tenant that money, but its parent granted the reservation and no more; charging the excess to the parent would take it from that child's siblings.
 
 ### Why closing a run closes its descendants
 

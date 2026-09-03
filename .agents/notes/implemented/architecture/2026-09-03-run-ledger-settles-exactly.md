@@ -16,6 +16,12 @@ The second problem is what a lease expiry is normally worth. Elsewhere it has to
 
 `RunLedger` holds the open runs of one delegation tree: what each was given, what it has left, and when its hold is released. Every charge goes through it.
 
+### Spend is stored, and what is left is derived
+
+A record holds what a run was given and what it has consumed; what it may still spend is computed from those plus every open child's reservation. The first shape stored `remaining` and refused a charge that did not fit, which is the wrong direction for this seam: charging happens after a provider has already billed, so a refused charge leaves the ledger reporting an allowance the run has spent, and the next invocation is sized against a figure that is not real. It also contradicted the settlement rule beside it, which has always accepted that a child "consumed more than it reserved".
+
+So a spend is recorded in full and the charge reports which dimensions are now used up, which is the decision the refusal was standing in for. The parent still absorbs only what it authorized — an overspending child must not draw on its siblings' allowance — and the settlement reports the true figure.
+
 ### Charges and holds in one place make expiry exact
 
 Because the ledger records each charge, a dropped run needs no estimate: what returns to the parent is that run's own `remaining`, which is precisely what it did not spend. The guess disappears, not because expiry got cleverer, but because the two facts that make it a guess elsewhere were never separated here.

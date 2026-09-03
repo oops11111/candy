@@ -2,11 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   assertRunBudget,
   assertRunSpend,
-  BUDGET_DIMENSIONS,
-  chargeRun,
   hasRemainingBudget,
   reserveChild,
-  settleChild,
   type RunBudget,
   type RunSpend,
 } from '../src/index.ts'
@@ -86,111 +83,6 @@ describe('reserveChild', () => {
   })
 })
 
-describe('settleChild', () => {
-  it('returns the unused remainder and the child slot', () => {
-    const parent = budget({ tokens: 600, wallMs: 50_000, costMicroUsd: 300_000, children: 1 })
-    const reserved = budget({ tokens: 400, wallMs: 10_000, costMicroUsd: 200_000, children: 1 })
-
-    const settled = settleChild(parent, reserved, spend({ tokens: 100, wallMs: 4_000, costMicroUsd: 50_000 }))
-
-    expect(settled).toEqual({ tokens: 900, wallMs: 56_000, costMicroUsd: 450_000, children: 2 })
-  })
-
-  it('returns nothing when the child spent its whole reservation', () => {
-    const parent = budget({ tokens: 0, children: 0 })
-    const reserved = budget({ tokens: 100, wallMs: 100, costMicroUsd: 100, children: 0 })
-
-    const settled = settleChild(parent, reserved, { tokens: 100, wallMs: 100, costMicroUsd: 100 })
-
-    expect(settled).toMatchObject({ tokens: 0, children: 1 })
-  })
-
-  it('credits no budget for an overspend', () => {
-    const parent = budget({ tokens: 0, wallMs: 0, costMicroUsd: 0, children: 0 })
-    const reserved = budget({ tokens: 100, wallMs: 100, costMicroUsd: 100, children: 0 })
-
-    // The tenant has already paid for the overspend; inventing budget back
-    // would let the parent spend money twice.
-    const settled = settleChild(parent, reserved, { tokens: 250, wallMs: 250, costMicroUsd: 250 })
-
-    expect(settled).toEqual({ tokens: 0, wallMs: 0, costMicroUsd: 0, children: 1 })
-  })
-
-  it('round-trips a child that spent nothing', () => {
-    const parent = budget()
-    const request = budget({ tokens: 400, wallMs: 10_000, costMicroUsd: 200_000, children: 0 })
-    const reservation = reserveChild(parent, request)
-    expect(reservation.reserved).toBe(true)
-    if (!reservation.reserved) return
-
-    expect(settleChild(reservation.parent, reservation.child, spend())).toEqual(parent)
-  })
-
-  it('refuses to return a budget outside the safe integer range', () => {
-    expect(() => {
-      settleChild(
-        budget({ children: Number.MAX_SAFE_INTEGER }),
-        budget({ tokens: 0, wallMs: 0, costMicroUsd: 0, children: 0 }),
-        spend(),
-      )
-    }).toThrow(/settled\.children/)
-
-    expect(() => {
-      settleChild(
-        budget({ tokens: Number.MAX_SAFE_INTEGER }),
-        budget({ tokens: 1, wallMs: 0, costMicroUsd: 0, children: 0 }),
-        spend(),
-      )
-    }).toThrow(/settled\.tokens/)
-  })
-})
-
-describe('chargeRun', () => {
-  it('deducts what the run consumed', () => {
-    expect(chargeRun(budget(), spend({ tokens: 250, wallMs: 5_000, costMicroUsd: 100_000 }))).toEqual({
-      charged: true,
-      remaining: { tokens: 750, wallMs: 55_000, costMicroUsd: 400_000, children: 2 },
-    })
-  })
-
-  it('leaves child slots alone', () => {
-    const charged = chargeRun(budget({ children: 2 }), spend({ tokens: 1 }))
-
-    expect(charged).toMatchObject({ charged: true, remaining: { children: 2 } })
-  })
-
-  it.each([
-    ['tokens', { tokens: 1_001 }],
-    ['wallMs', { wallMs: 60_001 }],
-    ['costMicroUsd', { costMicroUsd: 500_001 }],
-  ])('refuses a charge that would overdraw %s', (dimension, over) => {
-    expect(chargeRun(budget(), spend(over))).toMatchObject({ charged: false, denial: { dimension } })
-  })
-
-  it('deducts nothing at all when it refuses', () => {
-    const before = budget()
-
-    const charged = chargeRun(before, spend({ tokens: 10, costMicroUsd: 900_000 }))
-
-    // A caller that stops on a denial must not find its budget partly spent
-    // by the charge it rejected.
-    expect(charged.charged).toBe(false)
-    expect(before).toEqual(budget())
-  })
-
-  it('allows a charge that exactly exhausts the budget', () => {
-    expect(chargeRun(budget({ tokens: 5, wallMs: 5, costMicroUsd: 5 }), { tokens: 5, wallMs: 5, costMicroUsd: 5 }))
-      .toMatchObject({ charged: true, remaining: { tokens: 0, wallMs: 0, costMicroUsd: 0 } })
-  })
-
-  it('reports the first insufficient dimension in a stable order', () => {
-    const charged = chargeRun(budget({ tokens: 0, wallMs: 0 }), spend({ tokens: 1, wallMs: 1 }))
-
-    expect(charged).toMatchObject({ denial: { dimension: 'tokens' } })
-    expect(BUDGET_DIMENSIONS[0]).toBe('tokens')
-  })
-})
-
 describe('hasRemainingBudget', () => {
   it('is true while every consumable dimension is above zero', () => {
     expect(hasRemainingBudget(budget())).toBe(true)
@@ -232,11 +124,6 @@ describe('a budget that is not made of non-negative safe integers', () => {
   it.each([
     ['reserveChild parent', () => reserveChild(budget({ tokens: -1 }), budget())],
     ['reserveChild request', () => reserveChild(budget(), budget({ tokens: -1 }))],
-    ['settleChild parent', () => settleChild(budget({ tokens: -1 }), budget(), spend())],
-    ['settleChild reserved', () => settleChild(budget(), budget({ tokens: -1 }), spend())],
-    ['settleChild spent', () => settleChild(budget(), budget(), spend({ tokens: -1 }))],
-    ['chargeRun budget', () => chargeRun(budget({ tokens: -1 }), spend())],
-    ['chargeRun spend', () => chargeRun(budget(), spend({ tokens: -1 }))],
     ['hasRemainingBudget', () => hasRemainingBudget(budget({ tokens: -1 }))],
   ])('reaches every operation through %s', (_case, call) => {
     expect(call).toThrow(RangeError)
@@ -261,20 +148,5 @@ describe('a delegation tree', () => {
     expect(children).toHaveLength(3)
     const delegated = children.reduce((total, child) => total + child.tokens, 0)
     expect(delegated + parent.tokens).toBe(root.tokens)
-  })
-
-  it('lets a settled child remainder fund the next one', () => {
-    const root = budget({ tokens: 100, wallMs: 100, costMicroUsd: 100, children: 1 })
-    const request = { tokens: 100, wallMs: 100, costMicroUsd: 100, children: 0 }
-
-    const first = reserveChild(root, request)
-    expect(first.reserved).toBe(true)
-    if (!first.reserved) return
-    // With everything delegated, a second child cannot start.
-    expect(reserveChild(first.parent, request).reserved).toBe(false)
-
-    const afterSettle = settleChild(first.parent, first.child, { tokens: 10, wallMs: 10, costMicroUsd: 10 })
-
-    expect(reserveChild(afterSettle, { tokens: 90, wallMs: 90, costMicroUsd: 90, children: 0 }).reserved).toBe(true)
   })
 })

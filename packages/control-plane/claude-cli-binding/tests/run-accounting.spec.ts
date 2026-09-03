@@ -108,10 +108,9 @@ describe('charging a run for what it actually spent', () => {
 
     // 0.5 USD billed by the CLI, and the four disjoint counts summed.
     expect(usage.costMicroUsd).toBe(500_000)
-    expect(charged).toMatchObject({
-      ok: true,
-      value: { remaining: { costMicroUsd: BUDGET.costMicroUsd - 500_000, tokens: BUDGET.tokens - 12 } },
-    })
+    expect(charged).toMatchObject({ ok: true, value: { exhausted: [] } })
+    expect(ledger.remaining(run.claims.runId))
+      .toMatchObject({ costMicroUsd: BUDGET.costMicroUsd - 500_000, tokens: BUDGET.tokens - 12 })
   })
 
   it('caps a second invocation at what the first left', async () => {
@@ -122,7 +121,7 @@ describe('charging a run for what it actually spent', () => {
 
     const first = await invoke(run, run.budget)
     ledger.charge(run.claims.runId, spendOf(first.usage, 1_000))
-    const remaining = ledger.get(run.claims.runId)?.remaining
+    const remaining = ledger.remaining(run.claims.runId)
     if (remaining === undefined) throw new Error('the fixture run is open')
     const second = await invoke(run, remaining)
 
@@ -140,7 +139,7 @@ describe('charging a run for what it actually spent', () => {
     ledger.openRoot(run.claims.runId, run.budget, LEASE)
 
     for (const _ of [0, 1]) {
-      const remaining = ledger.get(run.claims.runId)?.remaining ?? run.budget
+      const remaining = ledger.remaining(run.claims.runId) ?? run.budget
       const { usage } = await invoke(run, remaining)
       ledger.charge(run.claims.runId, spendOf(usage, 1_000))
     }

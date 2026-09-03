@@ -13,13 +13,13 @@ function budget(overrides: Partial<RunBudget> = {}): RunBudget {
   return { tokens: 1_000, wallMs: 60_000, costMicroUsd: 500_000, children: 2, ...overrides }
 }
 
-function spend(overrides: Partial<RunSpend> = {}): RunSpend {
-  return { tokens: 0, wallMs: 0, costMicroUsd: 0, ...overrides }
-}
-
 /** A child-sized allowance: small in every dimension so siblings fit beside it. */
 function share(overrides: Partial<RunBudget> = {}): RunBudget {
   return { tokens: 100, wallMs: 1_000, costMicroUsd: 10_000, children: 0, ...overrides }
+}
+
+function spend(overrides: Partial<RunSpend> = {}): RunSpend {
+  return { tokens: 0, wallMs: 0, costMicroUsd: 0, ...overrides }
 }
 
 /** A ledger holding one open root, which every case starts from. */
@@ -31,16 +31,17 @@ function rooted(overrides: Partial<RunBudget> = {}): RunLedger {
 }
 
 describe('opening a run', () => {
-  it('holds the allowance admission granted', () => {
+  it('holds the allowance admission granted and has spent nothing', () => {
     const ledger = rooted()
 
     expect(ledger.get(ROOT)).toEqual({
       runId: ROOT,
       parentRunId: undefined,
-      remaining: budget(),
       reserved: budget(),
+      spent: spend(),
       leaseExpiresAt: LEASE,
     })
+    expect(ledger.remaining(ROOT)).toEqual(budget())
   })
 
   it('refuses to reopen a run that is already holding one', () => {
@@ -50,15 +51,15 @@ describe('opening a run', () => {
       .toEqual({ ok: false, rejection: { reason: 'duplicate-run', runId: ROOT } })
   })
 
-  it('takes a child out of its parent before the child can spend', () => {
+  it('holds a child allowance out of its parent before the child can spend', () => {
     const ledger = rooted()
 
     const child = ledger.openChild(ROOT, CHILD, share({ tokens: 400 }), LEASE)
 
-    expect(child).toMatchObject({ ok: true, value: { parentRunId: ROOT, remaining: { tokens: 400 } } })
-    // The subtraction is the enforcement: the parent cannot promise these
-    // tokens to a second child.
-    expect(ledger.get(ROOT)?.remaining.tokens).toBe(600)
+    expect(child).toMatchObject({ ok: true, value: { parentRunId: ROOT, reserved: { tokens: 400 } } })
+    // The hold is the enforcement: the parent cannot promise these tokens to a
+    // second child while this one is open.
+    expect(ledger.remaining(ROOT)).toMatchObject({ tokens: 600, children: 1 })
   })
 
   it('refuses a child its parent cannot fund and changes nothing', () => {
@@ -67,7 +68,7 @@ describe('opening a run', () => {
     const child = ledger.openChild(ROOT, CHILD, share({ tokens: 500 }), LEASE)
 
     expect(child).toMatchObject({ ok: false, rejection: { reason: 'parent-exhausted', denial: { dimension: 'tokens' } } })
-    expect(ledger.get(ROOT)?.remaining).toEqual(budget({ tokens: 100 }))
+    expect(ledger.remaining(ROOT)).toEqual(budget({ tokens: 100 }))
     expect(ledger.get(CHILD)).toBeUndefined()
   })
 
@@ -81,30 +82,55 @@ describe('opening a run', () => {
   it('refuses a child id already open, leaving the parent untouched', () => {
     const ledger = rooted()
     ledger.openChild(ROOT, CHILD, share({ tokens: 100 }), LEASE)
-    const parentBefore = ledger.get(ROOT)?.remaining
+    const before = ledger.remaining(ROOT)
 
     expect(ledger.openChild(ROOT, CHILD, share({ tokens: 100 }), LEASE))
       .toEqual({ ok: false, rejection: { reason: 'duplicate-run', runId: CHILD } })
-    expect(ledger.get(ROOT)?.remaining).toEqual(parentBefore)
+    expect(ledger.remaining(ROOT)).toEqual(before)
+  })
+
+  it('rejects a budget that is not made of non-negative safe integers', () => {
+    expect(() => new RunLedger().openRoot(ROOT, budget({ tokens: -1 }), LEASE)).toThrow(RangeError)
+    expect(() => rooted().openChild(ROOT, CHILD, share({ tokens: -1 }), LEASE)).toThrow(/request\.tokens/)
   })
 })
 
 describe('charging a run', () => {
-  it('deducts what it consumed', () => {
+  it('records what it consumed and leaves it free to continue', () => {
     const ledger = rooted()
 
     const charged = ledger.charge(ROOT, spend({ tokens: 250, costMicroUsd: 100_000 }))
 
-    expect(charged).toMatchObject({ ok: true, value: { remaining: { tokens: 750, costMicroUsd: 400_000 } } })
+    expect(charged).toMatchObject({ ok: true, value: { exhausted: [] } })
+    expect(ledger.remaining(ROOT)).toMatchObject({ tokens: 750, costMicroUsd: 400_000 })
   })
 
-  it('refuses a charge that would overdraw and deducts nothing', () => {
+  it('accumulates across charges', () => {
+    const ledger = rooted()
+
+    ledger.charge(ROOT, spend({ tokens: 100 }))
+    ledger.charge(ROOT, spend({ tokens: 40 }))
+
+    expect(ledger.get(ROOT)?.spent).toEqual(spend({ tokens: 140 }))
+  })
+
+  it('records a spend that overdraws rather than refusing it', () => {
     const ledger = rooted({ tokens: 100 })
 
-    const charged = ledger.charge(ROOT, spend({ tokens: 101 }))
+    const charged = ledger.charge(ROOT, spend({ tokens: 250 }))
 
-    expect(charged).toMatchObject({ ok: false, rejection: { reason: 'overdrawn', denial: { dimension: 'tokens' } } })
-    expect(ledger.get(ROOT)?.remaining.tokens).toBe(100)
+    // The provider billed 250 tokens whatever the ledger says. Declining to
+    // record them would leave the run reporting allowance it has already used.
+    expect(charged).toMatchObject({ ok: true, value: { record: { spent: { tokens: 250 } }, exhausted: ['tokens'] } })
+    expect(ledger.remaining(ROOT)?.tokens).toBe(0)
+  })
+
+  it('names every dimension the run has used in full', () => {
+    const ledger = rooted({ tokens: 10, wallMs: 10, costMicroUsd: 10 })
+
+    const charged = ledger.charge(ROOT, { tokens: 10, wallMs: 5, costMicroUsd: 99 })
+
+    expect(charged).toMatchObject({ ok: true, value: { exhausted: ['tokens', 'costMicroUsd'] } })
   })
 
   it('refuses to charge a run it does not hold', () => {
@@ -118,7 +144,7 @@ describe('charging a run', () => {
 })
 
 describe('closing a run', () => {
-  it('returns the unspent remainder and the child slot to the parent', () => {
+  it('releases the hold and charges the parent for what the child used', () => {
     const ledger = rooted()
     ledger.openChild(ROOT, CHILD, share({ tokens: 400, wallMs: 10_000, costMicroUsd: 200_000 }), LEASE)
     ledger.charge(CHILD, spend({ tokens: 100, wallMs: 4_000, costMicroUsd: 50_000 }))
@@ -135,6 +161,19 @@ describe('closing a run', () => {
       },
     })
     expect(ledger.get(CHILD)).toBeUndefined()
+  })
+
+  it('charges the parent only what it authorized when a child overdrew', () => {
+    const ledger = rooted()
+    ledger.openChild(ROOT, CHILD, share({ tokens: 100 }), LEASE)
+    ledger.charge(CHILD, spend({ tokens: 250 }))
+
+    const settled = ledger.close(CHILD)
+
+    // The overspend is real and the settlement reports it; the parent absorbs
+    // its reservation and no more, so a sibling's allowance is not taken by it.
+    expect(settled).toMatchObject({ ok: true, value: { spent: { tokens: 250 } } })
+    expect(ledger.remaining(ROOT)?.tokens).toBe(900)
   })
 
   it('reports a root run with no parent to credit', () => {
@@ -160,7 +199,7 @@ describe('closing a run', () => {
     // A hold left behind a closed run is a hold nothing will ever settle.
     expect(settled).toMatchObject({ ok: true, value: { spent: { tokens: 50 }, closed: [GRANDCHILD] } })
     expect(ledger.open().map(record => record.runId)).toEqual([ROOT])
-    expect(ledger.get(ROOT)?.remaining.tokens).toBe(950)
+    expect(ledger.remaining(ROOT)?.tokens).toBe(950)
   })
 
   it('refuses to close a run it does not hold', () => {
@@ -170,12 +209,12 @@ describe('closing a run', () => {
 
   it('returns everything when a child spent nothing', () => {
     const ledger = rooted()
-    const before = ledger.get(ROOT)?.remaining
+    const before = ledger.remaining(ROOT)
     ledger.openChild(ROOT, CHILD, share({ tokens: 400 }), LEASE)
 
     ledger.close(CHILD)
 
-    expect(ledger.get(ROOT)?.remaining).toEqual(before)
+    expect(ledger.remaining(ROOT)).toEqual(before)
   })
 })
 
@@ -187,9 +226,9 @@ describe('a lease that runs out', () => {
 
     const expired = ledger.expire(NOW + 1_001)
 
-    // Nothing is estimated: the ledger knows what the lost run had left.
+    // Nothing is estimated: the ledger knows what the lost run consumed.
     expect(expired).toMatchObject([{ runId: CHILD, spent: { tokens: 120 } }])
-    expect(ledger.get(ROOT)?.remaining.tokens).toBe(880)
+    expect(ledger.remaining(ROOT)?.tokens).toBe(880)
   })
 
   it('leaves a run whose lease has not elapsed', () => {
@@ -255,11 +294,10 @@ describe('a tree that loses a run', () => {
     expect(next.ok).toBe(true)
     // 400 spent by the lost child plus 600 delegated is the whole allowance;
     // nothing was invented by the expiry.
-    expect(ledger.get(ROOT)?.remaining.tokens).toBe(0)
+    expect(ledger.remaining(ROOT)?.tokens).toBe(0)
   })
 
-  it('rejects a budget that is not made of non-negative safe integers', () => {
-    expect(() => new RunLedger().openRoot(ROOT, budget({ tokens: -1 }), LEASE)).toThrow(RangeError)
-    expect(() => rooted().openChild(ROOT, CHILD, share({ tokens: -1 }), LEASE)).toThrow(/request\.tokens/)
+  it('has no remaining allowance to report for a run it does not hold', () => {
+    expect(new RunLedger().remaining(ROOT)).toBeUndefined()
   })
 })
