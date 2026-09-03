@@ -84,7 +84,22 @@ export class ProviderAccountError extends Error {
   }
 }
 
-/** Create one account and seal its credential. */
+/**
+ * Create one account and seal its credential.
+ *
+ * The account becomes this provider's default when the caller asks for it, and
+ * also when the tenant has no other active account for that provider, so a
+ * tenant's first account is never left unselectable.
+ * @param store - the deployment's account store.
+ * @param keyring - keys the credential vault seals with.
+ * @param input - the account's identity, provider, display label, plaintext
+ *   secret, and whether it should become the provider's default.
+ * @param now - epoch milliseconds stamped on the record and its audit entry.
+ * @returns the secret-free view and the vault's sealing audit record.
+ * @throws ProviderAccountError `account-already-exists` when an account with
+ * this id is present and not deleted, or `invalid-label` when the label is
+ * empty once trimmed or longer than 120 characters.
+ */
 export async function createProviderAccount(
   store: ProviderAccountStore,
   keyring: CredentialKeyring,
@@ -122,7 +137,16 @@ export async function createProviderAccount(
   return { value: view(record), audits: [sealed.audit] }
 }
 
-/** List the caller's non-deleted accounts, optionally narrowed to one provider. */
+/**
+ * List the caller's non-deleted accounts, optionally narrowed to one provider.
+ *
+ * Revoked accounts remain listed so a caller can see why a provider stopped
+ * working; only deleted ones are hidden.
+ * @param store - the deployment's account store.
+ * @param userId - the tenant whose accounts are listed; no other tenant's are reachable.
+ * @param provider - narrows the result to one provider kind when given.
+ * @returns secret-free views, in store order.
+ */
 export async function listProviderAccounts(
   store: ProviderAccountStore,
   userId: UserId,
@@ -134,7 +158,19 @@ export async function listProviderAccounts(
     .map(entry => view(entry.record))
 }
 
-/** Mark one account as the caller's default for its provider. */
+/**
+ * Mark one account as the caller's default for its provider.
+ *
+ * The previous default for that provider is cleared first, so a tenant holds
+ * at most one default per provider.
+ * @param store - the deployment's account store.
+ * @param userId - the tenant that must own the account.
+ * @param id - the account to make default.
+ * @param now - epoch milliseconds stamped on the updated records.
+ * @returns the secret-free view of the newly default account.
+ * @throws ProviderAccountError `not-found` when the account is absent or owned
+ * by another tenant, or `revoked`/`deleted` when it is no longer usable.
+ */
 export async function selectDefaultProviderAccount(
   store: ProviderAccountStore,
   userId: UserId,
@@ -148,7 +184,20 @@ export async function selectDefaultProviderAccount(
   return view(selected)
 }
 
-/** Revoke one account and its sealed credential. Revoked accounts stay visible. */
+/**
+ * Revoke one account and its sealed credential.
+ *
+ * The record stays listed and the credential's ciphertext is destroyed, so the
+ * account is visible but can never be opened again. A revoked default is
+ * replaced by another active account for the same provider when one exists.
+ * @param store - the deployment's account store.
+ * @param userId - the tenant that must own the account.
+ * @param id - the account to revoke.
+ * @param now - epoch milliseconds stamped on the record and its audit entry.
+ * @returns the secret-free view and the vault's revocation audit record.
+ * @throws ProviderAccountError `not-found` when the account is absent or owned
+ * by another tenant, or `revoked`/`deleted` when it is no longer usable.
+ */
 export async function revokeProviderAccount(
   store: ProviderAccountStore,
   userId: UserId,
@@ -163,7 +212,21 @@ export async function revokeProviderAccount(
   return { value: view(record), audits: [revoked.audit] }
 }
 
-/** Soft-delete one account after revoking the credential envelope. */
+/**
+ * Soft-delete one account after revoking the credential envelope.
+ *
+ * The record is retained so audit history keeps a subject, but it stops being
+ * listed and its credential is destroyed first — a delete never leaves an
+ * openable envelope behind. A deleted default is replaced as in
+ * {@link revokeProviderAccount}.
+ * @param store - the deployment's account store.
+ * @param userId - the tenant that must own the account.
+ * @param id - the account to delete.
+ * @param now - epoch milliseconds stamped on the record and its audit entry.
+ * @returns the secret-free view and the vault's revocation audit record.
+ * @throws ProviderAccountError `not-found` when the account is absent or owned
+ * by another tenant, or `revoked`/`deleted` when it is no longer usable.
+ */
 export async function deleteProviderAccount(
   store: ProviderAccountStore,
   userId: UserId,
@@ -182,7 +245,26 @@ export async function deleteProviderAccount(
   return { value: view(record), audits: [revoked.audit] }
 }
 
-/** Validate one account without returning or storing the plaintext credential. */
+/**
+ * Validate one account without returning or storing the plaintext credential.
+ *
+ * The secret is opened, handed to the caller's probe, and never leaves this
+ * call: the result is scrubbed to a bounded diagnostic before it is returned,
+ * so a provider that echoes the request cannot leak it onward. A credential
+ * the vault refuses to open reports `invalid-credential` rather than throwing,
+ * because an unopenable credential is a validation outcome, not a caller error.
+ * @param store - the deployment's account store.
+ * @param keyring - keys the credential vault opens with.
+ * @param userId - the tenant that must own the account.
+ * @param id - the account to validate.
+ * @param validator - the provider-specific probe, given the provider kind and
+ *   the plaintext secret for the duration of the call.
+ * @param now - epoch milliseconds recorded as `validatedAt` on success.
+ * @returns the secret-free view, the scrubbed validation, and the vault's
+ *   opening audit record.
+ * @throws ProviderAccountError `not-found` when the account is absent or owned
+ * by another tenant, or `revoked`/`deleted` when it is no longer usable.
+ */
 export async function validateProviderAccount(
   store: ProviderAccountStore,
   keyring: CredentialKeyring,

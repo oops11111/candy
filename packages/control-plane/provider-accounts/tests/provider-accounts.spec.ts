@@ -163,3 +163,101 @@ describe('provider accounts', () => {
     await expect(create(store, 'account-1')).rejects.toMatchObject({ code: 'account-already-exists' })
   })
 })
+
+describe('the paths that refuse an account', () => {
+  it('reports an unopenable credential as a failed validation, not a thrown error', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+
+    // A keyring without the version the envelope names: the vault cannot open
+    // it. That is a validation outcome the caller routes on, not a defect.
+    const otherKeyring: CredentialKeyring = {
+      currentVersion: CredentialKeyVersion('2026-09-b'),
+      keys: new Map([[CredentialKeyVersion('2026-09-b'), Buffer.alloc(32, 9)]]),
+    }
+    let probed = false
+    const result = await validateProviderAccount(
+      store, otherKeyring, ALICE, ProviderAccountId('account-1'),
+      () => { probed = true; return Promise.resolve({ valid: true }) },
+      NOW + 1,
+    )
+
+    expect(result.value.validation).toEqual({ valid: false, reason: 'invalid-credential' })
+    // The probe never runs, so a broken keyring cannot send a secret anywhere.
+    expect(probed).toBe(false)
+    expect(result.audits).toHaveLength(1)
+  })
+
+  it('leaves validatedAt untouched when the probe reports failure', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+
+    const result = await validateProviderAccount(
+      store, KEYRING, ALICE, ProviderAccountId('account-1'),
+      () => Promise.resolve({ valid: false, reason: 'provider-unavailable' }),
+      NOW + 1,
+    )
+
+    // Only a successful probe stamps the record, so a provider outage cannot
+    // make a stale credential look freshly checked.
+    expect(result.value.account.validatedAt).toBeUndefined()
+    expect(store.entries.get('account-1')?.record.updatedAt).toBe(NOW)
+  })
+
+  it('returns a validation that carried no diagnostic unchanged', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+
+    const result = await validateProviderAccount(
+      store, KEYRING, ALICE, ProviderAccountId('account-1'),
+      () => Promise.resolve({ valid: true }),
+      NOW + 1,
+    )
+
+    expect(result.value.validation).toEqual({ valid: true })
+    expect(result.value.account.validatedAt).toBe(NOW + 1)
+  })
+
+  it('refuses an account another tenant owns as not-found', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+
+    // Reported as absent rather than forbidden: a distinct error would let one
+    // tenant probe another's account ids.
+    await expect(selectDefaultProviderAccount(store, BOB, ProviderAccountId('account-1'), NOW + 1))
+      .rejects.toThrow(new ProviderAccountError('not-found'))
+  })
+
+  it('refuses a revoked account', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+    await revokeProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 1)
+
+    await expect(selectDefaultProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 2))
+      .rejects.toThrow(new ProviderAccountError('revoked'))
+  })
+
+  it('refuses a deleted account', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+    await deleteProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 1)
+
+    await expect(selectDefaultProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 2))
+      .rejects.toThrow(new ProviderAccountError('deleted'))
+  })
+
+  it.each([
+    ['blank once trimmed', '   '],
+    ['longer than 120 characters', 'x'.repeat(121)],
+  ])('refuses a label that is %s', async (_case, label) => {
+    const store = memoryStore()
+
+    await expect(createProviderAccount(store, KEYRING, {
+      id: ProviderAccountId('account-1'),
+      userId: ALICE,
+      provider: DEEPSEEK,
+      label,
+      secret: Buffer.from('secret', 'utf8'),
+    }, NOW)).rejects.toThrow(new ProviderAccountError('invalid-label'))
+  })
+})
