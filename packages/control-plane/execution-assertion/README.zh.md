@@ -83,6 +83,8 @@ else deny(admission.rejection)
 
 当前时间是参数,而不是对进程时钟的读取,因此已经持有决策时间戳的调度器可以针对那一刻进行准入,测试也无需控制时钟。
 
+`maxLifetimeMs` 必须是正的安全整数,`admitExecutionAssertion` 会抛出 `RangeError`,而不是针对一个它无法施加的上限进行准入:`NaN` 上限——`Number(...)` 对未设置的环境变量返回的值——会让所有生存期比较为假,从而接受断言声称的任意时间跨度;而零或负数上限则会以 `lifetime` 拒绝每一次运行,而该拒绝指向的是签发方的时间跨度,而不是配置有误的运行时。这两种失败都不会体现在准入结果里,因此都在调用处被拒绝。
+
 -----
 
 <a id="understand-the-implementation"></a>

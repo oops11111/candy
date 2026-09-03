@@ -100,6 +100,29 @@ describe('admitExecutionAssertion', () => {
   })
 
   it.each([
+    ['not a number', Number.NaN],
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['beyond the safe integer range', Number.MAX_SAFE_INTEGER + 2],
+  ])('refuses a lifetime ceiling that is %s', (_case, maxLifetimeMs) => {
+    const token = mintExecutionAssertion(claims(), SECRET)
+
+    expect(() => admitExecutionAssertion(token, SECRET, { ...EXPECTATION, maxLifetimeMs }, ISSUED_AT))
+      .toThrow(/maxLifetimeMs must be a positive safe integer/)
+  })
+
+  it('never admits an unbounded lifetime under a NaN ceiling', () => {
+    const forever = mintExecutionAssertion(
+      claims({ expiresAt: ISSUED_AT + LIFETIME * 1_000_000 }), SECRET,
+    )
+
+    expect(() => admitExecutionAssertion(
+      forever, SECRET, { ...EXPECTATION, maxLifetimeMs: Number.NaN }, ISSUED_AT,
+    )).toThrow(RangeError)
+  })
+
+  it.each([
     ['no separators', 'not-a-token'],
     ['two parts', 'v1.payload'],
     ['four parts', 'v1.a.b.c'],

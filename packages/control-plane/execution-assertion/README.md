@@ -83,6 +83,8 @@ Checks run in order: token structure, version, signature, claim shape, issuer, a
 
 The current time is a parameter rather than a read of the process clock, so a scheduler that already has a decision timestamp admits against that instant and tests need no clock control.
 
+`maxLifetimeMs` must be a positive safe integer, and `admitExecutionAssertion` throws a `RangeError` rather than admit against a ceiling it cannot enforce: a `NaN` ceiling — what `Number(...)` returns for an unset environment variable — makes every lifetime comparison false and admits whatever span an assertion claims, while a zero or negative ceiling denies every run under `lifetime`, a rejection that names the issuer's span rather than the misconfigured runtime. Neither failure is visible in an admission result, so both are refused at the call.
+
 -----
 
 <a id="understand-the-implementation"></a>

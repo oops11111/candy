@@ -98,7 +98,7 @@ export interface ExecutionAssertionExpectation {
   readonly issuer: string
   /** This runtime's own audience identifier. */
   readonly audience: string
-  /** Longest issued-to-expiry span this runtime admits, in milliseconds. */
+  /** Longest issued-to-expiry span this runtime admits, in milliseconds; a positive safe integer. */
   readonly maxLifetimeMs: number
 }
 
@@ -149,6 +149,25 @@ function admitSecret(secret: Uint8Array): Buffer {
     )
   }
   return Buffer.from(secret)
+}
+
+/**
+ * Admit the deployment's lifetime ceiling before it is compared against.
+ *
+ * A ceiling of `NaN` — what `Number(...)` returns for an unset environment
+ * variable — makes every comparison against it false, so the ceiling stops
+ * bounding anything and every assertion is admitted whatever span it claims. A
+ * zero or negative ceiling is the opposite failure: every assertion is denied
+ * under `lifetime`, a rejection that names the issuer's span. Neither is
+ * visible in an admission result, so both are refused here.
+ */
+function admitLifetimeCeiling(maxLifetimeMs: number): number {
+  if (!Number.isSafeInteger(maxLifetimeMs) || maxLifetimeMs <= 0) {
+    throw new RangeError(
+      `dsh-execution-assertion: maxLifetimeMs must be a positive safe integer, got ${String(maxLifetimeMs)}`,
+    )
+  }
+  return maxLifetimeMs
 }
 
 function sign(secret: Buffer, payload: string): Buffer {
@@ -268,7 +287,8 @@ export function mintExecutionAssertion(claims: ExecutionAssertionClaims, secret:
  * @param expectation - this runtime's issuer, audience, and maximum assertion lifetime.
  * @param now - current epoch milliseconds, supplied by the caller's clock.
  * @returns the verified claims, or the first rejection that denies the run.
- * @throws RangeError when the secret is shorter than 32 bytes.
+ * @throws RangeError when the secret is shorter than 32 bytes, or when
+ * `expectation.maxLifetimeMs` is not a positive safe integer.
  */
 export function admitExecutionAssertion(
   token: string,
@@ -277,6 +297,7 @@ export function admitExecutionAssertion(
   now: number,
 ): ExecutionAssertionAdmission {
   const key = admitSecret(secret)
+  const maxLifetimeMs = admitLifetimeCeiling(expectation.maxLifetimeMs)
   const parts = token.split('.')
   const [version, payload, encodedSignature] = parts
   if (parts.length !== 3 || payload === undefined || encodedSignature === undefined
@@ -300,7 +321,7 @@ export function admitExecutionAssertion(
   if (claims.issuer !== expectation.issuer) return { admitted: false, rejection: 'issuer' }
   if (claims.audience !== expectation.audience) return { admitted: false, rejection: 'audience' }
   if (claims.expiresAt <= claims.issuedAt
-    || claims.expiresAt - claims.issuedAt > expectation.maxLifetimeMs) {
+    || claims.expiresAt - claims.issuedAt > maxLifetimeMs) {
     return { admitted: false, rejection: 'lifetime' }
   }
   if (claims.issuedAt > now) return { admitted: false, rejection: 'not-yet-valid' }
