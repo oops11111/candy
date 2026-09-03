@@ -66,7 +66,7 @@ The binding always sets `requireCredentialIsolation`, so a run whose CLI reports
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `bindClaudeCliRun`, `ClaudeCliDeployment`, `ClaudeCliRunBinding`, and the credential rejections |
-| [`tests/tenant-isolation.spec.ts`](tests/tenant-isolation.spec.ts) | The chain end to end: mint, admit, bind, and run a real process that reports the environment it was handed |
+| [`tests/tenant-isolation.spec.ts`](tests/tenant-isolation.spec.ts) | The chain end to end: mint, admit, bind, and run a real process that reports the environment it was handed, then check that cancelling or abandoning the run reaps it and the process it started |
 | — | No runtime invariant companion is published; this pure module owns no event stream or mutable runtime data, and the values it assembles are enforced by unit tests. |
 
 ### Why the pool root is the working directory as well as the home

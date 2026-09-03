@@ -117,7 +117,7 @@ flowchart LR
 
 - [ ] 为显式选择、能力匹配和允许的回退增加 agent 注册表和路由策略。
 - [ ] 增加父子运行记录以及父级子集授权、深度、并发、token、时间和成本预算。深度与授权是继承来的，不是 Candy 要建的：`dsh-subagent` 已经拒绝超过 `maxDepth` 的子运行，并把被委派子运行的沙箱模式与审批策略钉在父运行上。预算这一半已经完成（[`dsh-run-budget`](../../implemented/architecture/2026-09-03-run-budget-delegation.zh.md)）：子运行的 token、挂钟时间、金额与并发在预留时就从父运行扣除，因此超额委派是不可能的，而不是可被发现的；未花完的余额在结算时归还。已耗尽的运行在门口就被拒绝：`admitRun` 通过一个必填的 `findBudget` 端口读取租户预算，在消费 nonce 或打开凭据之前就拒绝（[没有任何人查询过的预算](../../implemented/architecture/2026-09-03-admission-enforces-the-budget.zh.md)）。金额在唯一报告它的那条路由上被量出来：Claude CLI 的 `total_cost_usd` 现在抵达 `TokenUsage.costMicroUsd`（[提供方已经开出的那张账单](../../implemented/architecture/2026-09-03-provider-reported-cost.zh.md)），因此租户的花费是一项被记录的事实，而不是调用方维护的一张价目表。剩下的是持久运行记录本身 —— 持久化一次运行的剩余额度，以及让未结算的预留过期。
-- [ ] 向子运行、提供方进程、工具和事件流传播取消，并验证进程已完全清理。
+- [ ] 向子运行、提供方进程、工具和事件流传播取消，并验证进程已完全清理。提供方进程这一半已被验证：取消或放弃一次被绑定的 Claude CLI 运行，会把 CLI 以及它启动的那个进程一并回收，这是对着真实 pid 检验的，而不是对着脚本化的句柄（见 [`dsh-claude-cli-binding`](../../implemented/architecture/2026-09-03-admitted-run-to-claude-cli-launch.zh.md)）。子运行、工具与事件流是从 `dsh-subagent` 与工具缝隙继承来的，尚未通过一次 Candy 运行验证。
 - [ ] 在租户范围的审计轨迹中记录路由、委派、工具授权、用量和最终状态。已从记录本已存在、却正在丢失的那一处入手：`admitRun` 只在成功时返回保险库的审计，并丢弃了 `openCredential` 在失败分支上产生的记录，丢掉的正是保险库已检测到的跨租户访问尝试。现在每一种准入结果都携带 `audits`（[被拒绝的运行正是审计轨迹的用途所在](../../implemented/architecture/2026-09-03-run-admission-audits-every-outcome.zh.md)）。这个面依然只有保险库的操作那么宽 —— 路由、委派、工具授权、用量与最终状态需要本次发布尚未构建的调度与编排 —— 并且不持久化这些记录；按租户分区的存储仍归调用方。
 
 ### R4 — Harness Web and account configuration

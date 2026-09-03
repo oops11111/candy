@@ -66,7 +66,7 @@ export const options: ClaudeCliAdapterOptions | undefined = result.bound
 | 文件 | 角色 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `bindClaudeCliRun`、`ClaudeCliDeployment`、`ClaudeCliRunBinding` 与各项凭据拒绝 |
-| [`tests/tenant-isolation.spec.ts`](tests/tenant-isolation.spec.ts) | 端到端的整条链路：签发、准入、绑定，并运行一个会报告自己实际拿到的环境的真实进程 |
+| [`tests/tenant-isolation.spec.ts`](tests/tenant-isolation.spec.ts) | 端到端的整条链路：签发、准入、绑定，并运行一个会报告自己实际拿到的环境的真实进程；随后检验取消或放弃该运行会把它以及它启动的那个进程一并回收 |
 | — | 不发布运行时 invariant 伴生包；这个纯模块不拥有事件流或可变运行时数据，它组装出的值由单元测试强制。 |
 
 ### 为什么池根目录既是工作目录也是主目录
