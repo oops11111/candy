@@ -89,7 +89,7 @@ describe('admitRun', () => {
     expect(admission.run.claims).toEqual(subject)
     expect(Buffer.from(admission.run.secret).toString('utf8')).toBe('sk-alice-deepseek')
     expect(admission.run.poolRoot.startsWith(`${POOL_BASE}/`)).toBe(true)
-    expect(admission.run.credentialAudit).toMatchObject({ action: 'open', outcome: 'ok' })
+    expect(admission.audits).toMatchObject([{ action: 'open', outcome: 'ok' }])
   })
 
   it('places the run in the pool the signed provider names', async () => {
@@ -128,7 +128,7 @@ describe('admitRun', () => {
       findCredential: () => { looked = true; return Promise.resolve(undefined) },
     }), NOW)
 
-    expect(admission).toEqual({ admitted: false, rejection: { stage: 'assertion', reason: 'audience' } })
+    expect(admission).toEqual({ admitted: false, rejection: { stage: 'assertion', reason: 'audience' }, audits: [] })
     expect(looked).toBe(false)
   })
 
@@ -141,7 +141,7 @@ describe('admitRun', () => {
 
     expect(first.admitted).toBe(true)
     expect(second).toEqual({
-      admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent' },
+      admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent' }, audits: [],
     })
   })
 
@@ -163,7 +163,7 @@ describe('admitRun', () => {
     const admission = await admitRun({ token }, policy(), NOW)
 
     expect(admission).toEqual({
-      admitted: false, rejection: { stage: 'credential', reason: 'not-found' },
+      admitted: false, rejection: { stage: 'credential', reason: 'not-found' }, audits: [],
     })
   })
 
@@ -174,7 +174,7 @@ describe('admitRun', () => {
       findCredential: subject => Promise.resolve(revokeCredential(sealedFor(subject), NOW).envelope),
     }), NOW)
 
-    expect(admission).toEqual({
+    expect(admission).toMatchObject({
       admitted: false, rejection: { stage: 'credential', reason: 'revoked' },
     })
   })
@@ -187,7 +187,7 @@ describe('admitRun', () => {
       findCredential: () => Promise.resolve(foreign),
     }), NOW)
 
-    expect(admission).toEqual({
+    expect(admission).toMatchObject({
       admitted: false, rejection: { stage: 'credential', reason: 'binding-mismatch' },
     })
   })
@@ -205,7 +205,7 @@ describe('admitRun', () => {
       findCredential: () => Promise.resolve(relabelled),
     }), NOW)
 
-    expect(admission).toEqual({
+    expect(admission).toMatchObject({
       admitted: false, rejection: { stage: 'credential', reason: 'corrupt' },
     })
   })
@@ -215,6 +215,76 @@ describe('admitRun', () => {
 
     const admission = await admitRun({ token }, policy(), NOW + LIFETIME)
 
-    expect(admission).toEqual({ admitted: false, rejection: { stage: 'assertion', reason: 'expired' } })
+    expect(admission).toEqual({ admitted: false, rejection: { stage: 'assertion', reason: 'expired' }, audits: [] })
+  })
+})
+
+describe('the audit trail a denied run leaves', () => {
+  it('records the vault refusal when one tenant reaches for another\'s credential', async () => {
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    const foreign = sealedFor(claims({ userId: UserId('user-bobby') }))
+
+    const admission = await admitRun({ token }, policy({
+      findCredential: () => Promise.resolve(foreign),
+    }), NOW)
+
+    // The single most security-relevant event here: the vault detected it, so
+    // the admission must hand it on rather than drop it with the rejection.
+    expect(admission.audits).toEqual([{
+      action: 'open',
+      userId: UserId('user-alice'),
+      accountId: ProviderAccountId('account-1'),
+      keyVersion: KEY_VERSION,
+      at: NOW,
+      outcome: 'binding-mismatch',
+    }])
+  })
+
+  it('records the vault refusal for a revoked credential', async () => {
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+
+    const admission = await admitRun({ token }, policy({
+      findCredential: subject => Promise.resolve(revokeCredential(sealedFor(subject), NOW).envelope),
+    }), NOW)
+
+    expect(admission.audits).toMatchObject([{ action: 'open', outcome: 'revoked' }])
+  })
+
+  it('records the vault refusal for a tampered envelope', async () => {
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    const relabelled: CredentialEnvelope = {
+      ...sealedFor(claims({ userId: UserId('user-bobby') })),
+      userId: UserId('user-alice'),
+    }
+
+    const admission = await admitRun({ token }, policy({
+      findCredential: () => Promise.resolve(relabelled),
+    }), NOW)
+
+    expect(admission.audits).toMatchObject([{ action: 'open', outcome: 'corrupt' }])
+  })
+
+  it.each([
+    ['a token this runtime does not admit', () => policy(), () => claims({ audience: 'another-runtime' })],
+    ['a tenant with no stored credential', () => policy(), () => claims({ userId: UserId('user-bobby') })],
+  ])('records nothing for %s, which the vault never saw', async (_case, made, subject) => {
+    const admission = await admitRun({ token: mintExecutionAssertion(subject(), ASSERTION_SECRET) }, made(), NOW)
+
+    // An empty trail is honest here: no credential was touched, so the vault
+    // produced no record to carry.
+    expect(admission.audits).toEqual([])
+  })
+
+  it('carries the same record shape whether the run was admitted or denied', async () => {
+    const admitted = await admitRun(
+      { token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy(), NOW,
+    )
+    const denied = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findCredential: subject => Promise.resolve(revokeCredential(sealedFor(subject), NOW).envelope),
+    }), NOW)
+
+    // One store accepts both, so an operator queries a tenant's history
+    // without joining two shapes.
+    expect(Object.keys(admitted.audits[0] ?? {}).sort()).toEqual(Object.keys(denied.audits[0] ?? {}).sort())
   })
 })

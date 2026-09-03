@@ -82,8 +82,6 @@ export interface AdmittedRun {
   readonly poolKey: RuntimePoolKey
   /** The one directory that pool owns. */
   readonly poolRoot: string
-  /** The vault's record of opening the credential, for the caller's audit store. */
-  readonly credentialAudit: CredentialAuditEvent
 }
 
 /**
@@ -97,10 +95,25 @@ export type RunRejection =
   | { readonly stage: 'replay'; readonly reason: 'nonce-already-spent' }
   | { readonly stage: 'credential'; readonly reason: 'not-found' | CredentialRejection }
 
-/** The outcome of one scheduling attempt. */
+/**
+ * The outcome of one scheduling attempt.
+ *
+ * Both branches carry `audits`, and that is the point: a denied run is the
+ * event an audit trail exists to record. A refused token, a replayed nonce,
+ * and above all a credential the vault refused to open for this tenant are
+ * what an operator needs afterwards, so no path here discards a record the
+ * vault produced. `openCredential` returns an audit on its failing branch as
+ * well as its succeeding one; dropping the failing one would lose exactly the
+ * cross-tenant access attempt the vault detected.
+ */
 export type RunAdmission =
-  | { readonly admitted: true; readonly run: AdmittedRun }
-  | { readonly admitted: false; readonly rejection: RunRejection }
+  | { readonly admitted: true; readonly run: AdmittedRun; readonly audits: readonly CredentialAuditEvent[] }
+  | {
+    readonly admitted: false
+    readonly rejection: RunRejection
+    /** Every audit record the attempt produced; empty when it was refused before the vault was reached. */
+    readonly audits: readonly CredentialAuditEvent[]
+  }
 
 /**
  * Admit one run, or say which step denied it.
@@ -115,7 +128,8 @@ export type RunAdmission =
  * @param request - the scheduling attempt, carrying only a token.
  * @param policy - the runtime's expectation, keys, pool base, and stores.
  * @param now - epoch milliseconds from the caller's clock.
- * @returns the admitted run, or the first rejection that denied it.
+ * @returns the admitted run or the first rejection that denied it, either way
+ * with every audit record the attempt produced.
  * @throws RangeError when the assertion secret, a keyring key, or the pool
  * base is unusable, since each is a deployment error rather than a denied run.
  */
@@ -126,22 +140,24 @@ export async function admitRun(
 ): Promise<RunAdmission> {
   const assertion = admitExecutionAssertion(request.token, policy.assertionSecret, policy.expectation, now)
   if (!assertion.admitted) {
-    return { admitted: false, rejection: { stage: 'assertion', reason: assertion.rejection } }
+    return { admitted: false, rejection: { stage: 'assertion', reason: assertion.rejection }, audits: [] }
   }
   const { claims } = assertion
 
   if (!await policy.spendNonce(claims)) {
-    return { admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent' } }
+    return { admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent' }, audits: [] }
   }
 
   const envelope = await policy.findCredential(claims)
   if (envelope === undefined) {
-    return { admitted: false, rejection: { stage: 'credential', reason: 'not-found' } }
+    return { admitted: false, rejection: { stage: 'credential', reason: 'not-found' }, audits: [] }
   }
   const binding = { userId: claims.userId, accountId: claims.accountId }
   const opened = openCredential(envelope, binding, policy.keyring, now)
   if (!opened.opened) {
-    return { admitted: false, rejection: { stage: 'credential', reason: opened.rejection } }
+    // The vault recorded this refusal; a binding mismatch here is a tenant
+    // reaching for another tenant's credential, which must not go unlogged.
+    return { admitted: false, rejection: { stage: 'credential', reason: opened.rejection }, audits: [opened.audit] }
   }
 
   const poolKey = runtimePoolKey({
@@ -151,12 +167,12 @@ export async function admitRun(
   })
   return {
     admitted: true,
+    audits: [opened.audit],
     run: {
       claims,
       secret: opened.secret,
       poolKey,
       poolRoot: runtimePoolRoot(policy.poolBase, poolKey),
-      credentialAudit: opened.audit,
     },
   }
 }
