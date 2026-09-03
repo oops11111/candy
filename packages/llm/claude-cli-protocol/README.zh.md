@@ -165,7 +165,7 @@ CLI 报告的计数本身就是互不重叠的 —— `input_tokens` 不含两�
 
 以下是本包当前的约束,不是任务清单。
 
-- **没有进程,因而也没有适配器** —— 这里不启动、不取消、不回收 CLI,也不注册任何 `LlmAdapter`。本包提供适配器读取与表达所需的东西;运行 CLI、把 harness 请求投影到它那个唯一的位置参数提示词上、以及遵守 `options.signal`,都属于消费它的适配器。
+- **没有进程** —— 这里不启动、不取消、不回收 CLI。本包提供适配器读取与表达所需的东西;运行 CLI、把 harness 请求投影到它那个唯一的位置参数提示词上、以及遵守 `options.signal`,都属于消费它的 [`dsh-llm-claude-cli`](../llm-claude-cli/README.zh.md)。
 - **只有单条提示词,而非一段对话** —— `claudeCliArguments` 组装的是一条位置参数提示词。回放多轮 harness 历史需要 CLI 的 `--input-format stream-json`,本包没有为其输入消息格式建模。
 - **没有工具往返** —— 工具调用块会被翻译,但调用是以 `--tools ""` 组装的,因为工具由 harness 自己执行。把工具结果送回 CLI 属于上面那条对话缺口。
 - **成本被丢弃** —— 终止帧携带 `total_cost_usd` 与按模型统计的总量(其中包含 CLI 自身的辅助调用),而 `TokenUsage` 没有对应字段。因此仅凭翻译出的 chunk 无法还原一个租户的账单。

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CLAUDE_CLI_EFFORTS,
   claudeCliArguments,
   claudeCliEnvironment,
   initApiKeySource,
@@ -56,6 +57,16 @@ describe('claudeCliArguments', () => {
     expect(argv).not.toContain('--max-budget-usd')
   })
 
+  it.each(CLAUDE_CLI_EFFORTS)('carries the %s effort', (effort) => {
+    const argv = claudeCliArguments({ prompt: 'hi', effort })
+
+    expect(argv[argv.indexOf('--effort') + 1]).toBe(effort)
+  })
+
+  it('omits the effort the caller left to the CLI', () => {
+    expect(claudeCliArguments({ prompt: 'hi' })).not.toContain('--effort')
+  })
+
   it('carries the generation choices the caller made', () => {
     const argv = claudeCliArguments({
       prompt: 'hi', model: 'claude-opus-5', systemPrompt: 'be terse', maxBudgetUsd: 0.5,
@@ -71,6 +82,12 @@ describe('claudeCliArguments', () => {
       expect(() => claudeCliArguments({ prompt: 'hi', maxBudgetUsd })).toThrow(RangeError)
     },
   )
+})
+
+describe('CLAUDE_CLI_EFFORTS', () => {
+  it('lists exactly the levels the CLI accepts, in increasing order', () => {
+    expect(CLAUDE_CLI_EFFORTS).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+  })
 })
 
 describe('claudeCliEnvironment', () => {

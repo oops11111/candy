@@ -935,6 +935,34 @@ export interface Config {
 
 Source: [`packages/jobs/jobs-local/src/index.ts:31`](../packages/jobs/jobs-local/src/index.ts)
 
+<a id="deepseek-aidsh-llm-claude-cli"></a>
+
+## `@deepseek-ai/dsh-llm-claude-cli`
+
+Requires: `llm` · `subprocess`
+
+```ts config-catalog
+/** Deployment-varying facts for one Claude CLI route. */
+export interface Config {
+  /** Absolute path to the `claude` executable; defaults to `claude` on PATH. */
+  executable?: string
+  /** Working directory for each run. */
+  cwd: string
+  /** `HOME` for each run: the runtime pool root whose provider state this route owns. */
+  home: string
+  /** Environment variable holding the API key to inject. */
+  apiKeyEnv?: string
+  /** Process-tree termination grace in milliseconds. */
+  graceMs?: number
+  /** Per-invocation spend ceiling in US dollars; omitted applies none. */
+  maxBudgetUsd?: number
+  /** Fail a run the CLI authenticated with another credential; defaults to true. */
+  requireCredentialIsolation?: boolean
+}
+```
+
+Source: [`packages/llm/llm-claude-cli/src/index.ts:30`](../packages/llm/llm-claude-cli/src/index.ts)
+
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
 ## `@deepseek-ai/dsh-llm-deepseek`

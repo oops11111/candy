@@ -27,6 +27,17 @@ export interface ClaudeCliIsolation {
   readonly apiKey: string
 }
 
+/**
+ * Effort levels the CLI accepts for `--effort`, in increasing order.
+ *
+ * A closed set because the CLI validates the value and rejects anything else;
+ * it is not a harness-owned vocabulary this package may extend.
+ */
+export const CLAUDE_CLI_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
+/** One effort level the CLI accepts. */
+export type ClaudeCliEffort = typeof CLAUDE_CLI_EFFORTS[number]
+
 /** What one invocation asks the model for. */
 export interface ClaudeCliRun {
   /** The user turn, passed as the CLI's positional prompt. */
@@ -37,6 +48,8 @@ export interface ClaudeCliRun {
   readonly model?: string | undefined
   /** Hard spend ceiling for this invocation, in US dollars. */
   readonly maxBudgetUsd?: number | undefined
+  /** Reasoning effort; omitted leaves the CLI's configured level. */
+  readonly effort?: ClaudeCliEffort | undefined
 }
 
 /**
@@ -108,6 +121,7 @@ export function claudeCliArguments(run: ClaudeCliRun): string[] {
     ...PROTOCOL_ARGUMENTS,
     ...run.systemPrompt === undefined ? [] : ['--system-prompt', run.systemPrompt],
     ...run.model === undefined ? [] : ['--model', run.model],
+    ...run.effort === undefined ? [] : ['--effort', run.effort],
     ...run.maxBudgetUsd === undefined ? [] : ['--max-budget-usd', String(run.maxBudgetUsd)],
     run.prompt,
   ]

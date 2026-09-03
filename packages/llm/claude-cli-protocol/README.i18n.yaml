@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/llm/claude-cli-protocol/README.md
-README.md: 50964cf5c9619f6bdc485e4d01e4701ef22c05f1
-README.zh.md: 33ef9014515a44425b95c3a9ac131b76e56b402d
+README.md: 98802bb52c5fa94df66e7f456534def55e8201c4
+README.zh.md: 4d61e43f5de02f962d96f763d25410f1be94e481

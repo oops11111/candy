@@ -23,11 +23,12 @@
 export { ClaudeCliFrameTranslator, mapFinish, mapUsage } from './frames.ts'
 export { ClaudeCliLineDecoder, ClaudeCliProtocolError } from './lines.ts'
 export {
+  CLAUDE_CLI_EFFORTS,
   claudeCliArguments,
   claudeCliEnvironment,
   initApiKeySource,
   isCredentialIsolated,
   SCRUBBED_ROUTING_VARIABLES,
 } from './launch.ts'
-export type { ClaudeCliIsolation, ClaudeCliRun } from './launch.ts'
+export type { ClaudeCliEffort, ClaudeCliIsolation, ClaudeCliRun } from './launch.ts'
 export type { WireFrame, WireResult, WireStreamEvent, WireUsage } from './types.ts'

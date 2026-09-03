@@ -165,7 +165,7 @@ Append-only. Translated blocks are appended to the conversation in stream order 
 
 These are current package constraints, not a task backlog.
 
-- **No process, and therefore no adapter** — nothing here spawns, cancels, or reaps the CLI, and no `LlmAdapter` is registered. The package supplies what the adapter needs to read and say; running the CLI, projecting a harness request onto its single positional prompt, and honoring `options.signal` belong to the adapter that consumes it.
+- **No process** — nothing here spawns, cancels, or reaps the CLI. The package supplies what an adapter needs to read and say; running the CLI, projecting a harness request onto its single positional prompt, and honoring `options.signal` belong to [`dsh-llm-claude-cli`](../llm-claude-cli/README.md), which consumes it.
 - **A single prompt, not a conversation** — `claudeCliArguments` composes one positional prompt. Replaying a multi-turn harness history needs the CLI's `--input-format stream-json`, whose input message format this package does not model.
 - **No tool round trip** — tool-call blocks are translated, but the invocation is composed with `--tools ""` because the harness executes tools itself. Returning a tool result to the CLI is part of the conversation gap above.
 - **Cost is dropped** — the terminal frame carries `total_cost_usd` and per-model totals that include the CLI's own auxiliary calls, which `TokenUsage` has no field for. A tenant's bill is therefore not reconstructable from the translated chunks alone.
