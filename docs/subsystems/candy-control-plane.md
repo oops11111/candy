@@ -59,3 +59,81 @@ The isolation claim is exercised against an operating system rather than against
 - [Candy Runtime Boundaries](../candy-runtime-boundaries.md) — the accepted trust boundaries and abuse cases this group answers to.
 - [Multi-tenant CLI agent runtime](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md) — the R1–R6 delivery plan, and what remains unbuilt.
 - [LLM streaming](llm-streaming.md) — the `TokenUsage` a charge is derived from, including the provider-reported cost.
+
+<!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
+
+<a id="cordis-surface"></a>
+
+## Cordis API
+
+Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxcontrolplanestore--controlplanestore"></a>
+
+### `ctx.controlPlaneStore` — `ControlPlaneStore`
+
+Durable provider accounts and tenant allowances.
+
+Reads are synchronous against the domain's in-memory state and are exposed as promises because the ports they satisfy are asynchronous. Writes reach the medium before memory, so a read never sees a record the medium does not hold.
+
+```ts cordis-catalog
+/**
+ * Every account one tenant owns, deleted ones included.
+ *
+ * A deleted account is retained rather than removed: `dsh-provider-accounts`
+ * keeps its id blocked so a later account cannot inherit its history.
+ * @param userId - the tenant to list.
+ * @returns that tenant's accounts, in no defined order.
+ */
+listByUser(userId: UserId): Promise<readonly ProviderAccountEntry[]>
+
+/**
+ * One account by id.
+ * @param id - the account to read.
+ * @returns the account and its sealed credential, or undefined.
+ */
+find(id: ProviderAccountId): Promise<ProviderAccountEntry | undefined>
+
+/**
+ * Write one account, replacing any record under the same id.
+ * @param entry - the account and its sealed credential.
+ * @returns resolution after the write reaches the medium.
+ */
+async save(entry: ProviderAccountEntry): Promise<void>
+
+/**
+ * Look up the sealed credential a run's claims name.
+ *
+ * The account is read by id and its recorded tenant must be the one the
+ * claims carry. An account that names another tenant is not returned: the
+ * vault would refuse to open it, and refusing here keeps a mismatch out of
+ * the one call that could otherwise be handed the wrong envelope.
+ * @param claims - the tenant and account a verified assertion names.
+ * @returns the sealed envelope, or undefined when there is no such account
+ *   for that tenant.
+ */
+async findCredential(claims: { userId: UserId; accountId: ProviderAccountId }): Promise<CredentialEnvelope | undefined>
+
+/**
+ * One tenant's own allowance.
+ *
+ * This is the root-run half of `dsh-run-admission`'s `findBudget`. A child
+ * run is admitted against its parent's remainder, which the ledger holds.
+ * @param userId - the tenant to read.
+ * @returns the tenant's allowance, or undefined when none is recorded — which
+ *   denies the run, because a tenant the store does not know is not a tenant
+ *   with unlimited budget.
+ */
+tenantBudget(userId: UserId): Promise<RunBudget | undefined>
+
+/**
+ * Record one tenant's allowance.
+ * @param userId - the tenant.
+ * @param budget - the allowance runs of that tenant start against.
+ * @returns resolution after the write reaches the medium.
+ */
+async setTenantBudget(userId: UserId, budget: RunBudget): Promise<void>
+```
+
+Source: [`packages/control-plane/control-plane-store/src/index.ts`](../../packages/control-plane/control-plane-store/src/index.ts)
+<!-- END GENERATED cordis-surface -->

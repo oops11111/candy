@@ -4238,6 +4238,43 @@ importers:
         specifier: workspace:^
         version: link:../../../vendor/cordis
 
+  packages/control-plane/control-plane-store:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
+      '@deepseek-ai/dsh-credential-vault':
+        specifier: workspace:^
+        version: link:../credential-vault
+      '@deepseek-ai/dsh-provider-accounts':
+        specifier: workspace:^
+        version: link:../provider-accounts
+      '@deepseek-ai/dsh-run-budget':
+        specifier: workspace:^
+        version: link:../run-budget
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-storage-sqlite':
+        specifier: workspace:^
+        version: link:../../storage/storage-sqlite
+
   packages/control-plane/credential-vault:
     dependencies:
       '@deepseek-ai/dsh-brand':

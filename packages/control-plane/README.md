@@ -30,6 +30,7 @@ The control-plane group gives every future Candy tenant-aware package one shared
 | [`run-ledger`](run-ledger/README.md) | Records what each open run holds and has spent, and settles an abandoned hold exactly rather than by estimate |
 | [`run-replay`](run-replay/README.md) | Records an assertion's nonce as spent in one indivisible step, retained exactly while that assertion stays admissible |
 | [`run-start`](run-start/README.md) | Admits, funds and places one run in the documented order, returning a parent's hold when the placement refuses |
+| [`control-plane-store`](control-plane-store/README.md) | Holds provider accounts and tenant allowances durably, answering the credential and budget lookups admission requires |
 | [`runtime-pool`](runtime-pool/README.md) | Derives the isolation key and the one directory a tenant's provider runtime owns |
 | [`run-admission`](run-admission/README.md) | The one scheduling call: assertion, nonce, credential, and pool resolved together |
 | [`claude-cli-binding`](claude-cli-binding/README.md) | Turns an admitted run into the Claude CLI launch facts that confine it to that tenant |

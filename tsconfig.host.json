@@ -170,6 +170,7 @@
     { "path": "./packages/credentials/credentials-local" },
     { "path": "./packages/credentials/authorization" },
     { "path": "./packages/control-plane/control-plane" },
+    { "path": "./packages/control-plane/control-plane-store" },
     { "path": "./packages/control-plane/execution-assertion" },
     { "path": "./packages/control-plane/credential-vault" },
     { "path": "./packages/control-plane/run-budget" },

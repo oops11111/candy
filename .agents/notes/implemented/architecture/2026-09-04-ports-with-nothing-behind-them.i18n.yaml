@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-04-ports-with-nothing-behind-them.md
+2026-09-04-ports-with-nothing-behind-them.md: 7abcf9bdd74deb0e5d0c2e54f34fc86c7732d84c
+2026-09-04-ports-with-nothing-behind-them.zh.md: 8219b9dfea6f2b4a90bc3ab666fcc6d82b2c60a9

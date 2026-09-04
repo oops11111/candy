@@ -99,6 +99,14 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'controlPlaneStore',
+    pkg: 'control-plane-store',
+    title: 'Durable Candy provider accounts and tenant allowances',
+    mode: 'core',
+    consumers: ['run-admission', 'provider-accounts'],
+    note: 'Holds the account and allowance records the admission ports read; a child run is still admitted against its parent\'s remainder, which the in-memory run ledger holds.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',

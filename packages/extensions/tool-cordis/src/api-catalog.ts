@@ -673,6 +673,49 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'controlPlaneStore',
+    summary: 'Durable provider accounts and tenant allowances.',
+    description: 'Durable provider accounts and tenant allowances.\n\nReads are synchronous against the domain\'s in-memory state and are exposed as promises because the ports they satisfy are asynchronous. Writes reach the medium before memory, so a read never sees a record the medium does not hold.',
+    methods: [
+      {
+        signature: 'listByUser(userId: UserId): Promise<readonly ProviderAccountEntry[]>',
+        description: 'Every account one tenant owns, deleted ones included.\n\nA deleted account is retained rather than removed: `dsh-provider-accounts` keeps its id blocked so a later account cannot inherit its history.',
+        parameters: [{ name: 'userId', description: 'the tenant to list.' }],
+        returns: 'that tenant\'s accounts, in no defined order.',
+      },
+      {
+        signature: 'find(id: ProviderAccountId): Promise<ProviderAccountEntry | undefined>',
+        description: 'One account by id.',
+        parameters: [{ name: 'id', description: 'the account to read.' }],
+        returns: 'the account and its sealed credential, or undefined.',
+      },
+      {
+        signature: 'async save(entry: ProviderAccountEntry): Promise<void>',
+        description: 'Write one account, replacing any record under the same id.',
+        parameters: [{ name: 'entry', description: 'the account and its sealed credential.' }],
+        returns: 'resolution after the write reaches the medium.',
+      },
+      {
+        signature: 'async findCredential(claims: { userId: UserId; accountId: ProviderAccountId }): Promise<CredentialEnvelope | undefined>',
+        description: 'Look up the sealed credential a run\'s claims name.\n\nThe account is read by id and its recorded tenant must be the one the claims carry. An account that names another tenant is not returned: the vault would refuse to open it, and refusing here keeps a mismatch out of the one call that could otherwise be handed the wrong envelope.',
+        parameters: [{ name: 'claims', description: 'the tenant and account a verified assertion names.' }],
+        returns: 'the sealed envelope, or undefined when there is no such account for that tenant.',
+      },
+      {
+        signature: 'tenantBudget(userId: UserId): Promise<RunBudget | undefined>',
+        description: 'One tenant\'s own allowance.\n\nThis is the root-run half of `dsh-run-admission`\'s `findBudget`. A child run is admitted against its parent\'s remainder, which the ledger holds.',
+        parameters: [{ name: 'userId', description: 'the tenant to read.' }],
+        returns: 'the tenant\'s allowance, or undefined when none is recorded — which denies the run, because a tenant the store does not know is not a tenant with unlimited budget.',
+      },
+      {
+        signature: 'async setTenantBudget(userId: UserId, budget: RunBudget): Promise<void>',
+        description: 'Record one tenant\'s allowance.',
+        parameters: [{ name: 'userId', description: 'the tenant.' }, { name: 'budget', description: 'the allowance runs of that tenant start against.' }],
+        returns: 'resolution after the write reaches the medium.',
+      },
+    ],
+  },
+  {
     key: 'credentials',
     summary: 'Abstract credential service over two key spaces that answer two questions.',
     description: 'Abstract credential service over two key spaces that answer two questions.\n\nA CredentialRef answers "what is behind this environment-variable name", layered over the process environment, the provider-managed store, and `.env` files. One seam-wide rule binds that half: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.\n\nA CredentialKey answers "what credential does this plugin hold for this id". Nothing can layer here — an authorization grant has no environment to be read from — so presence of the record is the whole fact, and modifyRecord is the only write path because a correct write depends on the current value (a token refresh is read-decide-replace under one lock).',
@@ -3797,12 +3840,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateTeamTaskRequest {\n    readonly subject: string;\n    readonly description: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n}',
   },
   {
+    name: 'CredentialEnvelope',
+    declaration: 'export interface CredentialEnvelope {\n    readonly envelopeVersion: number;\n    readonly userId: UserId;\n    readonly accountId: ProviderAccountId;\n    readonly keyVersion: CredentialKeyVersion;\n    readonly iv: string;\n    readonly ciphertext: string;\n    readonly authTag: string;\n    readonly sealedAt: number;\n    readonly rewrappedAt: number | undefined;\n    readonly revokedAt: number | undefined;\n}',
+  },
+  {
     name: 'CredentialInfo',
     declaration: 'export interface CredentialInfo {\n    configured: boolean;\n    source?: string;\n    writable: boolean;\n}',
   },
   {
     name: 'CredentialKey',
     declaration: 'export type CredentialKey = Branded<\'CredentialKey\'>;',
+  },
+  {
+    name: 'CredentialKeyVersion',
+    declaration: 'export type CredentialKeyVersion = Branded<\'CredentialKeyVersion\'>;',
   },
   {
     name: 'CredentialRecord',
@@ -4565,6 +4616,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PromptSectionOrderName = keyof typeof SECTION_ORDERS;',
   },
   {
+    name: 'ProviderAccountEntry',
+    declaration: 'export interface ProviderAccountEntry {\n    readonly record: ProviderAccountRecord;\n    readonly credential: CredentialEnvelope;\n}',
+  },
+  {
+    name: 'ProviderAccountId',
+    declaration: 'export type ProviderAccountId = Branded<\'ProviderAccountId\'>;',
+  },
+  {
+    name: 'ProviderAccountRecord',
+    declaration: 'export interface ProviderAccountRecord {\n    readonly id: ProviderAccountId;\n    readonly userId: UserId;\n    readonly provider: ProviderKind;\n    readonly label: string;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly validatedAt: number | undefined;\n    readonly revokedAt: number | undefined;\n    readonly deletedAt: number | undefined;\n    readonly isDefault: boolean;\n}',
+  },
+  {
+    name: 'ProviderKind',
+    declaration: 'export type ProviderKind = \'deepseek-api\' | \'claude-cli\' | \'codex-cli\';',
+  },
+  {
     name: 'ProviderRequestId',
     declaration: 'export type ProviderRequestId = Branded<\'ProviderRequestId\'>;',
   },
@@ -4671,6 +4738,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ResumeAgentOptions',
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+  },
+  {
+    name: 'RunBudget',
+    declaration: 'export interface RunBudget {\n    readonly tokens: number;\n    readonly wallMs: number;\n    readonly costMicroUsd: number;\n    readonly children: number;\n}',
   },
   {
     name: 'RunnerFailureRule',
@@ -5919,6 +5990,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
+  },
+  {
+    name: 'UserId',
+    declaration: 'export type UserId = Branded<\'UserId\'>;',
   },
   {
     name: 'UserMessage',
