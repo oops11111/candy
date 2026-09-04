@@ -84,9 +84,15 @@ Every operation returns a denial naming the one dimension that was insufficient,
 
 ### Why a child slot is held rather than spent
 
-`children` is the count of child runs that may be live at once, so it behaves unlike the other three dimensions: reserving a child takes one slot, and the slot comes back when that child ends. Tokens, milliseconds and money are consumed for good. That is why `RunSpend` has no `children` field at all — a caller that could "spend" concurrency would destroy the very capacity it is supposed to release.
+`children` is the count of runs that may be live at once, so it behaves unlike the other three dimensions: reserving a child takes slots, and they come back when that child ends. Tokens, milliseconds and money are consumed for good. That is why `RunSpend` has no `children` field at all — a caller that could "spend" concurrency would destroy the very capacity it is supposed to release.
 
-The concurrency a child may itself delegate is its own to hold and is not taken from the parent's slots; only the one slot the child occupies is. A parent with one slot left can therefore start a child permitted five grandchildren.
+### Why a child pays for the slots it hands down
+
+A child costs its parent one slot for itself plus every slot it may delegate, so the count bounds a whole subtree rather than only its top level. A run granted four slots can start four childless children, or one child that may run three of its own, and no arrangement in between puts more than four runs live beneath it.
+
+Charging one slot per child instead would leave the dimension unbounded across a tree: four children each granted four of their own, and their children again, reaches over thirteen hundred live runs at depth five from a grant that reads as four. Nothing at any level would have paid for the ones below, which contradicts the parent-subset rule in [Candy Runtime Boundaries](../../../docs/candy-runtime-boundaries.md) — a child may use only the concurrency authority its parent already had. Spend is conserved either way; concurrency was not.
+
+The cost is that a grant now reads as a subtree size. Expressing "four children that may each delegate two" asks for twelve, not four.
 
 ### Why the assertions throw instead of denying
 

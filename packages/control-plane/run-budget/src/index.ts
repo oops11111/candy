@@ -129,8 +129,18 @@ function shortfall(available: RunBudget, requested: RunBudget): RunBudgetDenial 
  *
  * The subtraction is the enforcement: after this returns, the parent holds
  * only what it did not delegate, so it cannot promise the same tokens twice
- * however many children it starts. One child slot is held for the duration and
- * returned when the child settles.
+ * however many children it starts. The held slots come back when the child
+ * settles.
+ *
+ * A child costs its parent one slot for itself plus every slot it may hand
+ * down, so `children` counts the runs that may be live anywhere in a subtree
+ * rather than only its top level. Charging one slot per child would leave the
+ * dimension unbounded across a tree: a run granted four slots could seed four
+ * children each granted four of their own, and nothing at any level would have
+ * paid for the ones below. That contradicts the parent-subset rule
+ * ([Candy Runtime Boundaries](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/candy-runtime-boundaries.md)),
+ * under which a child may use only the concurrency authority its parent
+ * already had.
  *
  * A request is refused, not clamped. Silently shrinking it would start a child
  * under a budget its caller never chose, and a subagent that stops mid-task
@@ -138,7 +148,7 @@ function shortfall(available: RunBudget, requested: RunBudget): RunBudgetDenial 
  * diagnose than one that was refused.
  * @param parent - the delegating run's remaining allowance.
  * @param request - the allowance asked for the child; its `children` is the
- *   grandchild concurrency the child may itself delegate.
+ *   concurrency the child may itself delegate, and the parent pays for it.
  * @returns the child's allowance and the parent's reduced remainder, or the
  *   one dimension that was insufficient.
  * @throws RangeError when either argument is not made of non-negative safe integers.
@@ -146,12 +156,7 @@ function shortfall(available: RunBudget, requested: RunBudget): RunBudgetDenial 
 export function reserveChild(parent: RunBudget, request: RunBudget): ChildReservation {
   assertRunBudget(parent, 'parent')
   assertRunBudget(request, 'request')
-  if (parent.children < 1) {
-    return { reserved: false, denial: { dimension: 'children', requested: 1, available: parent.children } }
-  }
-  // The requested grandchild concurrency is the child's own to spend and is
-  // not taken from the parent's slots; only the one slot this child occupies is.
-  const consumable = { ...request, children: 0 }
+  const consumable = { ...request, children: request.children + 1 }
   const denial = shortfall(parent, consumable)
   if (denial !== undefined) return { reserved: false, denial }
   return {
@@ -161,7 +166,7 @@ export function reserveChild(parent: RunBudget, request: RunBudget): ChildReserv
       tokens: parent.tokens - request.tokens,
       wallMs: parent.wallMs - request.wallMs,
       costMicroUsd: parent.costMicroUsd - request.costMicroUsd,
-      children: parent.children - 1,
+      children: parent.children - consumable.children,
     },
   }
 }

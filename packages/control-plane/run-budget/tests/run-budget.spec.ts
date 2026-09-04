@@ -17,13 +17,15 @@ function spend(overrides: Partial<RunSpend> = {}): RunSpend {
 }
 
 describe('reserveChild', () => {
-  it('takes the child allowance out of the parent and holds one slot', () => {
+  it('takes the child allowance out of the parent, its own slots included', () => {
+    // The parent holds two slots and pays both: one for this child, one for
+    // the grandchild the child may itself delegate.
     const reservation = reserveChild(budget(), budget({ tokens: 400, wallMs: 10_000, costMicroUsd: 200_000, children: 1 }))
 
     expect(reservation).toEqual({
       reserved: true,
       child: { tokens: 400, wallMs: 10_000, costMicroUsd: 200_000, children: 1 },
-      parent: { tokens: 600, wallMs: 50_000, costMicroUsd: 300_000, children: 1 },
+      parent: { tokens: 600, wallMs: 50_000, costMicroUsd: 300_000, children: 0 },
     })
   })
 
@@ -55,12 +57,36 @@ describe('reserveChild', () => {
       .toEqual({ reserved: false, denial: { dimension: 'children', requested: 1, available: 0 } })
   })
 
-  it('lets a child hold more grandchild slots than its parent has left', () => {
-    // Grandchild concurrency is the child's own to spend; only the one slot
-    // this child occupies comes out of the parent.
+  it('refuses a child that would hand down more slots than its parent holds', () => {
+    // Charging only the slot this child occupies would leave concurrency
+    // unbounded across a tree: every level would hand down authority no level
+    // had paid for.
     const reservation = reserveChild(budget({ children: 1 }), budget({ tokens: 1, wallMs: 1, costMicroUsd: 1, children: 5 }))
 
-    expect(reservation).toMatchObject({ reserved: true, child: { children: 5 }, parent: { children: 0 } })
+    expect(reservation).toEqual({
+      reserved: false,
+      denial: { dimension: 'children', requested: 6, available: 1 },
+    })
+  })
+
+  it('bounds a whole subtree by the slots its root was granted', () => {
+    // Four slots buy four childless children, or one child that may run three
+    // of its own, and no arrangement in between exceeds four live runs.
+    const share = { tokens: 1, wallMs: 1, costMicroUsd: 1 }
+    let parent = budget({ children: 4 })
+    let admitted = 0
+    for (;;) {
+      const reservation = reserveChild(parent, { ...share, children: 0 })
+      if (!reservation.reserved) break
+      parent = reservation.parent
+      admitted += 1
+    }
+
+    expect(admitted).toBe(4)
+    expect(reserveChild(budget({ children: 4 }), { ...share, children: 3 }))
+      .toMatchObject({ reserved: true, parent: { children: 0 } })
+    expect(reserveChild(budget({ children: 4 }), { ...share, children: 4 }))
+      .toMatchObject({ reserved: false, denial: { dimension: 'children', requested: 5, available: 4 } })
   })
 
   it('refuses rather than shrinking the request', () => {

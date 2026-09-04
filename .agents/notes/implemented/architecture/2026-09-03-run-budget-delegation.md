@@ -26,7 +26,7 @@ A budget compared or decremented in floating point drifts, and a spend limit tha
 
 ### Child slots are held, not spent
 
-`children` behaves unlike the other three: reserving takes a slot, settling returns it, while tokens, milliseconds and money are gone for good. That is why `RunSpend` has no `children` field — a caller able to "spend" concurrency would destroy the capacity it is supposed to release. The concurrency a child may itself delegate is its own to hold and is not drawn from the parent's slots; only the one slot the child occupies is, so a parent with one slot left can still start a child permitted five grandchildren.
+`children` behaves unlike the other three: reserving takes slots, settling returns them, while tokens, milliseconds and money are gone for good. That is why `RunSpend` has no `children` field — a caller able to "spend" concurrency would destroy the capacity it is supposed to release. A child costs its parent one slot for itself plus every slot it may hand down, so the count bounds a whole subtree ([concurrency is conserved across a tree](2026-09-04-concurrency-is-conserved-across-a-tree.md)).
 
 ### An overspend is not credited back
 

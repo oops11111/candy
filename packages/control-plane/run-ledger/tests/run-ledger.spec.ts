@@ -301,3 +301,34 @@ describe('a tree that loses a run', () => {
     expect(new RunLedger().remaining(ROOT)).toBeUndefined()
   })
 })
+
+describe('bounding a subtree by the root grant', () => {
+  it('charges a parent for the slots its child may hand down', () => {
+    const ledger = rooted({ children: 4 })
+
+    ledger.openChild(ROOT, CHILD, share({ children: 2 }), LEASE)
+
+    // One slot for the child, two for the grandchildren it may run.
+    expect(ledger.remaining(ROOT)).toMatchObject({ children: 1 })
+    expect(ledger.remaining(CHILD)).toMatchObject({ children: 2 })
+  })
+
+  it('returns every slot a closed child was holding', () => {
+    const ledger = rooted({ children: 4 })
+    ledger.openChild(ROOT, CHILD, share({ children: 2 }), LEASE)
+
+    ledger.close(CHILD)
+
+    expect(ledger.remaining(ROOT)).toMatchObject({ children: 4 })
+  })
+
+  it('refuses a child whose own slots the parent cannot cover', () => {
+    const ledger = rooted({ children: 2 })
+
+    expect(ledger.openChild(ROOT, CHILD, share({ children: 2 }), LEASE))
+      .toMatchObject({
+        ok: false,
+        rejection: { reason: 'parent-exhausted', denial: { dimension: 'children', requested: 3, available: 2 } },
+      })
+  })
+})

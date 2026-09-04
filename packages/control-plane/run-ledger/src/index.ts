@@ -319,7 +319,9 @@ export class RunLedger {
     for (const child of this.records.values()) {
       if (child.parentRunId !== record.runId) continue
       held = plus(held, child.reserved)
-      slots -= 1
+      // A child holds its own slot and every slot it may hand down, so the
+      // count bounds the whole subtree rather than only its top level.
+      slots -= 1 + child.reserved.children
     }
     return {
       tokens: Math.max(0, record.reserved.tokens - held.tokens),

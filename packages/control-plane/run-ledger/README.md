@@ -70,7 +70,7 @@ const opened = ledger.openChild(parent, child, {
 export const settled = opened.ok ? ledger.close(child) : opened
 ```
 
-Closing a run releases its hold, so the parent's derived allowance recovers everything the child did not use, along with its child slot. A run with open children closes them too: a hold left behind a closed run is a hold nothing will ever settle.
+Closing a run releases its hold, so the parent's derived allowance recovers everything the child did not use, along with every slot it was holding, its own and the ones it could hand down. A run with open children closes them too: a hold left behind a closed run is a hold nothing will ever settle.
 
 ### Releasing what a lost run was holding
 
