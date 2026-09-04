@@ -43,30 +43,34 @@ export const outcome = admission.admitted
 
 ### 提供 policy
 
-`RunAdmissionPolicy` 持有本运行时的期望、断言密钥、保险库密钥环、池基准目录,以及两个由部署方满足的端口:
+`RunAdmissionPolicy` 持有本运行时的期望、断言密钥、保险库密钥环、池基准目录,以及三个由部署方满足的端口:
 
 ```ts
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
+import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 
 declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'spendNonce' | 'findCredential'>
 declare const store: {
   budgetFor: (userId: string) => Promise<undefined>
   parentRemaining: (parentRunId: string) => Promise<undefined>
-  markSpent: (nonce: string, expiresAt: number) => Promise<boolean>
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
 }
+
+const replay = new RunReplayStore()
 
 export const policy: RunAdmissionPolicy = {
   ...partial,
   findBudget: claims => claims.parentRunId === undefined
     ? store.budgetFor(claims.userId)
     : store.parentRemaining(claims.parentRunId),
-  spendNonce: claims => store.markSpent(claims.nonce, claims.expiresAt),
+  spendNonce: claims => Promise.resolve(replay.spend(claims, Date.now())),
   findCredential: claims => store.envelopeFor(claims.userId, claims.accountId),
 }
 ```
 
-`spendNonce` 只在首次见到某个 nonce 时返回 true。`findBudget` 返回 `undefined` 表示拒绝该运行:存储不认识的租户并不等于额度无限的租户,而意在「不计量」的部署应当用一个显式的大额度来表达。这三个端口在本仓库中都不存在,这正是它们作为参数的原因:在部署方回答了额度、重放与凭据查找之前,运行无法开始。
+`spendNonce` 只在首次见到某个 nonce 时返回 true,而本调用从不重试一个被报告为已消费的 nonce,因此那个端口就是重放防护的全部。[`dsh-run-replay`](../run-replay/README.zh.md) 为单个进程满足它;运行多于一个运行时进程的部署,需要一个仍然守住同样三项义务的持久化存储 —— 一个不可分割的决定、由断言界定的保留期,以及一条既以租户也以 nonce 为键的记录。
+
+`findBudget` 返回 `undefined` 表示拒绝该运行:存储不认识的租户并不等于额度无限的租户,而意在「不计量」的部署应当用一个显式的大额度来表达。它与 `findCredential` 在本仓库中都没有实现,这正是三者都仍作为参数的原因:在部署方回答了额度、重放与凭据查找之前,运行无法开始。
 
 `findBudget` 回答的是这次运行将据以启动的那份额度，而这对每一种运行并不是同一次查询。子运行 —— claims 携带 `parentRunId` 的那种 —— 据以启动的是它**父运行**的剩余额度，从 [`dsh-run-ledger`](../run-ledger/README.zh.md) 里读出。给子运行回答租户预算会让这项检查失去意义：一个额度充裕的租户完全可能有一个已耗尽的父运行，而子运行要到自己的份额被预留时才会被拒绝 —— 那已经是在它的一次性 nonce 被消费、凭据被打开之后一步了。
 

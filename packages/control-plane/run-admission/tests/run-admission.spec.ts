@@ -11,6 +11,7 @@ import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import { runtimePoolKey, runtimePoolRoot } from '@deepseek-ai/dsh-runtime-pool'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 import { describe, expect, it } from 'vitest'
 import { admitRun, type RunAdmissionPolicy } from '../src/index.ts'
 
@@ -59,20 +60,22 @@ function sealedFor(subject: ExecutionAssertionClaims): CredentialEnvelope {
   ).envelope
 }
 
-/** A policy whose stores answer for exactly one tenant, with a one-shot nonce set. */
+/**
+ * A policy whose credential store answers for exactly one tenant.
+ *
+ * The replay store is the real one rather than a double: a `Set` of nonces
+ * would pass every case here while conflating two tenants that were issued the
+ * same value, which is the contract `dsh-run-replay` exists to hold.
+ */
 function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy {
-  const spent = new Set<string>()
+  const replay = new RunReplayStore()
   return {
     expectation: EXPECTATION,
     assertionSecret: ASSERTION_SECRET,
     keyring: KEYRING,
     poolBase: POOL_BASE,
     findBudget: () => Promise.resolve(BUDGET),
-    spendNonce: (subject) => {
-      if (spent.has(subject.nonce)) return Promise.resolve(false)
-      spent.add(subject.nonce)
-      return Promise.resolve(true)
-    },
+    spendNonce: subject => Promise.resolve(replay.spend(subject, NOW)),
     findCredential: subject => Promise.resolve(
       subject.userId === UserId('user-alice') ? sealedFor(subject) : undefined,
     ),
@@ -182,6 +185,20 @@ describe('admitRun', () => {
       rejection: { stage: 'replay', reason: 'nonce-already-spent', claims: claims() },
       audits: [],
     })
+  })
+
+  it('admits two tenants issued the same nonce value', async () => {
+    // A replay store keyed by the nonce alone passes every other case here and
+    // fails this one, letting whichever tenant arrives first deny the other.
+    const shared = policy({ findCredential: subject => Promise.resolve(sealedFor(subject)) })
+    const alice = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    const bobby = mintExecutionAssertion(claims({ userId: UserId('user-bobby') }), ASSERTION_SECRET)
+
+    const first = await admitRun({ token: alice }, shared, NOW)
+    const second = await admitRun({ token: bobby }, shared, NOW)
+
+    expect(first.admitted).toBe(true)
+    expect(second.admitted).toBe(true)
   })
 
   it('spends the nonce before reading a credential', async () => {

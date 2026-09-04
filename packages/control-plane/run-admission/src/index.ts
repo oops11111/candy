@@ -90,8 +90,11 @@ export interface RunAdmissionPolicy {
    * Record one assertion's nonce as spent.
    *
    * Returns true when this nonce had not been seen, and false when it had —
-   * which denies the run. The store is tenant-partitioned and durable in a
-   * real deployment; this module never retries a spent nonce.
+   * which denies the run. This module never retries a spent nonce, so the
+   * store is the whole of replay protection: it decides in one indivisible
+   * step, holds a record while its assertion stays admissible, and partitions
+   * by tenant. `dsh-run-replay` satisfies all three for one process; a
+   * deployment running more than one needs a durable store that still does.
    */
   readonly spendNonce: (claims: ExecutionAssertionClaims) => Promise<boolean>
   /** Look up the sealed credential for the tenant and account the assertion names. */

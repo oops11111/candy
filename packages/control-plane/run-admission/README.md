@@ -47,26 +47,30 @@ An admitted run carries the verified claims, the opened credential, the pool key
 
 ```ts
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
+import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 
 declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'spendNonce' | 'findCredential'>
 declare const store: {
   budgetFor: (userId: string) => Promise<undefined>
   parentRemaining: (parentRunId: string) => Promise<undefined>
-  markSpent: (nonce: string, expiresAt: number) => Promise<boolean>
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
 }
+
+const replay = new RunReplayStore()
 
 export const policy: RunAdmissionPolicy = {
   ...partial,
   findBudget: claims => claims.parentRunId === undefined
     ? store.budgetFor(claims.userId)
     : store.parentRemaining(claims.parentRunId),
-  spendNonce: claims => store.markSpent(claims.nonce, claims.expiresAt),
+  spendNonce: claims => Promise.resolve(replay.spend(claims, Date.now())),
   findCredential: claims => store.envelopeFor(claims.userId, claims.accountId),
 }
 ```
 
-`spendNonce` returns true only the first time it sees a nonce. `findBudget` returning `undefined` denies the run: a tenant the store does not know is not a tenant with unlimited budget, and a deployment that means unmetered says so with an explicit large allowance. None of the three ports exists in this repository, which is why all three are parameters: a run cannot start until the deployment has answered budget, replay, and credential lookup.
+`spendNonce` returns true only the first time it sees a nonce, and this call never retries one reported as spent, so that port is the whole of replay protection. [`dsh-run-replay`](../run-replay/README.md) satisfies it for one process; a deployment running more than one runtime process needs a durable store that keeps the same three obligations — one indivisible decision, retention bounded by the assertion, and a record keyed by tenant as well as nonce.
+
+`findBudget` returning `undefined` denies the run: a tenant the store does not know is not a tenant with unlimited budget, and a deployment that means unmetered says so with an explicit large allowance. Neither it nor `findCredential` has an implementation in this repository, which is why all three stay parameters: a run cannot start until the deployment has answered budget, replay, and credential lookup.
 
 `findBudget` answers the allowance the run is started against, which is not the same lookup for every run. A child run — one whose claims carry a `parentRunId` — is started against its PARENT's remaining allowance, read from a [`dsh-run-ledger`](../run-ledger/README.md). Answering the tenant's budget for a child makes this check meaningless: a tenant with plenty left can have an exhausted parent, and the child is then refused only when its share is reserved, one step after its single-use nonce was spent and its credential opened.
 

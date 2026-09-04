@@ -37,6 +37,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-run-budget": "workspace:^"
+    "@deepseek-ai/dsh-run-budget": "workspace:^",
+    "@deepseek-ai/dsh-run-replay": "workspace:^"
   }
 }

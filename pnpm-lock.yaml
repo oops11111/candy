@@ -4298,6 +4298,9 @@ importers:
       '@deepseek-ai/dsh-run-budget':
         specifier: workspace:^
         version: link:../run-budget
+      '@deepseek-ai/dsh-run-replay':
+        specifier: workspace:^
+        version: link:../run-replay
 
   packages/control-plane/run-budget:
     devDependencies:
