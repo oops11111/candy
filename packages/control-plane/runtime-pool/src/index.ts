@@ -21,7 +21,7 @@
  */
 
 import { createHash } from 'node:crypto'
-import { chmod, mkdir } from 'node:fs/promises'
+import { chmod, lstat, mkdir } from 'node:fs/promises'
 import { posix, win32 } from 'node:path'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { ProviderAccountId, ProviderKind, UserId } from '@deepseek-ai/dsh-control-plane'
@@ -137,10 +137,16 @@ const POOL_ROOT_MODE = 0o700
  * Calling this for a pool that already exists is how a second run joins it, so
  * the call is idempotent.
  *
+ * What already exists in the pool's place must be a real directory. A symlink
+ * there would take the mode change to its target and hand this tenant that
+ * target as a home, and a link to another tenant's pool root is owned by the
+ * same account, so no permission check would catch it.
+ *
  * @param base - absolute directory holding every pool's root; it must already exist.
  * @param key - the pool's key.
  * @returns the pool's own directory, created and private.
  * @throws RangeError when `base` is not absolute, or when it does not exist.
+ * @throws Error when the pool's path exists and is not a directory.
  */
 export async function openRuntimePool(base: string, key: RuntimePoolKey): Promise<string> {
   const root = runtimePoolRoot(base, key)
@@ -156,6 +162,17 @@ export async function openRuntimePool(base: string, key: RuntimePoolKey): Promis
     // Only an existing pool is tolerated: a second run joining it is the
     // normal case, and its permissions are corrected below.
     if (code !== 'EEXIST') throw error
+  }
+  // What already exists must be a directory and not a link to one. `chmod`
+  // follows a symlink, so a link planted where this pool root goes would send
+  // the mode to its target and hand this tenant that target as a home — and a
+  // link to another pool root is owned by the same account, so nothing else
+  // would refuse it. `lstat` describes the entry itself, so the link is seen.
+  const entry = await lstat(root)
+  if (!entry.isDirectory()) {
+    throw new Error(
+      `dsh-runtime-pool: '${root}' exists and is not a directory, so it is not this pool's root`,
+    )
   }
   await chmod(root, POOL_ROOT_MODE)
   return root

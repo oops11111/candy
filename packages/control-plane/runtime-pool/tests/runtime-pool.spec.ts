@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ProviderAccountId, UserId } from '@deepseek-ai/dsh-control-plane'
@@ -180,6 +180,26 @@ describe('openRuntimePool', () => {
 
     expect(alice).not.toBe(bobby)
     expect(await modeOf(bobby)).toBe(RUNTIME_POOL_ROOT_MODE)
+  })
+
+  it('refuses a symlink planted where the pool root goes', async () => {
+    // `chmod` follows a link, so this would send the mode to the target and
+    // hand the tenant that target as a home. A link to another tenant's pool
+    // root is owned by the same account, so nothing else would refuse it.
+    const key = runtimePoolKey(identity())
+    const other = join(base, 'another-tenants-pool')
+    await mkdir(other, { mode: 0o755 })
+    await symlink(other, runtimePoolRoot(base, key))
+
+    await expect(openRuntimePool(base, key)).rejects.toThrow(/exists and is not a directory/)
+    expect(await modeOf(other)).toBe(0o755)
+  })
+
+  it('refuses a file where the pool root goes', async () => {
+    const key = runtimePoolKey(identity())
+    await writeFile(runtimePoolRoot(base, key), 'not a pool', 'utf8')
+
+    await expect(openRuntimePool(base, key)).rejects.toThrow(/exists and is not a directory/)
   })
 
   it('refuses a pool base the deployment never provisioned', async () => {
