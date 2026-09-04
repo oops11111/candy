@@ -122,6 +122,8 @@ R0 已交付为 [Candy 运行时边界](../../../../docs/candy-runtime-boundarie
 - [ ] 向子运行、提供方进程、工具和事件流传播取消，并验证进程已完全清理。提供方进程这一半已被验证：取消或放弃一次被绑定的 Claude CLI 运行，会把 CLI 以及它启动的那个进程一并回收，这是对着真实 pid 检验的，而不是对着脚本化的句柄（见 [`dsh-claude-cli-binding`](../../implemented/architecture/2026-09-03-admitted-run-to-claude-cli-launch.zh.md)）。子运行、工具与事件流是从 `dsh-subagent` 与工具缝隙继承来的，尚未通过一次 Candy 运行验证。
 - [ ] 在租户范围的审计轨迹中记录路由、委派、工具授权、用量和最终状态。已从记录本已存在、却正在丢失的那一处入手：`admitRun` 只在成功时返回保险库的审计，并丢弃了 `openCredential` 在失败分支上产生的记录，丢掉的正是保险库已检测到的跨租户访问尝试。现在每一种准入结果都携带 `audits`（[被拒绝的运行正是审计轨迹的用途所在](../../implemented/architecture/2026-09-03-run-admission-audits-every-outcome.zh.md)），并且 assertion 之后的每一次拒绝现在都会点名它拒绝的租户、账户与运行（[一次谁也没点名的拒绝不算记录](../../implemented/architecture/2026-09-03-a-denial-names-who.zh.md)）—— 被重放的 nonce 是准入能观察到的最清晰的攻击信号，而它此前被报告出来时不带任何调用方可以记录的身份。这个面依然只有保险库的操作那么宽 —— 路由、委派、工具授权、用量与最终状态需要本次发布尚未构建的调度与编排 —— 并且不持久化这些记录；按租户分区的存储仍归调用方。
 
+边界页面还要求为每一个被启动的提供方或工具进程留下一条审计记录，而那一条不是 Candy 可以就地打补丁的缺口。保险库记录每次被准入的运行写一条，而一次运行每调用一次就启动一个进程 —— `dsh-claude-cli-binding` 的计费用例就在一次准入之下跑了两次 —— 因此即便只看凭据访问，两者也不是一一对应的。本仓库里没有任何一个启动方发出启动记录：`dsh-subprocess` 没有声明这样的事件，因此 harness 自己的 bash、pwsh 与语言服务器进程同样没有被记录。正确的形状是把它做在每一个启动方本来就要经过的那条缝隙上，而它需要那条缝隙根本没有概念的租户归属 —— 那是调度器该提供的。
+
 ### R4 — Harness Web and account configuration
 
 - [x] 增加提供方账户列表、创建、验证、默认选择、撤销和删除 API，并执行所有权检查（[`dsh-provider-accounts`](../../implemented/architecture/2026-09-03-provider-account-management.zh.md)）；Web controller 与各提供方验证探测仍未构建。
