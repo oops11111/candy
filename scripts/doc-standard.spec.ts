@@ -66,6 +66,7 @@ const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
   'packages/control-plane/run-replay': 'The single-use nonce record behind admission; a plain class export, no plugin entry.',
   'packages/control-plane/run-start': 'Composition of admission, funding and placement with rollback; a plain function export, no plugin entry.',
   'packages/control-plane/runtime-pool': 'Pool-key derivation and path containment; plain function exports, no plugin entry.',
+  'packages/control-plane/tenant-allowance': 'A tenant grant with its consumption and the arithmetic over both; plain function exports, no plugin entry.',
   'packages/llm/claude-cli-protocol': 'Claude CLI frame translation and launch composition; plain function/class exports, no plugin entry.',
   'packages/core/scope': 'Scoped-context primitives; exports functions and types without a plugin entry.',
   'packages/experimental/webworker-packer': 'Build-time VFS image packer and command library.',

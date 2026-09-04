@@ -4274,6 +4274,9 @@ importers:
       '@deepseek-ai/dsh-storage-sqlite':
         specifier: workspace:^
         version: link:../../storage/storage-sqlite
+      '@deepseek-ai/dsh-tenant-allowance':
+        specifier: workspace:^
+        version: link:../tenant-allowance
 
   packages/control-plane/credential-vault:
     dependencies:
@@ -4438,6 +4441,9 @@ importers:
       '@deepseek-ai/dsh-storage-sqlite':
         specifier: workspace:^
         version: link:../../storage/storage-sqlite
+      '@deepseek-ai/dsh-tenant-allowance':
+        specifier: workspace:^
+        version: link:../tenant-allowance
 
   packages/control-plane/run-start:
     devDependencies:
@@ -4487,6 +4493,15 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+
+  packages/control-plane/tenant-allowance:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-run-budget':
+        specifier: workspace:^
+        version: link:../run-budget
 
   packages/core/agent:
     devDependencies:

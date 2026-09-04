@@ -8,9 +8,17 @@
  * `RunLedger.expire` was a call no clock made — a run abandoned without
  * settling held its parent's allowance until someone thought to reclaim it.
  *
- * It is not a policy. Whether a tenant may start another run at all, and in
- * what order queued requests run, are decisions nothing here makes: this
- * starts the run a caller asks for, or says which step refused it.
+ * It is where a tenant's durable allowance and its live runs meet, and that
+ * meeting is the whole of Candy's tenant-level bound. `ControlPlaneStore`
+ * holds a grant and what settled runs consumed of it but knows nothing of what
+ * is running; the ledger holds what is running but knows nothing of the
+ * tenant. Read on its own, either half admits a run it should refuse: a grant
+ * with no consumption subtracted funds every run a tenant ever starts, and a
+ * ledger with no tenant above it lets unrelated trees each hold the whole
+ * allowance at once.
+ *
+ * The order queued requests run in is still a decision nothing here makes:
+ * this starts the run a caller asks for, or says which step refused it.
  *
  * @module @deepseek-ai/dsh-run-scheduler
  */
@@ -18,7 +26,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
-import type { RunId } from '@deepseek-ai/dsh-control-plane'
+import type { RunId, UserId } from '@deepseek-ai/dsh-control-plane'
 import {
   CredentialKeyVersion,
   type CredentialKeyring,
@@ -29,6 +37,7 @@ import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunSettlement } from '@deepseek-ai/dsh-run-ledger'
 import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 import { startRun, type RunStartOutcome } from '@deepseek-ai/dsh-run-start'
+import { remainingAllowance } from '@deepseek-ai/dsh-tenant-allowance'
 import type {} from '@deepseek-ai/dsh-control-plane-store'
 
 declare module '@deepseek-ai/cordis' {
@@ -103,6 +112,16 @@ export class RunScheduler extends Service {
   /** Nonces spent by assertions still admissible here. */
   readonly replay: RunReplayStore = new RunReplayStore()
 
+  /**
+   * Which tenant each open ROOT run belongs to.
+   *
+   * A `RunRecord` carries a run and its parent, not an identity, so the tenant
+   * a tree is charged to would otherwise be lost the moment the assertion that
+   * started it was verified. Only roots are held: a descendant's spend reaches
+   * its tenant through its root's settlement, and a tree has exactly one root.
+   */
+  private readonly tenants = new Map<RunId, UserId>()
+
   private readonly keyring: CredentialKeyring
   private readonly assertionSecret: Buffer
 
@@ -125,7 +144,12 @@ export class RunScheduler extends Service {
   /** Start the clock that releases abandoned holds and drops dead nonce records. */
   protected [Service.init](): void {
     this.ctx.interval(() => {
-      this.sweep(Date.now())
+      // A sweep now writes to the medium, and a rejected write must not become
+      // an unhandled rejection that takes the runtime down: the holds it failed
+      // to charge are already released, and the next sweep runs regardless.
+      this.sweep(Date.now()).catch((error: unknown) => {
+        this.ctx.logger.warn(`run-scheduler: sweep failed to settle: ${String(error)}`)
+      })
     }, this.config.sweepMs ?? 30_000)
   }
 
@@ -140,16 +164,20 @@ export class RunScheduler extends Service {
    * @returns the started run, or the step that refused it, with every audit
    *   record the attempt produced.
    */
-  start(
+  async start(
     token: string,
     share: (run: { budget: RunBudget }) => RunBudget = run => run.budget,
     now: number = Date.now(),
   ): Promise<RunStartOutcome> {
-    return startRun({ token }, this.policy(), {
+    const outcome = await startRun({ token }, this.policy(), {
       ledger: this.ledger,
       share,
       leaseExpiresAt: now + (this.config.leaseMs ?? 300_000),
     }, now)
+    if (outcome.started && outcome.value.run.claims.parentRunId === undefined) {
+      this.tenants.set(outcome.value.run.claims.runId, outcome.value.run.claims.userId)
+    }
+    return outcome
   }
 
   /**
@@ -164,12 +192,19 @@ export class RunScheduler extends Service {
   }
 
   /**
-   * Close one run and its descendants, returning what it did not spend.
+   * Close one run and its descendants, and charge its tenant for what the tree
+   * consumed.
+   *
+   * Closing a root is the one point a tenant's durable allowance moves. A child
+   * settles into its parent's record instead, and reaches the tenant when that
+   * parent's root closes, so a tree is charged once rather than once per run.
    * @param runId - the run to settle.
    * @returns the settlement, or why it could not be closed.
    */
-  close(runId: RunId): RunLedgerResult<RunSettlement> {
-    return this.ledger.close(runId)
+  async close(runId: RunId): Promise<RunLedgerResult<RunSettlement>> {
+    const outcome = this.ledger.close(runId)
+    if (outcome.ok) await this.chargeTenant(outcome.value)
+    return outcome
   }
 
   /**
@@ -182,8 +217,9 @@ export class RunScheduler extends Service {
    * @param now - epoch milliseconds.
    * @returns the runs whose holds were released.
    */
-  sweep(now: number): readonly RunSettlement[] {
+  async sweep(now: number): Promise<readonly RunSettlement[]> {
     const expired = this.ledger.expire(now)
+    for (const settlement of expired) await this.chargeTenant(settlement)
     this.replay.evict(now)
     return expired
   }
@@ -205,9 +241,36 @@ export class RunScheduler extends Service {
       // A child is admitted against its parent's remainder, not the tenant's
       // own allowance: a tenant with plenty left can have an exhausted parent.
       findBudget: (claims: ExecutionAssertionClaims) => claims.parentRunId === undefined
-        ? store.tenantBudget(claims.userId)
+        ? this.tenantRemaining(claims.userId)
         : Promise.resolve(this.ledger.remaining(claims.parentRunId)),
     }
+  }
+
+  /**
+   * What one tenant may start a new root run against: its durable allowance,
+   * less the reservation every root run of that tenant still open is holding.
+   */
+  private async tenantRemaining(userId: UserId): Promise<RunBudget | undefined> {
+    const allowance = await this.ctx.controlPlaneStore.tenantAllowance(userId)
+    if (allowance === undefined) return undefined
+    const held = this.ledger.open()
+      .filter(record => this.tenants.get(record.runId) === userId)
+      .map(record => record.reserved)
+    return remainingAllowance(allowance, held)
+  }
+
+  /**
+   * Charge one settled root run's tree to its tenant and stop tracking it.
+   *
+   * A settlement for a run this scheduler never opened as a root — a child, or
+   * a root started before a restart — charges nothing: there is no tenant to
+   * charge it to, and guessing one would bill the wrong account.
+   */
+  private async chargeTenant(settlement: RunSettlement): Promise<void> {
+    const userId = this.tenants.get(settlement.runId)
+    if (userId === undefined) return
+    this.tenants.delete(settlement.runId)
+    await this.ctx.controlPlaneStore.consumeTenantAllowance(userId, settlement.spent)
   }
 }
 

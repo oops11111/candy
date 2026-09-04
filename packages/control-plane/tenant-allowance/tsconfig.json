@@ -10,11 +10,6 @@
   "references": [
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
-    { "path": "../control-plane" },
-    { "path": "../credential-vault" },
-    { "path": "../provider-accounts" },
-    { "path": "../run-budget" },
-    { "path": "../tenant-allowance" },
-    { "path": "../../storage/storage-domain" }
+    { "path": "../run-budget" }
   ]
 }

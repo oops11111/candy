@@ -91,7 +91,7 @@ function token(overrides: Partial<ExecutionAssertionClaims> = {}): string {
 /** A child-sized share, small in every dimension. */
 const SHARE: RunBudget = { tokens: 100, wallMs: 1_000, costMicroUsd: 10_000, children: 0 }
 
-function options(ledger: RunLedger, share: RunBudget | undefined = undefined) {
+function options(ledger: RunLedger, share?: RunBudget) {
   return { ledger, leaseExpiresAt: LEASE, share: share === undefined ? (run: { budget: RunBudget }) => run.budget : () => share }
 }
 

@@ -115,24 +115,48 @@ async save(entry: ProviderAccountEntry): Promise<void>
 async findCredential(claims: { userId: UserId; accountId: ProviderAccountId }): Promise<CredentialEnvelope | undefined>
 
 /**
- * One tenant's own allowance.
+ * One tenant's grant and what its settled runs have consumed of it.
  *
- * This is the root-run half of `dsh-run-admission`'s `findBudget`. A child
- * run is admitted against its parent's remainder, which the ledger holds.
+ * This is the durable half of the root-run answer to `dsh-run-admission`'s
+ * `findBudget`. It is deliberately not that answer: what a new run may start
+ * against is this record less the reservation of every run of that tenant
+ * still open, and which runs are open lives in a `RunLedger` rather than
+ * here. `dsh-tenant-allowance`'s `remainingAllowance` composes the two, and
+ * `dsh-run-scheduler` is where they meet.
  * @param userId - the tenant to read.
  * @returns the tenant's allowance, or undefined when none is recorded — which
  *   denies the run, because a tenant the store does not know is not a tenant
  *   with unlimited budget.
  */
-tenantBudget(userId: UserId): Promise<RunBudget | undefined>
+tenantAllowance(userId: UserId): Promise<TenantAllowance | undefined>
 
 /**
- * Record one tenant's allowance.
+ * Set what one tenant is granted, keeping what it has already consumed.
+ *
+ * Raising or lowering a grant does not return spent tokens: an operator who
+ * doubles a quota mid-period means the tenant may now spend twice as much in
+ * total, not that its history was erased. A tenant with no record is opened
+ * with nothing consumed.
  * @param userId - the tenant.
- * @param budget - the allowance runs of that tenant start against.
- * @returns resolution after the write reaches the medium.
+ * @param grant - the allowance that tenant's runs draw on.
+ * @returns the stored allowance, after the write reaches the medium.
+ * @throws RangeError when the grant is not made of non-negative safe integers.
  */
-async setTenantBudget(userId: UserId, budget: RunBudget): Promise<void>
+async setTenantGrant(userId: UserId, grant: RunBudget): Promise<TenantAllowance>
+
+/**
+ * Add one settled run's spending to what its tenant has consumed.
+ *
+ * The settlement `dsh-run-ledger` reports for a root run already covers its
+ * whole subtree, so one call per tree is the whole of a tenant's charge.
+ * @param userId - the tenant that ran it.
+ * @param spent - what the settled root run and its descendants consumed.
+ * @returns the tenant's allowance after the charge, or undefined when no
+ *   allowance is recorded for that tenant and the charge therefore landed
+ *   nowhere.
+ * @throws RangeError when the spend is not made of non-negative safe integers.
+ */
+async consumeTenantAllowance(userId: UserId, spent: RunSpend): Promise<TenantAllowance | undefined>
 ```
 
 Source: [`packages/control-plane/control-plane-store/src/index.ts`](../../packages/control-plane/control-plane-store/src/index.ts)
@@ -157,7 +181,7 @@ One instance owns one ledger and one replay store, so every run this runtime adm
  * @returns the started run, or the step that refused it, with every audit
  *   record the attempt produced.
  */
-start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => run.budget, now: number = Date.now(), ): Promise<RunStartOutcome>
+async start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => run.budget, now: number = Date.now(), ): Promise<RunStartOutcome>
 
 /**
  * Record what one run consumed since its last charge.
@@ -169,11 +193,16 @@ start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => 
 charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>
 
 /**
- * Close one run and its descendants, returning what it did not spend.
+ * Close one run and its descendants, and charge its tenant for what the tree
+ * consumed.
+ *
+ * Closing a root is the one point a tenant's durable allowance moves. A child
+ * settles into its parent's record instead, and reaches the tenant when that
+ * parent's root closes, so a tree is charged once rather than once per run.
  * @param runId - the run to settle.
  * @returns the settlement, or why it could not be closed.
  */
-close(runId: RunId): RunLedgerResult<RunSettlement>
+async close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>
 
 /**
  * Release every hold whose lease has passed and drop nonce records that can
@@ -185,7 +214,7 @@ close(runId: RunId): RunLedgerResult<RunSettlement>
  * @param now - epoch milliseconds.
  * @returns the runs whose holds were released.
  */
-sweep(now: number): readonly RunSettlement[]
+async sweep(now: number): Promise<readonly RunSettlement[]>
 ```
 
 Source: [`packages/control-plane/run-scheduler/src/index.ts`](../../packages/control-plane/run-scheduler/src/index.ts)

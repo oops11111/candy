@@ -269,7 +269,7 @@ describe('credential isolation', () => {
 
     expect(chunks.at(-1)).toEqual({
       type: 'finish',
-      reason: { kind: 'error', failure: { message: expect.stringContaining('more than 100 bytes'), code: 'OUTPUT_LIMIT' } },
+      reason: { kind: 'error', failure: { message: expect.stringContaining('more than 100 bytes') as string, code: 'OUTPUT_LIMIT' } },
     })
     expect(terminated).toBe(true)
   })

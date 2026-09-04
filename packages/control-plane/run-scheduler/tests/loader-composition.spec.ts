@@ -48,6 +48,8 @@ const LIFETIME = 60_000
 const ALICE = UserId('user-alice')
 const ACCOUNT = ProviderAccountId('account-1')
 const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 2_500_000, children: 4 }
+/** A share small enough that the tenant's grant still funds another run beside it. */
+const SHARE: RunBudget = { tokens: 1_000, wallMs: 60_000, costMicroUsd: 10_000, children: 0 }
 const KEYRING: CredentialKeyring = {
   currentVersion: CredentialKeyVersion(KEY_VERSION),
   keys: new Map([[CredentialKeyVersion(KEY_VERSION), Buffer.from(KEY, 'utf8')]]),
@@ -148,7 +150,7 @@ function claims(now: number, overrides: Partial<ExecutionAssertionClaims> = {}):
 
 /** Give the tenant an allowance and a sealed credential, as a control plane would. */
 async function provision(ctx: Context, now: number): Promise<void> {
-  await ctx.controlPlaneStore.setTenantBudget(ALICE, BUDGET)
+  await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
   await ctx.controlPlaneStore.save({
     record: {
       id: ACCOUNT,
@@ -189,8 +191,10 @@ describe('a booted Candy scheduler', () => {
     await provision(ctx, now)
     const token = mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8'))
 
-    await ctx.runScheduler.start(token, undefined, now)
-    const replayed = await ctx.runScheduler.start(token, undefined, now)
+    // A share rather than the whole remainder, so the tenant's allowance is not
+    // what denies the second attempt.
+    await ctx.runScheduler.start(token, () => SHARE, now)
+    const replayed = await ctx.runScheduler.start(token, () => SHARE, now)
 
     expect(replayed).toMatchObject({
       started: false,
@@ -219,7 +223,7 @@ describe('a booted Candy scheduler', () => {
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
 
     ctx.runScheduler.charge(RunId('run-root'), { tokens: 120, wallMs: 900, costMicroUsd: 4_000 })
-    const settled = ctx.runScheduler.close(RunId('run-root'))
+    const settled = await ctx.runScheduler.close(RunId('run-root'))
 
     expect(settled).toMatchObject({ ok: true, value: { spent: { tokens: 120, costMicroUsd: 4_000 } } })
     expect(ctx.runScheduler.ledger.open()).toEqual([])
@@ -247,6 +251,126 @@ describe('a booted Candy scheduler', () => {
     expect(child).toMatchObject({ started: true, value: { reserved: share } })
     expect(ctx.runScheduler.ledger.remaining(RunId('run-root')))
       .toMatchObject({ tokens: BUDGET.tokens - share.tokens, children: 3 })
+  })
+
+  it('does not fund a second run of the same size once the first has settled', async () => {
+    // The defect the tenant allowance closes: the grant was read straight from
+    // the store, so the same 100_000 tokens funded every run the tenant ever
+    // started.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    ctx.runScheduler.charge(RunId('run-root'), { tokens: BUDGET.tokens, wallMs: 1, costMicroUsd: 1 })
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    const second = await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'nonce-2' }), Buffer.from(SECRET, 'utf8')),
+      undefined,
+      now,
+    )
+
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE))
+      .toMatchObject({ consumed: { tokens: BUDGET.tokens } })
+    expect(second).toMatchObject({
+      started: false,
+      rejection: { stage: 'admission', rejection: { stage: 'budget', reason: 'exhausted' } },
+    })
+  })
+
+  it('holds an open run out of what the tenant\'s next run starts against', async () => {
+    // Two live trees would otherwise each be admitted against the whole grant
+    // and could together spend it twice.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+
+    const second = await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'nonce-2' }), Buffer.from(SECRET, 'utf8')),
+      undefined,
+      now,
+    )
+
+    expect(second).toMatchObject({
+      started: true,
+      value: { run: { budget: { tokens: BUDGET.tokens - SHARE.tokens, children: BUDGET.children - 1 } } },
+    })
+  })
+
+  it('charges a tenant once for a whole tree, when its root closes', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2' }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )
+    ctx.runScheduler.charge(RunId('run-child'), { tokens: 30, wallMs: 5, costMicroUsd: 6 })
+    ctx.runScheduler.charge(RunId('run-root'), { tokens: 12, wallMs: 2, costMicroUsd: 1 })
+
+    // A child settles into its parent's record, never into the tenant's.
+    await ctx.runScheduler.close(RunId('run-child'))
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 0 } })
+
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE))
+      .toMatchObject({ consumed: { tokens: 42, wallMs: 7, costMicroUsd: 7 } })
+  })
+
+  it('charges nothing for a run it never opened', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+
+    expect(await ctx.runScheduler.close(RunId('run-nobody-opened')))
+      .toEqual({ ok: false, rejection: { reason: 'unknown-run', runId: RunId('run-nobody-opened') } })
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 0 } })
+  })
+
+  it('charges the tenant for a run its lease released', async () => {
+    // An abandoned run consumed what it consumed; releasing its hold without
+    // charging would return the tokens it actually spent.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    ctx.runScheduler.charge(RunId('run-root'), { tokens: 55, wallMs: 3, costMicroUsd: 2 })
+
+    await ctx.runScheduler.sweep(now + 300_001)
+
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE))
+      .toMatchObject({ consumed: { tokens: 55, wallMs: 3, costMicroUsd: 2 } })
+  })
+
+  it('keeps sweeping after a settlement write fails', async () => {
+    // The holds a failed sweep could not charge are already released, and a
+    // rejected write must not take the runtime down with it.
+    vi.useFakeTimers({ now: 1_800_000_000_000 })
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    vi.spyOn(ctx.controlPlaneStore, 'consumeTenantAllowance').mockRejectedValue(new Error('medium is gone'))
+
+    await vi.advanceTimersByTimeAsync(300_001)
+
+    expect(ctx.runScheduler.ledger.open()).toEqual([])
   })
 
   it('refuses to boot without the assertion secret', async () => {
@@ -300,7 +424,7 @@ describe('a booted Candy scheduler', () => {
     await provision(ctx, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
 
-    const released = ctx.runScheduler.sweep(now + 300_001)
+    const released = await ctx.runScheduler.sweep(now + 300_001)
 
     expect(released.map(settlement => settlement.runId)).toEqual([RunId('run-root')])
     expect(ctx.runScheduler.ledger.open()).toEqual([])

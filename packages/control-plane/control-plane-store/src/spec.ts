@@ -13,10 +13,10 @@
 
 import { z } from 'zod'
 import { ProviderAccountId, UserId } from '@deepseek-ai/dsh-control-plane'
-import type { ProviderKind } from '@deepseek-ai/dsh-control-plane'
 import { CredentialKeyVersion, type CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountRecord } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import type { TenantAllowance } from '@deepseek-ai/dsh-tenant-allowance'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 
 /** The closed provider set, spelled once for the durable boundary. */
@@ -53,22 +53,44 @@ const storedCredential = z.object({
 /** One stored account: its metadata and the sealed credential it authenticates with. */
 const storedEntry = z.object({ record: storedRecord, credential: storedCredential })
 
-/** One tenant's allowance, in the four dimensions `dsh-run-budget` bounds. */
-const storedBudget = z.object({
+/** One tenant's grant, in the four dimensions `dsh-run-budget` bounds. */
+const storedGrant = z.object({
   tokens: z.number(),
   wallMs: z.number(),
   costMicroUsd: z.number(),
   children: z.number(),
 })
 
+/**
+ * What one tenant's settled runs consumed. It carries no `children` for the
+ * reason `RunSpend` does not: a concurrency slot is held and returned, never
+ * spent.
+ */
+const storedConsumed = z.object({
+  tokens: z.number(),
+  wallMs: z.number(),
+  costMicroUsd: z.number(),
+})
+
+/**
+ * One tenant's allowance: the grant an operator set, and what has been drawn
+ * from it. The grant is stored beside the consumption rather than decremented
+ * in place, so a restart can still report what the tenant was given.
+ */
+const storedAllowance = z.object({ grant: storedGrant, consumed: storedConsumed })
+
 /** The durable declaration the control-plane store opens. */
 export const controlPlaneDomainSpec = defineDomain({
   name: 'candy_control_plane',
-  version: 0,
+  // 1 replaced a bare per-tenant budget with a grant and its consumption.
+  // Records stamped 0 are discarded on read: a bare budget cannot say how much
+  // of itself was already spent, so admitting one would restore a tenant's
+  // whole allowance rather than migrate it.
+  version: 1,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),
-    budgets: domainTable<UserId, z.infer<typeof storedBudget>>(storedBudget),
+    allowances: domainTable<UserId, z.infer<typeof storedAllowance>>(storedAllowance),
   },
 })
 
@@ -121,7 +143,7 @@ export function fromStoredEntry(stored: z.infer<typeof storedEntry>): ProviderAc
   const record: ProviderAccountRecord = {
     id: ProviderAccountId(stored.record.id),
     userId: UserId(stored.record.userId),
-    provider: stored.record.provider as ProviderKind,
+    provider: stored.record.provider,
     label: stored.record.label,
     createdAt: stored.record.createdAt,
     updatedAt: stored.record.updatedAt,
@@ -146,18 +168,51 @@ export function fromStoredEntry(stored: z.infer<typeof storedEntry>): ProviderAc
 }
 
 /** The stored allowance form, for a caller writing one. */
-export type StoredRunBudget = z.infer<typeof storedBudget>
+export type StoredTenantAllowance = z.infer<typeof storedAllowance>
+
+/** Rebuild one grant from the medium. */
+function fromStoredGrant(stored: StoredTenantAllowance['grant']): RunBudget {
+  return {
+    tokens: stored.tokens,
+    wallMs: stored.wallMs,
+    costMicroUsd: stored.costMicroUsd,
+    children: stored.children,
+  }
+}
+
+/**
+ * Project one tenant allowance onto the medium.
+ * @param allowance - the grant and what has been consumed of it.
+ * @returns the stored form.
+ */
+export function toStoredAllowance(allowance: TenantAllowance): StoredTenantAllowance {
+  return {
+    grant: {
+      tokens: allowance.grant.tokens,
+      wallMs: allowance.grant.wallMs,
+      costMicroUsd: allowance.grant.costMicroUsd,
+      children: allowance.grant.children,
+    },
+    consumed: {
+      tokens: allowance.consumed.tokens,
+      wallMs: allowance.consumed.wallMs,
+      costMicroUsd: allowance.consumed.costMicroUsd,
+    },
+  }
+}
 
 /**
  * Rebuild one tenant allowance from the medium.
  * @param stored - the validated stored allowance.
  * @returns the allowance in the runtime's shape.
  */
-export function fromStoredBudget(stored: StoredRunBudget): RunBudget {
+export function fromStoredAllowance(stored: StoredTenantAllowance): TenantAllowance {
   return {
-    tokens: stored.tokens,
-    wallMs: stored.wallMs,
-    costMicroUsd: stored.costMicroUsd,
-    children: stored.children,
+    grant: fromStoredGrant(stored.grant),
+    consumed: {
+      tokens: stored.consumed.tokens,
+      wallMs: stored.consumed.wallMs,
+      costMicroUsd: stored.consumed.costMicroUsd,
+    },
   }
 }

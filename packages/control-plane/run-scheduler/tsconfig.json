@@ -20,6 +20,7 @@
     { "path": "../run-budget" },
     { "path": "../run-ledger" },
     { "path": "../run-replay" },
-    { "path": "../run-start" }
+    { "path": "../run-start" },
+    { "path": "../tenant-allowance" }
   ]
 }

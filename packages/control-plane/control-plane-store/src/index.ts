@@ -20,18 +20,20 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ProviderAccountId, UserId } from '@deepseek-ai/dsh-control-plane'
 import type { CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
-import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { consumeAllowance, openAllowance, type TenantAllowance } from '@deepseek-ai/dsh-tenant-allowance'
 import {
   controlPlaneDomainSpec,
-  fromStoredBudget,
+  fromStoredAllowance,
   fromStoredEntry,
+  toStoredAllowance,
   toStoredEntry,
-  type StoredRunBudget,
+  type StoredTenantAllowance,
 } from './spec.ts'
 
 export { controlPlaneDomainSpec } from './spec.ts'
-export type { StoredRunBudget } from './spec.ts'
+export type { StoredTenantAllowance } from './spec.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -54,7 +56,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
   // reachable, so a guard for the unopened state would be untestable rather
   // than defensive.
   private accounts!: KvTable<ProviderAccountId, ReturnType<typeof toStoredEntry>>
-  private budgets!: KvTable<UserId, StoredRunBudget>
+  private allowances!: KvTable<UserId, StoredTenantAllowance>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -65,7 +67,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
     const domain = await this.ctx.storageDomain.open(controlPlaneDomainSpec)
     this.ctx.effect(() => () => domain.close(), 'controlPlaneStore.domainClose')
     this.accounts = domain.table('accounts')
-    this.budgets = domain.table('budgets')
+    this.allowances = domain.table('allowances')
   }
 
   /**
@@ -121,28 +123,64 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
   }
 
   /**
-   * One tenant's own allowance.
+   * One tenant's grant and what its settled runs have consumed of it.
    *
-   * This is the root-run half of `dsh-run-admission`'s `findBudget`. A child
-   * run is admitted against its parent's remainder, which the ledger holds.
+   * This is the durable half of the root-run answer to `dsh-run-admission`'s
+   * `findBudget`. It is deliberately not that answer: what a new run may start
+   * against is this record less the reservation of every run of that tenant
+   * still open, and which runs are open lives in a `RunLedger` rather than
+   * here. `dsh-tenant-allowance`'s `remainingAllowance` composes the two, and
+   * `dsh-run-scheduler` is where they meet.
    * @param userId - the tenant to read.
    * @returns the tenant's allowance, or undefined when none is recorded — which
    *   denies the run, because a tenant the store does not know is not a tenant
    *   with unlimited budget.
    */
-  tenantBudget(userId: UserId): Promise<RunBudget | undefined> {
-    const stored = this.budgets.get(userId)
-    return Promise.resolve(stored === undefined ? undefined : fromStoredBudget(stored))
+  tenantAllowance(userId: UserId): Promise<TenantAllowance | undefined> {
+    const stored = this.allowances.get(userId)
+    return Promise.resolve(stored === undefined ? undefined : fromStoredAllowance(stored))
   }
 
   /**
-   * Record one tenant's allowance.
+   * Set what one tenant is granted, keeping what it has already consumed.
+   *
+   * Raising or lowering a grant does not return spent tokens: an operator who
+   * doubles a quota mid-period means the tenant may now spend twice as much in
+   * total, not that its history was erased. A tenant with no record is opened
+   * with nothing consumed.
    * @param userId - the tenant.
-   * @param budget - the allowance runs of that tenant start against.
-   * @returns resolution after the write reaches the medium.
+   * @param grant - the allowance that tenant's runs draw on.
+   * @returns the stored allowance, after the write reaches the medium.
+   * @throws RangeError when the grant is not made of non-negative safe integers.
    */
-  async setTenantBudget(userId: UserId, budget: RunBudget): Promise<void> {
-    await this.budgets.put(userId, { ...budget })
+  async setTenantGrant(userId: UserId, grant: RunBudget): Promise<TenantAllowance> {
+    const current = this.allowances.get(userId)
+    const opened = openAllowance(grant)
+    const allowance: TenantAllowance = current === undefined
+      ? opened
+      : { grant: opened.grant, consumed: fromStoredAllowance(current).consumed }
+    await this.allowances.put(userId, toStoredAllowance(allowance))
+    return allowance
+  }
+
+  /**
+   * Add one settled run's spending to what its tenant has consumed.
+   *
+   * The settlement `dsh-run-ledger` reports for a root run already covers its
+   * whole subtree, so one call per tree is the whole of a tenant's charge.
+   * @param userId - the tenant that ran it.
+   * @param spent - what the settled root run and its descendants consumed.
+   * @returns the tenant's allowance after the charge, or undefined when no
+   *   allowance is recorded for that tenant and the charge therefore landed
+   *   nowhere.
+   * @throws RangeError when the spend is not made of non-negative safe integers.
+   */
+  async consumeTenantAllowance(userId: UserId, spent: RunSpend): Promise<TenantAllowance | undefined> {
+    const stored = this.allowances.get(userId)
+    if (stored === undefined) return undefined
+    const charged = consumeAllowance(fromStoredAllowance(stored), spent)
+    await this.allowances.put(userId, toStoredAllowance(charged))
+    return charged
   }
 
 }

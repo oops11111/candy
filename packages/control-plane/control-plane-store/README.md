@@ -50,23 +50,33 @@ The service takes no configuration of its own: which medium serves the domain is
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-control-plane-store'
+import type { UserId } from '@deepseek-ai/dsh-control-plane'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
+import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import type { RunLedger } from '@deepseek-ai/dsh-run-ledger'
+import { remainingAllowance } from '@deepseek-ai/dsh-tenant-allowance'
 
 declare const ctx: Context
 declare const ledger: RunLedger
 declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'findCredential'>
+/** The reservation of every run of one tenant that is still open. */
+declare function heldByTenant(userId: UserId): readonly RunBudget[]
+
+async function tenantRemaining(userId: UserId): Promise<RunBudget | undefined> {
+  const allowance = await ctx.controlPlaneStore.tenantAllowance(userId)
+  return allowance === undefined ? undefined : remainingAllowance(allowance, heldByTenant(userId))
+}
 
 export const policy: RunAdmissionPolicy = {
   ...partial,
   findCredential: claims => ctx.controlPlaneStore.findCredential(claims),
   findBudget: claims => claims.parentRunId === undefined
-    ? ctx.controlPlaneStore.tenantBudget(claims.userId)
+    ? tenantRemaining(claims.userId)
     : Promise.resolve(ledger.remaining(claims.parentRunId)),
 }
 ```
 
-`findBudget` is composed rather than provided whole, and that is the point of the split. A child run is admitted against its *parent's* remainder, which an in-memory `RunLedger` holds; answering a child from the tenant's own allowance would defeat the check the port exists for. This service owns the tenant half and says so.
+`findBudget` is composed rather than provided whole, and that is the point of the split. Neither half is the answer on its own. A child run is admitted against its *parent's* remainder, which an in-memory `RunLedger` holds; answering a child from the tenant's own allowance would defeat the check the port exists for. A root run is admitted against this service's durable allowance *less what the tenant's open runs are holding*, which the same ledger knows and this service does not. [`dsh-run-scheduler`](../run-scheduler/README.md) is where both compositions are performed once, rather than at each call site.
 
 -----
 
@@ -111,8 +121,9 @@ An account is read by id, and the tenant its record names must be the one the ve
 
 These are current package constraints, not a task backlog.
 
-- **No run records** — the ledger is still in memory, so a restart keeps a tenant's accounts and allowance but loses every open run and the holds it carried. Durable run records need a settlement story a crash cannot corrupt, which is not this package.
-- **No spend write-back** — a tenant's allowance is what a deployment recorded; nothing here decrements it as runs charge. Folding a run's spend into a durable tenant total is the scheduler's, and needs the same crash story.
+- **No run records** — the ledger is still in memory, so a restart keeps a tenant's accounts and allowance but loses every open run and the holds it carried. A restart therefore returns the whole unconsumed allowance to the tenant, whatever was running. Durable run records need a settlement story a crash cannot corrupt, which is not this package.
+- **A settlement is written after its hold is released** — `dsh-run-scheduler` closes a run in memory and then charges its tenant here. A crash between the two loses that run's spend, and a failed write loses it as well: the record it would have charged is already gone. Bounding the loss to nothing needs the durable run records above.
+- **No period** — an allowance runs from its grant until an operator changes it, and `setTenantGrant` deliberately keeps what was consumed. Nothing here starts a new billing period, because nothing in the repository decides when one begins.
 - **`listByUser` scans** — the domain keeps every record in memory and this filters them, which is right at one deployment's account count and would not be at a directory's.
 - **No replay store** — the nonce port is [`dsh-run-replay`](../run-replay/README.md), which is in-process by design. A deployment running more than one runtime process needs a durable one, and this domain would be a reasonable home for it.
 

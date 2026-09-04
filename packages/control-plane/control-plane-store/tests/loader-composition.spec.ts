@@ -155,13 +155,50 @@ describe('a booted control-plane store', () => {
     expect(await ctx.controlPlaneStore.findCredential({ userId: BOBBY, accountId: ACCOUNT })).toBeUndefined()
   })
 
-  it('answers the tenant budget port, and denies a tenant it does not know', async () => {
+  it('answers the tenant allowance, and denies a tenant it does not know', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
     const ctx = await boot(root)
-    await ctx.controlPlaneStore.setTenantBudget(ALICE, BUDGET)
+    await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
 
-    expect(await ctx.controlPlaneStore.tenantBudget(ALICE)).toEqual(BUDGET)
-    expect(await ctx.controlPlaneStore.tenantBudget(BOBBY)).toBeUndefined()
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE))
+      .toEqual({ grant: BUDGET, consumed: { tokens: 0, wallMs: 0, costMicroUsd: 0 } })
+    expect(await ctx.controlPlaneStore.tenantAllowance(BOBBY)).toBeUndefined()
+  })
+
+  it('adds a settled run to what the tenant has consumed, leaving the grant alone', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+
+    await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, { tokens: 40, wallMs: 500, costMicroUsd: 7 })
+    const charged = await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, { tokens: 2, wallMs: 1, costMicroUsd: 0 })
+
+    expect(charged).toEqual({ grant: BUDGET, consumed: { tokens: 42, wallMs: 501, costMicroUsd: 7 } })
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toEqual(charged)
+  })
+
+  it('charges nothing for a tenant it holds no allowance for', async () => {
+    // A charge with nowhere to land is reported rather than written under a
+    // tenant record the operator never created.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+
+    expect(await ctx.controlPlaneStore.consumeTenantAllowance(BOBBY, { tokens: 1, wallMs: 1, costMicroUsd: 1 }))
+      .toBeUndefined()
+    expect(await ctx.controlPlaneStore.tenantAllowance(BOBBY)).toBeUndefined()
+  })
+
+  it('keeps what a tenant consumed when its grant is changed', async () => {
+    // Raising a quota mid-period means the tenant may spend more in total, not
+    // that its history was erased.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+    await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, { tokens: 40, wallMs: 0, costMicroUsd: 0 })
+
+    const raised = await ctx.controlPlaneStore.setTenantGrant(ALICE, { ...BUDGET, tokens: BUDGET.tokens * 2 })
+
+    expect(raised).toEqual({ grant: { ...BUDGET, tokens: BUDGET.tokens * 2 }, consumed: { tokens: 40, wallMs: 0, costMicroUsd: 0 } })
   })
 
   it('lists one tenant\'s accounts without another tenant\'s', async () => {
@@ -198,13 +235,15 @@ describe('a booted control-plane store', () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
     const first = await boot(root)
     await first.controlPlaneStore.save(account())
-    await first.controlPlaneStore.setTenantBudget(ALICE, BUDGET)
+    await first.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+    await first.controlPlaneStore.consumeTenantAllowance(ALICE, { tokens: 9, wallMs: 8, costMicroUsd: 7 })
     await first.fiber.dispose()
     context = undefined
 
     const second = await boot(root)
 
-    expect(await second.controlPlaneStore.tenantBudget(ALICE)).toEqual(BUDGET)
+    expect(await second.controlPlaneStore.tenantAllowance(ALICE))
+      .toEqual({ grant: BUDGET, consumed: { tokens: 9, wallMs: 8, costMicroUsd: 7 } })
     expect(await second.controlPlaneStore.findCredential({ userId: ALICE, accountId: ACCOUNT }))
       .toMatchObject({ accountId: ACCOUNT })
   })

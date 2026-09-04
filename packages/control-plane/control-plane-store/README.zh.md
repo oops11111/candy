@@ -50,23 +50,33 @@ kind: "package-reference"
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-control-plane-store'
+import type { UserId } from '@deepseek-ai/dsh-control-plane'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
+import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import type { RunLedger } from '@deepseek-ai/dsh-run-ledger'
+import { remainingAllowance } from '@deepseek-ai/dsh-tenant-allowance'
 
 declare const ctx: Context
 declare const ledger: RunLedger
 declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'findCredential'>
+/** The reservation of every run of one tenant that is still open. */
+declare function heldByTenant(userId: UserId): readonly RunBudget[]
+
+async function tenantRemaining(userId: UserId): Promise<RunBudget | undefined> {
+  const allowance = await ctx.controlPlaneStore.tenantAllowance(userId)
+  return allowance === undefined ? undefined : remainingAllowance(allowance, heldByTenant(userId))
+}
 
 export const policy: RunAdmissionPolicy = {
   ...partial,
   findCredential: claims => ctx.controlPlaneStore.findCredential(claims),
   findBudget: claims => claims.parentRunId === undefined
-    ? ctx.controlPlaneStore.tenantBudget(claims.userId)
+    ? tenantRemaining(claims.userId)
     : Promise.resolve(ledger.remaining(claims.parentRunId)),
 }
 ```
 
-`findBudget` 是被组合出来的,而不是整个由本服务提供,而这正是这次拆分的用意。子运行是针对它**父运行**的剩余额度被准入的,而那份剩余由内存中的 `RunLedger` 持有;拿租户自己的额度去回答一个子运行,会让这个端口存在的那项检查失效。本服务拥有租户那一半,并且把这一点说出来。
+`findBudget` 是被组合出来的,而不是整个由本服务提供,而这正是这次拆分的用意。两半单独拿出来都不是答案。子运行是针对它**父运行**的剩余额度被准入的,而那份剩余由内存中的 `RunLedger` 持有;拿租户自己的额度去回答一个子运行,会让这个端口存在的那项检查失效。根运行则是针对本服务的持久额度**减去该租户的开启中运行正扣着的部分**被准入的,而那部分由同一个账本知道、本服务并不知道。[`dsh-run-scheduler`](../run-scheduler/README.zh.md) 就是这两处组合各被执行一次的地方,而不是在每个调用点各写一遍。
 
 -----
 
@@ -111,8 +121,9 @@ JSON 会丢掉值为 `undefined` 的属性,因此一个运行时类型写作 `nu
 
 这些是本包当前的约束,不是任务积压。
 
-- **没有运行记录** —— 账本仍在内存里,因此重启会保住租户的账户与额度,却会丢掉每一个开启中的运行以及它所携带的占用。持久的运行记录需要一套崩溃也毁不掉的结算说法,而那不属于本包。
-- **没有花费回写** —— 租户的额度就是部署记录下来的那个数;这里没有任何东西会随着运行计费而把它扣减。把一次运行的花费折进一个持久的租户总量,属于调度器,而且需要同一套崩溃说法。
+- **没有运行记录** —— 账本仍在内存里,因此重启会保住租户的账户与额度,却会丢掉每一个开启中的运行以及它所携带的占用。于是无论当时在跑什么,重启都会把整份未被消耗的额度还给租户。持久的运行记录需要一套崩溃也毁不掉的结算说法,而那不属于本包。
+- **结算写在它的占用被释放之后** —— `dsh-run-scheduler` 先在内存里关闭一次运行,然后才到这里为它的租户记账。两者之间的一次崩溃会丢掉那次运行的花费,一次失败的写入同样会丢掉它:本该被记账的那条记录已经没了。要把损失压到零,需要上面那种持久的运行记录。
+- **没有周期** —— 一份额度从它被授予起一直有效,直到运营方修改它,而 `setTenantGrant` 刻意保留已经消耗掉的部分。这里没有任何东西开启一个新的计费周期,因为仓库中没有任何东西决定它何时开始。
 - **`listByUser` 是扫描** —— 域把每一条记录都放在内存里,而这里对它们做过滤;在一个部署的账户数量上这是对的,在一个目录服务的量级上就不是。
 - **没有重放存储** —— nonce 端口是 [`dsh-run-replay`](../run-replay/README.zh.md),它按设计是进程内的。运行多于一个运行时进程的部署需要一个持久的,而这个域会是一个合理的落脚处。
 

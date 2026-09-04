@@ -24,8 +24,10 @@ flowchart TD
     pkg_util_workspace_path["util-workspace-path"]
   end
   subgraph group_llm["packages/llm"]
+    pkg_claude_cli_protocol["claude-cli-protocol"]
     pkg_deepseek_llm_api_extensions["deepseek-llm-api-extensions"]
     pkg_llm["llm"]
+    pkg_llm_claude_cli["llm-claude-cli"]
     pkg_llm_deepseek["llm-deepseek"]
     pkg_llm_pi_ai["llm-pi-ai"]
     pkg_llm_retry["llm-retry"]
@@ -196,11 +198,20 @@ flowchart TD
     pkg_tmux_context["tmux-context"]
   end
   subgraph group_control_plane["packages/control-plane"]
+    pkg_claude_cli_binding["claude-cli-binding"]
     pkg_control_plane["control-plane"]
+    pkg_control_plane_store["control-plane-store"]
     pkg_credential_vault["credential-vault"]
     pkg_execution_assertion["execution-assertion"]
+    pkg_provider_accounts["provider-accounts"]
     pkg_run_admission["run-admission"]
+    pkg_run_budget["run-budget"]
+    pkg_run_ledger["run-ledger"]
+    pkg_run_replay["run-replay"]
+    pkg_run_scheduler["run-scheduler"]
+    pkg_run_start["run-start"]
     pkg_runtime_pool["runtime-pool"]
+    pkg_tenant_allowance["tenant-allowance"]
   end
   subgraph group_credentials["packages/credentials"]
     pkg_authorization["authorization"]
@@ -341,6 +352,7 @@ flowchart TD
   subgraph group_test_support["packages/test-support"]
     pkg_agent_loop_testkit["agent-loop-testkit"]
     pkg_client_test_runtime["client-test-runtime"]
+    pkg_llm_adapter_contract["llm-adapter-contract"]
     pkg_llm_mock_server["llm-mock-server"]
     pkg_llm_replay["llm-replay"]
     pkg_loader_smoke["loader-smoke"]
@@ -365,9 +377,14 @@ flowchart TD
   subgraph group_workspace["packages/workspace"]
     pkg_workspace["workspace"]
   end
+  pkg_claude_cli_protocol --> pkg_llm
   pkg_scope --> pkg_invariants
   pkg_web --> pkg_llm
   pkg_attachment --> pkg_brand
+  pkg_run_admission --> pkg_run_budget
+  pkg_run_ledger --> pkg_control_plane
+  pkg_run_ledger --> pkg_run_budget
+  pkg_tenant_allowance --> pkg_run_budget
   pkg_credentials --> pkg_invariants
   pkg_subprocess_e2b --> pkg_e2b
   pkg_subprocess_e2b --> pkg_subprocess
@@ -397,7 +414,11 @@ flowchart TD
   pkg_storage_sqlite --> pkg_storage
   pkg_subprocess_local --> pkg_subprocess
   pkg_subprocess_local --> pkg_timeout
+  pkg_llm_adapter_contract --> pkg_llm
   pkg_typert_loader --> pkg_typert_registry
+  pkg_llm_claude_cli --> pkg_claude_cli_protocol
+  pkg_llm_claude_cli --> pkg_llm
+  pkg_llm_claude_cli --> pkg_subprocess
   pkg_session --> pkg_scope
   pkg_system_prompt --> pkg_invariants
   pkg_system_prompt --> pkg_llm
@@ -413,6 +434,18 @@ flowchart TD
   pkg_api_remotes --> pkg_scope
   pkg_attachment_local --> pkg_attachment
   pkg_attachment_local --> pkg_home_paths
+  pkg_control_plane_store --> pkg_control_plane
+  pkg_control_plane_store --> pkg_credential_vault
+  pkg_control_plane_store --> pkg_provider_accounts
+  pkg_control_plane_store --> pkg_run_budget
+  pkg_control_plane_store --> pkg_storage_domain
+  pkg_control_plane_store --> pkg_tenant_allowance
+  pkg_run_start --> pkg_control_plane
+  pkg_run_start --> pkg_credential_vault
+  pkg_run_start --> pkg_run_admission
+  pkg_run_start --> pkg_run_budget
+  pkg_run_start --> pkg_run_ledger
+  pkg_run_start --> pkg_runtime_pool
   pkg_authorization --> pkg_credentials
   pkg_authorization --> pkg_invariants
   pkg_authorization --> pkg_llm
@@ -430,6 +463,9 @@ flowchart TD
   pkg_code_runtime_worker_thread --> pkg_code_runtime
   pkg_code_runtime_worker_thread --> pkg_session
   pkg_code_runtime_worker_thread --> pkg_timeout
+  pkg_claude_cli_binding --> pkg_llm_claude_cli
+  pkg_claude_cli_binding --> pkg_run_admission
+  pkg_claude_cli_binding --> pkg_run_budget
   pkg_execution_assertion --> pkg_session
   pkg_persona --> pkg_system_prompt
   pkg_sandbox --> pkg_llm
@@ -458,6 +494,7 @@ flowchart TD
   pkg_fs --> pkg_sandbox
   pkg_spill_local --> pkg_spill
   pkg_session_log_export --> pkg_session_persistence
+  pkg_run_replay --> pkg_execution_assertion
   pkg_message_feedback --> pkg_brand
   pkg_message_feedback --> pkg_llm
   pkg_message_feedback --> pkg_session
@@ -558,6 +595,16 @@ flowchart TD
   pkg_tmux_context --> pkg_session
   pkg_tmux_context --> pkg_session_projection
   pkg_tmux_context --> pkg_shell
+  pkg_run_scheduler --> pkg_control_plane
+  pkg_run_scheduler --> pkg_control_plane_store
+  pkg_run_scheduler --> pkg_credential_vault
+  pkg_run_scheduler --> pkg_execution_assertion
+  pkg_run_scheduler --> pkg_run_admission
+  pkg_run_scheduler --> pkg_run_budget
+  pkg_run_scheduler --> pkg_run_ledger
+  pkg_run_scheduler --> pkg_run_replay
+  pkg_run_scheduler --> pkg_run_start
+  pkg_run_scheduler --> pkg_tenant_allowance
   pkg_fs_e2b --> pkg_e2b
   pkg_fs_e2b --> pkg_fs
   pkg_commands --> pkg_agent
@@ -1215,7 +1262,8 @@ flowchart TD
 | [`code-runtime`](../packages/code-runtime/code-runtime) | `code-runtime` | — |
 | [`control-plane`](../packages/control-plane/control-plane) | `control-plane` | — |
 | [`credential-vault`](../packages/control-plane/credential-vault) | `control-plane` | — |
-| [`run-admission`](../packages/control-plane/run-admission) | `control-plane` | — |
+| [`provider-accounts`](../packages/control-plane/provider-accounts) | `control-plane` | — |
+| [`run-budget`](../packages/control-plane/run-budget) | `control-plane` | — |
 | [`runtime-pool`](../packages/control-plane/runtime-pool) | `control-plane` | — |
 | [`e2b`](../packages/e2b/e2b) | `e2b` | — |
 | [`experimental-agent-team-profile`](../packages/experimental/agent-team-profile) | `experimental` | — |
@@ -1236,9 +1284,13 @@ flowchart TD
 | [`typert-generator`](../packages/typert/generator) | `typert` | — |
 | [`typert-protocol`](../packages/typert/protocol) | `typert` | — |
 | [`typert-registry`](../packages/typert/registry) | `typert` | — |
+| [`claude-cli-protocol`](../packages/llm/claude-cli-protocol) | `llm` | [`llm`](../packages/llm/llm) |
 | [`scope`](../packages/core/scope) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`web`](../packages/web/web) | `web` | [`llm`](../packages/llm/llm) |
 | [`attachment`](../packages/attachment/attachment) | `attachment` | [`brand`](../packages/util/brand) |
+| [`run-admission`](../packages/control-plane/run-admission) | `control-plane` | [`run-budget`](../packages/control-plane/run-budget) |
+| [`run-ledger`](../packages/control-plane/run-ledger) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`run-budget`](../packages/control-plane/run-budget) |
+| [`tenant-allowance`](../packages/control-plane/tenant-allowance) | `control-plane` | [`run-budget`](../packages/control-plane/run-budget) |
 | [`credentials`](../packages/credentials/credentials) | `credentials` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`subprocess-e2b`](../packages/e2b/subprocess-e2b) | `e2b` | [`e2b`](../packages/e2b/e2b), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`experimental-code-runtime-python`](../packages/experimental/code-runtime-python) | `experimental` | [`code-runtime`](../packages/code-runtime/code-runtime), [`timeout`](../packages/util/timeout), [`util-values`](../packages/util/values) |
@@ -1252,7 +1304,9 @@ flowchart TD
 | [`storage-json`](../packages/storage/storage-json) | `storage` | [`storage`](../packages/storage/storage) |
 | [`storage-sqlite`](../packages/storage/storage-sqlite) | `storage` | [`storage`](../packages/storage/storage) |
 | [`subprocess-local`](../packages/subprocess/subprocess-local) | `subprocess` | [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
+| [`llm-adapter-contract`](../packages/test-support/llm-adapter-contract) | `test-support` | [`llm`](../packages/llm/llm) |
 | [`typert-loader`](../packages/typert/loader) | `typert` | [`typert-registry`](../packages/typert/registry) |
+| [`llm-claude-cli`](../packages/llm/llm-claude-cli) | `llm` | [`claude-cli-protocol`](../packages/llm/claude-cli-protocol), [`llm`](../packages/llm/llm), [`subprocess`](../packages/subprocess/subprocess) |
 | [`session`](../packages/core/session) | `core` | [`scope`](../packages/core/scope) |
 | [`system-prompt`](../packages/core/system-prompt) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope) |
 | [`skill`](../packages/skill/skill) | `skill` | [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope) |
@@ -1261,12 +1315,15 @@ flowchart TD
 | [`web-search-perplexity`](../packages/web/web-search-perplexity) | `web` | [`launch-environment`](../packages/util/launch-environment), [`web`](../packages/web/web) |
 | [`api-remotes`](../packages/api/remotes) | `api` | [`scope`](../packages/core/scope) |
 | [`attachment-local`](../packages/attachment/attachment-local) | `attachment` | [`attachment`](../packages/attachment/attachment), [`home-paths`](../packages/util/home-paths) |
+| [`control-plane-store`](../packages/control-plane/control-plane-store) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`provider-accounts`](../packages/control-plane/provider-accounts), [`run-budget`](../packages/control-plane/run-budget), [`storage-domain`](../packages/storage/storage-domain), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
+| [`run-start`](../packages/control-plane/run-start) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`runtime-pool`](../packages/control-plane/runtime-pool) |
 | [`authorization`](../packages/credentials/authorization) | `credentials` | [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
 | [`credentials-local`](../packages/credentials/credentials-local) | `credentials` | [`atomic-write`](../packages/util/atomic-write), [`credentials`](../packages/credentials/credentials), [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment) |
 | [`skill-badge`](../packages/skill/skill-badge) | `skill` | [`skill`](../packages/skill/skill) |
 | [`spill`](../packages/spill/spill) | `spill` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
 | [`app-boot`](../packages/boot/app-boot) | `boot` | [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment), [`system-prompt`](../packages/core/system-prompt) |
 | [`code-runtime-worker-thread`](../packages/code-runtime/code-runtime-worker-thread) | `code-runtime` | [`code-runtime`](../packages/code-runtime/code-runtime), [`session`](../packages/core/session), [`timeout`](../packages/util/timeout) |
+| [`claude-cli-binding`](../packages/control-plane/claude-cli-binding) | `control-plane` | [`llm-claude-cli`](../packages/llm/llm-claude-cli), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget) |
 | [`execution-assertion`](../packages/control-plane/execution-assertion) | `control-plane` | [`session`](../packages/core/session) |
 | [`persona`](../packages/preset/persona) | `preset` | [`system-prompt`](../packages/core/system-prompt) |
 | [`sandbox`](../packages/sandbox/sandbox) | `sandbox` | [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
@@ -1279,6 +1336,7 @@ flowchart TD
 | [`fs`](../packages/fs/fs) | `fs` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox) |
 | [`spill-local`](../packages/spill/spill-local) | `spill` | [`spill`](../packages/spill/spill) |
 | [`session-log-export`](../packages/session-query/session-log-export) | `session-query` | [`session-persistence`](../packages/session/session-persistence) |
+| [`run-replay`](../packages/control-plane/run-replay) | `control-plane` | [`execution-assertion`](../packages/control-plane/execution-assertion) |
 | [`message-feedback`](../packages/feedback/message-feedback) | `feedback` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`storage-domain`](../packages/storage/storage-domain), [`typert-protocol`](../packages/typert/protocol) |
 | [`sandbox-local`](../packages/sandbox/sandbox-local) | `sandbox` | [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox), [`session`](../packages/core/session) |
 | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl) | `session` | [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence) |
@@ -1302,6 +1360,7 @@ flowchart TD
 | [`file-reference`](../packages/context/file-reference) | `context` | [`agent`](../packages/core/agent) |
 | [`time-context`](../packages/context/time-context) | `context` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection) |
 | [`tmux-context`](../packages/context/tmux-context) | `context` | [`agent`](../packages/core/agent), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`shell`](../packages/shell/shell) |
+| [`run-scheduler`](../packages/control-plane/run-scheduler) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`control-plane-store`](../packages/control-plane/control-plane-store), [`credential-vault`](../packages/control-plane/credential-vault), [`execution-assertion`](../packages/control-plane/execution-assertion), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`run-replay`](../packages/control-plane/run-replay), [`run-start`](../packages/control-plane/run-start), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
 | [`fs-e2b`](../packages/e2b/fs-e2b) | `e2b` | [`e2b`](../packages/e2b/e2b), [`fs`](../packages/fs/fs) |
 | [`commands`](../packages/interaction/commands) | `interaction` | [`agent`](../packages/core/agent), [`attachment`](../packages/attachment/attachment), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol) |
 | [`user-approval`](../packages/interaction/user-approval) | `interaction` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt) |

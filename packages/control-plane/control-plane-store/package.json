@@ -32,7 +32,8 @@
     "@deepseek-ai/dsh-credential-vault": "workspace:^",
     "@deepseek-ai/dsh-provider-accounts": "workspace:^",
     "@deepseek-ai/dsh-run-budget": "workspace:^",
-    "@deepseek-ai/dsh-storage-domain": "workspace:^"
+    "@deepseek-ai/dsh-storage-domain": "workspace:^",
+    "@deepseek-ai/dsh-tenant-allowance": "workspace:^"
   },
   "dependencies": {
     "zod": "^4.4.3"
@@ -47,6 +48,7 @@
     "@deepseek-ai/dsh-run-budget": "workspace:^",
     "@deepseek-ai/dsh-storage": "workspace:^",
     "@deepseek-ai/dsh-storage-domain": "workspace:^",
+    "@deepseek-ai/dsh-tenant-allowance": "workspace:^",
     "@deepseek-ai/dsh-storage-sqlite": "workspace:^"
   }
 }
