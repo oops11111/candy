@@ -24,7 +24,7 @@ Only failure text is rewritten. Model output is the caller's own content, and a 
 
 ## Consequences
 
-Three adapters remove a quoted credential, and a fourth cannot be added to the seam without answering the same case.
+Three adapters remove a quoted credential, and a fourth cannot be added to the seam without answering the same case — `verify-llm-adapter-contract` fails a package that implements `LlmAdapter` without running the suite, so that is enforced rather than remembered. Its exemption list carries one entry, for the keyless replay adapter that reaches no provider.
 
 Reverting any one of the three fixes fails exactly its own contract case, so each adapter's redaction is pinned independently rather than by the suite as a whole.
 
