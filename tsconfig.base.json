@@ -325,6 +325,7 @@
       "@deepseek-ai/dsh-run-budget": ["./packages/control-plane/run-budget/src"],
       "@deepseek-ai/dsh-run-ledger": ["./packages/control-plane/run-ledger/src"],
       "@deepseek-ai/dsh-run-replay": ["./packages/control-plane/run-replay/src"],
+      "@deepseek-ai/dsh-run-scheduler": ["./packages/control-plane/run-scheduler/src"],
       "@deepseek-ai/dsh-run-start": ["./packages/control-plane/run-start/src"],
       "@deepseek-ai/dsh-runtime-pool": ["./packages/control-plane/runtime-pool/src"],
       "@deepseek-ai/dsh-sandbox": ["./packages/sandbox/sandbox/src"],

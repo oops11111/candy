@@ -31,6 +31,7 @@ control-plane 组为每个未来的 Candy 租户感知包提供一套共享且�
 | [`run-replay`](run-replay/README.zh.md) | 以一个不可分割的步骤把断言的 nonce 记为已消费，并恰好在该断言仍可被准入期间保留它 |
 | [`run-start`](run-start/README.zh.md) | 按既定顺序准入、拨款并放置一次运行，并在放置被拒时把父运行的占用还回去 |
 | [`control-plane-store`](control-plane-store/README.zh.md) | 持久保存提供方账户与租户额度，回答准入所要求的凭据与预算查找 |
+| [`run-scheduler`](run-scheduler/README.zh.md) | 拥有一个运行时的账本与重放存储，从断言启动一次运行，并驱动释放被遗弃占用的那个时钟 |
 | [`runtime-pool`](runtime-pool/README.zh.md) | 推导隔离键,以及租户的提供方运行时所拥有的那一个目录 |
 | [`run-admission`](run-admission/README.zh.md) | 唯一的调度调用:断言、nonce、凭据与池一并解析 |
 | [`claude-cli-binding`](claude-cli-binding/README.zh.md) | 把一次被准入的运行变成将其限制在该租户之内的 Claude CLI 启动事实 |

@@ -136,4 +136,57 @@ async setTenantBudget(userId: UserId, budget: RunBudget): Promise<void>
 ```
 
 Source: [`packages/control-plane/control-plane-store/src/index.ts`](../../packages/control-plane/control-plane-store/src/index.ts)
+
+<a id="ctxrunscheduler--runscheduler"></a>
+
+### `ctx.runScheduler` — `RunScheduler`
+
+Live run state for one Candy runtime, and the composition that starts a run.
+
+One instance owns one ledger and one replay store, so every run this runtime admits is accounted against the same delegation trees and the same spent nonces. Two instances would each believe they held the whole allowance.
+
+```ts cordis-catalog
+/**
+ * Admit one request, fund the run it names, and place it in its pool.
+ *
+ * @param token - the execution assertion exactly as received.
+ * @param share - the allowance to open the run with; a root run is normally
+ *   opened with what admission answered, and a child with the share its
+ *   parent delegates.
+ * @param now - epoch milliseconds; defaults to this runtime's clock.
+ * @returns the started run, or the step that refused it, with every audit
+ *   record the attempt produced.
+ */
+start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => run.budget, now: number = Date.now(), ): Promise<RunStartOutcome>
+
+/**
+ * Record what one run consumed since its last charge.
+ * @param runId - the open run.
+ * @param spend - what the invocation consumed.
+ * @returns the updated record and the dimensions now used up, or why the
+ *   charge was refused.
+ */
+charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>
+
+/**
+ * Close one run and its descendants, returning what it did not spend.
+ * @param runId - the run to settle.
+ * @returns the settlement, or why it could not be closed.
+ */
+close(runId: RunId): RunLedgerResult<RunSettlement>
+
+/**
+ * Release every hold whose lease has passed and drop nonce records that can
+ * no longer deny anything.
+ *
+ * The clock calls this; a caller with its own decision timestamp may call it
+ * directly. Eviction changes no decision — `spend` already treats an expired
+ * record as absent — so this only bounds what the runtime holds.
+ * @param now - epoch milliseconds.
+ * @returns the runs whose holds were released.
+ */
+sweep(now: number): readonly RunSettlement[]
+```
+
+Source: [`packages/control-plane/run-scheduler/src/index.ts`](../../packages/control-plane/run-scheduler/src/index.ts)
 <!-- END GENERATED cordis-surface -->

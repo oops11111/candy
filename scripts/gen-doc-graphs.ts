@@ -99,6 +99,14 @@ const GROUP_ORDER = [
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
+    key: 'runScheduler',
+    pkg: 'run-scheduler',
+    title: 'One Candy runtime\'s live run state',
+    mode: 'core',
+    consumers: [],
+    note: 'Owns the ledger and replay store a run is admitted against, composes the admission policy from the store, and drives the clock that releases a hold no settlement claimed. It starts the run a caller asks for; whether a tenant may start another is a decision nothing makes yet.',
+  },
+  {
     key: 'controlPlaneStore',
     pkg: 'control-plane-store',
     title: 'Durable Candy provider accounts and tenant allowances',

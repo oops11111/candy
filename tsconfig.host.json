@@ -180,6 +180,7 @@
     { "path": "./packages/control-plane/claude-cli-binding" },
     { "path": "./packages/control-plane/run-ledger" },
     { "path": "./packages/control-plane/run-replay" },
+    { "path": "./packages/control-plane/run-scheduler" },
     { "path": "./packages/control-plane/run-start" },
     { "path": "./packages/session-query/tool-session-query" },
     { "path": "./packages/storage/storage" },

@@ -4375,6 +4375,70 @@ importers:
         specifier: workspace:^
         version: link:../../core/session
 
+  packages/control-plane/run-scheduler:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      '@deepseek-ai/cordis-plugin-timer':
+        specifier: workspace:^
+        version: link:../../../vendor/timer
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
+      '@deepseek-ai/dsh-control-plane-store':
+        specifier: workspace:^
+        version: link:../control-plane-store
+      '@deepseek-ai/dsh-credential-vault':
+        specifier: workspace:^
+        version: link:../credential-vault
+      '@deepseek-ai/dsh-execution-assertion':
+        specifier: workspace:^
+        version: link:../execution-assertion
+      '@deepseek-ai/dsh-run-admission':
+        specifier: workspace:^
+        version: link:../run-admission
+      '@deepseek-ai/dsh-run-budget':
+        specifier: workspace:^
+        version: link:../run-budget
+      '@deepseek-ai/dsh-run-ledger':
+        specifier: workspace:^
+        version: link:../run-ledger
+      '@deepseek-ai/dsh-run-replay':
+        specifier: workspace:^
+        version: link:../run-replay
+      '@deepseek-ai/dsh-run-start':
+        specifier: workspace:^
+        version: link:../run-start
+      '@deepseek-ai/dsh-runtime-pool':
+        specifier: workspace:^
+        version: link:../runtime-pool
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-storage-sqlite':
+        specifier: workspace:^
+        version: link:../../storage/storage-sqlite
+
   packages/control-plane/run-start:
     devDependencies:
       '@deepseek-ai/cordis':

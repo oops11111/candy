@@ -1,0 +1,25 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../../vendor/timer" },
+    { "path": "../control-plane" },
+    { "path": "../control-plane-store" },
+    { "path": "../credential-vault" },
+    { "path": "../execution-assertion" },
+    { "path": "../run-admission" },
+    { "path": "../run-budget" },
+    { "path": "../run-ledger" },
+    { "path": "../run-replay" },
+    { "path": "../run-start" }
+  ]
+}

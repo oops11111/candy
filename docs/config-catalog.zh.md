@@ -1719,6 +1719,38 @@ export interface Config {
 
 来源：[`packages/guard/repeat-tool-reminder/src/index.ts:28`](../packages/guard/repeat-tool-reminder/src/index.ts)
 
+<a id="deepseek-aidsh-run-scheduler"></a>
+
+## `@deepseek-ai/dsh-run-scheduler`
+
+需要：`controlPlaneStore` · `timer`
+
+```ts config-catalog
+/** Deployment-varying facts for one Candy runtime's scheduler. */
+export interface Config {
+  /** Control plane whose assertions this runtime admits. */
+  issuer: string
+  /** This runtime's own audience identifier; an assertion for another is refused. */
+  audience: string
+  /** Longest issued-to-expiry span this runtime admits, in milliseconds. */
+  maxLifetimeMs?: number
+  /** Environment variable holding the assertion HMAC secret, at least 32 bytes. */
+  assertionSecretEnv?: string
+  /** Environment variable holding the credential key, exactly 32 bytes. */
+  credentialKeyEnv?: string
+  /** Keyring version the credential key is registered under. */
+  credentialKeyVersion: string
+  /** Absolute directory holding every runtime pool's root; the deployment provisions it. */
+  poolBase: string
+  /** How long an unsettled run holds its allowance before `expire` releases it. */
+  leaseMs?: number
+  /** How often the clock releases expired holds and drops spent-nonce records. */
+  sweepMs?: number
+}
+```
+
+来源：[`packages/control-plane/run-scheduler/src/index.ts:41`](../packages/control-plane/run-scheduler/src/index.ts)
+
 <a id="deepseek-aidsh-sandbox-local"></a>
 
 ## `@deepseek-ai/dsh-sandbox-local`

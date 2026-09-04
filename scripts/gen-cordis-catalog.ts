@@ -56,6 +56,7 @@ export { REGION_BEGIN, REGION_END }
 export const SERVICE_PAGE: Record<string, string> = {
   agentLoop: 'core.md',
   controlPlaneStore: 'candy-control-plane.md',
+  runScheduler: 'candy-control-plane.md',
   agentDefaultModel: 'core.md',
   agentPresets: 'core.md',
   agents: 'core.md',
@@ -240,6 +241,12 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
 export const LINK_MAP: Readonly<Record<string, string>> = {
   Agent: 'core.md',
   CredentialEnvelope: 'candy-control-plane.md',
+  RunChargeResult: 'candy-control-plane.md',
+  RunId: 'candy-control-plane.md',
+  RunLedgerResult: 'candy-control-plane.md',
+  RunSettlement: 'candy-control-plane.md',
+  RunSpend: 'candy-control-plane.md',
+  RunStartOutcome: 'candy-control-plane.md',
   ProviderAccountEntry: 'candy-control-plane.md',
   ProviderAccountId: 'candy-control-plane.md',
   RunBudget: 'candy-control-plane.md',

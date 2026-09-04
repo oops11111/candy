@@ -1331,6 +1331,47 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'runScheduler',
+    summary: 'Live run state for one Candy runtime, and the composition that starts a run.',
+    description: 'Live run state for one Candy runtime, and the composition that starts a run.\n\nOne instance owns one ledger and one replay store, so every run this runtime admits is accounted against the same delegation trees and the same spent nonces. Two instances would each believe they held the whole allowance.',
+    methods: [
+      {
+        signature: 'readonly ledger: RunLedger = new RunLedger()',
+        description: 'Open runs and their holds, for every tree this runtime is running.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly replay: RunReplayStore = new RunReplayStore()',
+        description: 'Nonces spent by assertions still admissible here.',
+        parameters: [],
+      },
+      {
+        signature: 'start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => run.budget, now: number = Date.now(), ): Promise<RunStartOutcome>',
+        description: 'Admit one request, fund the run it names, and place it in its pool.',
+        parameters: [{ name: 'token', description: 'the execution assertion exactly as received.' }, { name: 'share', description: 'the allowance to open the run with; a root run is normally opened with what admission answered, and a child with the share its parent delegates.' }, { name: 'now', description: 'epoch milliseconds; defaults to this runtime\'s clock.' }],
+        returns: 'the started run, or the step that refused it, with every audit record the attempt produced.',
+      },
+      {
+        signature: 'charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>',
+        description: 'Record what one run consumed since its last charge.',
+        parameters: [{ name: 'runId', description: 'the open run.' }, { name: 'spend', description: 'what the invocation consumed.' }],
+        returns: 'the updated record and the dimensions now used up, or why the charge was refused.',
+      },
+      {
+        signature: 'close(runId: RunId): RunLedgerResult<RunSettlement>',
+        description: 'Close one run and its descendants, returning what it did not spend.',
+        parameters: [{ name: 'runId', description: 'the run to settle.' }],
+        returns: 'the settlement, or why it could not be closed.',
+      },
+      {
+        signature: 'sweep(now: number): readonly RunSettlement[]',
+        description: 'Release every hold whose lease has passed and drop nonce records that can no longer deny anything.\n\nThe clock calls this; a caller with its own decision timestamp may call it directly. Eviction changes no decision — `spend` already treats an expired record as absent — so this only bounds what the runtime holds.',
+        parameters: [{ name: 'now', description: 'epoch milliseconds.' }],
+        returns: 'the runs whose holds were released.',
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -3404,6 +3445,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
   {
+    name: 'AdmittedRun',
+    declaration: 'export interface AdmittedRun {\n    readonly claims: ExecutionAssertionClaims;\n    readonly secret: Uint8Array;\n    readonly poolKey: RuntimePoolKey;\n    readonly poolRoot: string;\n    readonly budget: RunBudget;\n}',
+  },
+  {
     name: 'Agent',
     declaration: 'export interface Agent {\n    readonly id: SessionId;\n}',
   },
@@ -3616,6 +3661,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
   },
   {
+    name: 'BudgetDimension',
+    declaration: 'export type BudgetDimension = \'tokens\' | \'wallMs\' | \'costMicroUsd\' | \'children\';',
+  },
+  {
     name: 'ChunkRow',
     declaration: 'export type ChunkRow = {\n    type: \'text-chunks\';\n    seq0: SessionSeqType;\n    time0: number;\n    data: TextRunData;\n} | {\n    type: \'reasoning-chunks\';\n    seq0: SessionSeqType;\n    time0: number;\n    data: TextRunData;\n} | {\n    type: \'tool-call-chunks\';\n    seq0: SessionSeqType;\n    time0: number;\n    data: ToolCallRunData;\n};',
   },
@@ -3752,6 +3801,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
   },
   {
+    name: 'ConversationId',
+    declaration: 'export type ConversationId = Branded<\'ConversationId\'>;',
+  },
+  {
     name: 'CordisDynamicPackageId',
     declaration: 'export type CordisDynamicPackageId = Branded<\'CordisDynamicPackageId\'>;',
   },
@@ -3840,6 +3893,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateTeamTaskRequest {\n    readonly subject: string;\n    readonly description: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n}',
   },
   {
+    name: 'CredentialAuditEvent',
+    declaration: 'export interface CredentialAuditEvent {\n    readonly action: \'seal\' | \'open\' | \'rewrap\' | \'revoke\';\n    readonly userId: UserId;\n    readonly accountId: ProviderAccountId;\n    readonly keyVersion: CredentialKeyVersion;\n    readonly at: number;\n    readonly outcome: \'ok\' | CredentialRejection;\n}',
+  },
+  {
     name: 'CredentialEnvelope',
     declaration: 'export interface CredentialEnvelope {\n    readonly envelopeVersion: number;\n    readonly userId: UserId;\n    readonly accountId: ProviderAccountId;\n    readonly keyVersion: CredentialKeyVersion;\n    readonly iv: string;\n    readonly ciphertext: string;\n    readonly authTag: string;\n    readonly sealedAt: number;\n    readonly rewrappedAt: number | undefined;\n    readonly revokedAt: number | undefined;\n}',
   },
@@ -3872,6 +3929,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
   },
   {
+    name: 'CredentialRejection',
+    declaration: 'export type CredentialRejection = \'revoked\' | \'unknown-key\' | \'binding-mismatch\' | \'unsupported-version\' | \'corrupt\';',
+  },
+  {
     name: 'DeepSeekLlmApiExtensionMap',
     declaration: 'export interface DeepSeekLlmApiExtensionMap {\n}',
   },
@@ -3886,6 +3947,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DeepSeekLlmApiJson',
     declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
+  },
+  {
+    name: 'DeviceId',
+    declaration: 'export type DeviceId = Branded<\'DeviceId\'>;',
   },
   {
     name: 'DiffCallView',
@@ -4002,6 +4067,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
+  },
+  {
+    name: 'ExecutionAssertionClaims',
+    declaration: 'export interface ExecutionAssertionClaims {\n    readonly issuer: string;\n    readonly audience: string;\n    readonly userId: UserId;\n    readonly deviceId: DeviceId;\n    readonly accountId: ProviderAccountId;\n    readonly provider: ProviderKind;\n    readonly workspaceGrantId: WorkspaceGrantId;\n    readonly conversationId: ConversationId;\n    readonly sessionId: SessionId;\n    readonly runId: RunId;\n    readonly parentRunId: RunId | undefined;\n    readonly nonce: string;\n    readonly issuedAt: number;\n    readonly expiresAt: number;\n}',
+  },
+  {
+    name: 'ExecutionAssertionRejection',
+    declaration: 'export type ExecutionAssertionRejection = \'malformed\' | \'unsupported-version\' | \'signature\' | \'issuer\' | \'audience\' | \'not-yet-valid\' | \'expired\' | \'lifetime\';',
   },
   {
     name: 'FiberState',
@@ -4744,8 +4817,64 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RunBudget {\n    readonly tokens: number;\n    readonly wallMs: number;\n    readonly costMicroUsd: number;\n    readonly children: number;\n}',
   },
   {
+    name: 'RunBudgetDenial',
+    declaration: 'export interface RunBudgetDenial {\n    readonly dimension: BudgetDimension;\n    readonly requested: number;\n    readonly available: number;\n}',
+  },
+  {
+    name: 'RunChargeResult',
+    declaration: 'export interface RunChargeResult {\n    readonly record: RunRecord;\n    readonly exhausted: readonly BudgetDimension[];\n}',
+  },
+  {
+    name: 'RunId',
+    declaration: 'export type RunId = Branded<\'RunId\'>;',
+  },
+  {
+    name: 'RunLedger',
+    declaration: 'export class RunLedger {\n    openRoot(runId: RunId, budget: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    openChild(parentRunId: RunId, runId: RunId, request: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>;\n    renew(runId: RunId, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    close(runId: RunId): RunLedgerResult<RunSettlement>;\n    expire(now: number): RunSettlement[];\n    remaining(runId: RunId): RunBudget | undefined;\n    get(runId: RunId): RunRecord | undefined;\n    open(): RunRecord[];\n}',
+  },
+  {
+    name: 'RunLedgerRejection',
+    declaration: 'export type RunLedgerRejection = {\n    readonly reason: \'unknown-run\';\n    readonly runId: RunId;\n} | {\n    readonly reason: \'duplicate-run\';\n    readonly runId: RunId;\n} | {\n    readonly reason: \'parent-exhausted\';\n    readonly denial: RunBudgetDenial;\n};',
+  },
+  {
+    name: 'RunLedgerResult',
+    declaration: 'export type RunLedgerResult<T> = {\n    readonly ok: true;\n    readonly value: T;\n} | {\n    readonly ok: false;\n    readonly rejection: RunLedgerRejection;\n};',
+  },
+  {
     name: 'RunnerFailureRule',
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
+  },
+  {
+    name: 'RunRecord',
+    declaration: 'export interface RunRecord {\n    readonly runId: RunId;\n    readonly parentRunId: RunId | undefined;\n    readonly reserved: RunBudget;\n    readonly spent: RunSpend;\n    readonly leaseExpiresAt: number;\n}',
+  },
+  {
+    name: 'RunRejection',
+    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
+  },
+  {
+    name: 'RunReplayStore',
+    declaration: 'export class RunReplayStore {\n    spend(claims: ExecutionAssertionClaims, now: number): boolean;\n    evict(now: number): number;\n    get size(): number;\n}',
+  },
+  {
+    name: 'RunSettlement',
+    declaration: 'export interface RunSettlement {\n    readonly runId: RunId;\n    readonly spent: RunSpend;\n    readonly closed: readonly RunId[];\n    readonly parentRemaining: RunBudget | undefined;\n}',
+  },
+  {
+    name: 'RunSpend',
+    declaration: 'export interface RunSpend {\n    readonly tokens: number;\n    readonly wallMs: number;\n    readonly costMicroUsd: number;\n}',
+  },
+  {
+    name: 'RunStartOutcome',
+    declaration: 'export type RunStartOutcome = {\n    readonly started: true;\n    readonly value: StartedRun;\n    readonly audits: readonly CredentialAuditEvent[];\n} | {\n    readonly started: false;\n    readonly rejection: RunStartRejection;\n    readonly audits: readonly CredentialAuditEvent[];\n};',
+  },
+  {
+    name: 'RunStartRejection',
+    declaration: 'export type RunStartRejection = {\n    readonly stage: \'admission\';\n    readonly rejection: RunRejection;\n} | {\n    readonly stage: \'ledger\';\n    readonly rejection: RunLedgerRejection;\n};',
+  },
+  {
+    name: 'RuntimePoolKey',
+    declaration: 'export type RuntimePoolKey = Branded<\'RuntimePoolKey\'>;',
   },
   {
     name: 'SandboxEnforcement',
@@ -5446,6 +5575,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SpillSource',
     declaration: 'export interface SpillSource {\n    toolName: string;\n    callId: ToolCallId;\n    label: string;\n}',
+  },
+  {
+    name: 'StartedRun',
+    declaration: 'export interface StartedRun {\n    readonly run: AdmittedRun;\n    readonly reserved: RunBudget;\n}',
   },
   {
     name: 'StorageBackend',
@@ -6198,6 +6331,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceFollowIncrement',
     declaration: 'export type WorkspaceFollowIncrement = {\n    readonly type: \'upsert\';\n    readonly workspace: WorkspaceView;\n} | {\n    readonly type: \'remove\';\n    readonly workspaceId: WorkspaceId;\n} | {\n    readonly type: \'order\';\n    readonly workspaceIds: readonly WorkspaceId[];\n} | {\n    readonly type: \'archived\';\n    readonly archivedSessionIds: readonly SessionId[];\n};',
+  },
+  {
+    name: 'WorkspaceGrantId',
+    declaration: 'export type WorkspaceGrantId = Branded<\'WorkspaceGrantId\'>;',
   },
   {
     name: 'WorkspaceInsertBeforeRequest',
