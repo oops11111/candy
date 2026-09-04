@@ -11,7 +11,9 @@ English | [中文](README.zh.md)
 
 Everything this service composes already existed as a library. What did not exist was an owner. The ledger and the replay store are per-runtime objects nothing held; admission's policy had to be assembled by hand at every call site; and `RunLedger.expire` was a call no clock made, so a run abandoned without settling held its parent's allowance until someone thought to reclaim it.
 
-`ctx.runScheduler` holds that state, starts a run from an execution assertion, drives the clock, and charges a settled tree to its tenant. It is where a tenant's durable allowance and its live runs meet, and that meeting is the whole of Candy's tenant-level bound: read on its own, either half admits a run it should refuse. The order queued requests run in is still a decision nothing here makes.
+`ctx.runScheduler` holds that state, starts a run from an execution assertion, drives the clock, and charges a settled tree to whoever funded it. It is where a tenant's durable allowance and its live runs meet, and that meeting is the whole of Candy's tenant-level bound: read on its own, either half admits a run it should refuse.
+
+Its records are durable and every settlement is exactly-once across a crash. The order queued requests run in is still a decision nothing here makes.
 
 ## Table of Contents
 
@@ -83,9 +85,21 @@ A child is admitted against its *parent's* remainder, which this service's ledge
 
 A root is admitted against its tenant's durable allowance *less the reservation of every run of that tenant still open here*. Neither half is the answer alone: a grant with no consumption subtracted funds every run a tenant ever starts, and a grant with no open holds subtracted lets two unrelated trees each hold the whole allowance at once. The two lifetimes — durable per deployment, in-memory per runtime — meet here and nowhere else.
 
-### Why only root runs carry a tenant
+### Why the settlement writes before it closes
 
-A `RunRecord` names a run and its parent, not an identity, so the tenant a tree is charged to is held here in a map from root run to `UserId`. Only roots are in it: a child settles into its parent's record and reaches the tenant when that parent's root closes, so a tree is charged once rather than once per run in it. A settlement for a run this instance never opened as a root — a child, or a root started before a restart — charges nothing, because there is no tenant to charge it to and guessing one would bill the wrong account.
+A settlement is two writes the medium cannot make one: charge whoever funded the run, then forget the run. Doing it in memory first and writing after loses the charge whenever the write fails, which is exactly when it matters. So the charge is computed with `RunLedger.settlementOf`, written down as the run's own settled figure, applied to its funder, and only then are the records forgotten and the hold released. A rejected write leaves the run open in both places, and its lease brings the next sweep back to try again.
+
+Each funder — the tenant's allowance for a root, the parent's record for a child — stores the id of the settlement it last absorbed, in the same atomic write as the charge. A repeat of that id is a no-op, so a restarting runtime re-drives an interrupted settlement without knowing how far it got. That guarantee holds only while no two settlements interleave, which is why every write to a run record queues on one chain here.
+
+### Why a restart settles instead of resuming
+
+A record this runtime wrote is a run it was driving, and the process that drove it is gone. `Service.init` finishes every interrupted settlement, restores what is left into the ledger, and closes each restored root — so a tenant is charged what its runs actually consumed. Leaving them open instead would hold the allowance until each lease expired, and resuming them would mean resuming providers that no longer exist.
+
+Recovery reads its own runtime's records only, by the audience stamp on each one. Records that do not form complete trees fail the boot rather than being dropped: a hold against a parent that does not exist is one nothing can settle.
+
+### Why a run's tenant lives on its record
+
+A `RunRecord` names a run and its parent, not an identity, so the tenant a tree is charged to is written on the durable record instead. That is the only place it exists, so a settlement, a recovery, and the tenant-remainder lookup all read the same fact; a map beside the ledger would be a second copy that a restart does not have.
 
 ### Why the clock is a service concern
 
@@ -111,10 +125,11 @@ A `RunRecord` names a run and its parent, not an identity, so the tenant a tree 
 These are current package constraints, not a task backlog.
 
 - **No queue** — it starts the run a caller asks for, or refuses it. Whether a refused run waits and in what order queued requests run are decisions nothing makes yet; how much a tenant may have live at once is now answered, by its grant's `children`.
-- **Live state is in memory** — a restart loses every open run and the holds it carried, so it returns the tenant's whole unconsumed allowance whatever was running. The store keeps accounts and allowances; durable run records need a settlement story a crash cannot corrupt.
+- **A restart ends every run** — recovery settles what it finds rather than resuming it, because the provider processes died with the runtime. A deployment that restarts a runtime under load ends its live runs and charges their tenants for what they had spent.
 - **One credential key** — the config names one version, so the keyring cannot open an envelope sealed under a retired one. Rotation needs the keyring to carry more than the current key.
-- **A settlement is written after its hold is released** — `close` and `sweep` settle in the ledger and then charge the tenant. A crash between the two loses that tree's spend, and a rejected write loses it too: the sweep logs and carries on rather than taking the runtime down, because the holds it could not charge are already released. Bounding the loss to nothing needs durable run records.
-- **A charge is not visible until settlement** — `charge` moves a run's spend into the ledger, and the tenant's consumption moves only when the tree's root closes. That is correct while the run is open, since its reservation is already held out of the tenant's remainder, and it means a tenant's consumption lags its live spending by one tree.
+- **A charge is not visible until settlement** — `charge` writes a run's spend to its own record at once, and the tenant's consumption moves only when the tree's root closes. That is correct while the run is open, since its reservation is already held out of the tenant's remainder, and it means a tenant's consumption lags its live spending by one tree.
+- **Every write is serialized** — one chain orders every run-record write in the runtime, which is what makes the exactly-once marker a guarantee. It also means a slow medium serializes charges across unrelated tenants.
+- **A rejected sweep is logged, not retried immediately** — the runs it could not settle stay open with expired leases, so the next sweep retries them. A medium that stays unavailable holds those allowances until it comes back.
 - **It does not run the provider** — binding, streaming and cancellation stay with the caller; this service holds no process and no stream.
 
 <a id="dev-note"></a>

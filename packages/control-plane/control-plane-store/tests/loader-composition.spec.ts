@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import { ProviderAccountId, UserId } from '@deepseek-ai/dsh-control-plane'
+import { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
 import {
   CredentialKeyVersion,
   sealCredential,
@@ -170,11 +170,60 @@ describe('a booted control-plane store', () => {
     const ctx = await boot(root)
     await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
 
-    await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, { tokens: 40, wallMs: 500, costMicroUsd: 7 })
-    const charged = await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, { tokens: 2, wallMs: 1, costMicroUsd: 0 })
+    await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-1'), { tokens: 40, wallMs: 500, costMicroUsd: 7 })
+    const charged = await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-2'), { tokens: 2, wallMs: 1, costMicroUsd: 0 })
 
     expect(charged).toEqual({ grant: BUDGET, consumed: { tokens: 42, wallMs: 501, costMicroUsd: 7 } })
     expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toEqual(charged)
+  })
+
+  it('charges one settled run once, however often the charge is re-driven', async () => {
+    // Charging the tenant and deleting the settled run record are two writes,
+    // so a crash between them leaves a record a recovering runtime charges
+    // again. The run's id rides in the same write as the charge.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+
+    await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-1'), { tokens: 40, wallMs: 0, costMicroUsd: 0 })
+    await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-1'), { tokens: 40, wallMs: 0, costMicroUsd: 0 })
+
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 40 } })
+  })
+
+  it('folds a settled child into its parent once, however often it is re-driven', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    await ctx.controlPlaneStore.openRun({
+      record: {
+        runId: RunId('run-root'), parentRunId: undefined,
+        reserved: BUDGET, spent: { tokens: 5, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: NOW,
+      },
+      userId: ALICE, runtime: 'runtime-1', settledSpent: undefined, absorbed: undefined,
+    })
+
+    await ctx.controlPlaneStore.absorbChild(RunId('run-root'), RunId('run-child'), { tokens: 30, wallMs: 1, costMicroUsd: 2 })
+    await ctx.controlPlaneStore.absorbChild(RunId('run-root'), RunId('run-child'), { tokens: 30, wallMs: 1, costMicroUsd: 2 })
+
+    const [stored] = await ctx.controlPlaneStore.runsOf('runtime-1')
+    expect(stored).toMatchObject({ record: { spent: { tokens: 35, wallMs: 1, costMicroUsd: 2 } }, absorbed: RunId('run-child') })
+  })
+
+  it('writes nothing about a run it holds no record for', async () => {
+    // Only a live ledger can say a run exists; the medium answers for records.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const missing = RunId('run-absent')
+
+    await ctx.controlPlaneStore.recordRunSpend(missing, { tokens: 1, wallMs: 1, costMicroUsd: 1 })
+    await ctx.controlPlaneStore.absorbChild(missing, RunId('run-child'), { tokens: 1, wallMs: 1, costMicroUsd: 1 })
+
+    // Settling is the exception: a run open in a ledger always has a record, so
+    // an absent one is a lost write rather than a run to settle quietly.
+    await expect(ctx.controlPlaneStore.markRunSettled(missing, { tokens: 1, wallMs: 1, costMicroUsd: 1 }))
+      .rejects.toThrow(/run-absent/)
+    expect(await ctx.controlPlaneStore.deleteRun(missing)).toBe(false)
+    expect(await ctx.controlPlaneStore.runsOf('runtime-1')).toEqual([])
   })
 
   it('charges nothing for a tenant it holds no allowance for', async () => {
@@ -183,7 +232,7 @@ describe('a booted control-plane store', () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
     const ctx = await boot(root)
 
-    expect(await ctx.controlPlaneStore.consumeTenantAllowance(BOBBY, { tokens: 1, wallMs: 1, costMicroUsd: 1 }))
+    expect(await ctx.controlPlaneStore.consumeTenantAllowance(BOBBY, RunId('run-1'), { tokens: 1, wallMs: 1, costMicroUsd: 1 }))
       .toBeUndefined()
     expect(await ctx.controlPlaneStore.tenantAllowance(BOBBY)).toBeUndefined()
   })
@@ -194,7 +243,7 @@ describe('a booted control-plane store', () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
     const ctx = await boot(root)
     await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
-    await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, { tokens: 40, wallMs: 0, costMicroUsd: 0 })
+    await ctx.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-1'), { tokens: 40, wallMs: 0, costMicroUsd: 0 })
 
     const raised = await ctx.controlPlaneStore.setTenantGrant(ALICE, { ...BUDGET, tokens: BUDGET.tokens * 2 })
 
@@ -236,7 +285,7 @@ describe('a booted control-plane store', () => {
     const first = await boot(root)
     await first.controlPlaneStore.save(account())
     await first.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
-    await first.controlPlaneStore.consumeTenantAllowance(ALICE, { tokens: 9, wallMs: 8, costMicroUsd: 7 })
+    await first.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-1'), { tokens: 9, wallMs: 8, costMicroUsd: 7 })
     await first.fiber.dispose()
     context = undefined
 

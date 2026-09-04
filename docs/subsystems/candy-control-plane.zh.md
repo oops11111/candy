@@ -145,18 +145,97 @@ tenantAllowance(userId: UserId): Promise<TenantAllowance | undefined>
 async setTenantGrant(userId: UserId, grant: RunBudget): Promise<TenantAllowance>
 
 /**
- * Add one settled run's spending to what its tenant has consumed.
+ * Add one settled run's spending to what its tenant has consumed, at most once.
  *
  * The settlement `dsh-run-ledger` reports for a root run already covers its
  * whole subtree, so one call per tree is the whole of a tenant's charge.
+ *
+ * Charging the tenant and deleting the settled run record are two writes this
+ * medium cannot make one, so a crash between them leaves a settled record a
+ * recovering runtime finds and charges again. The run's id is written into
+ * the same record as the charge, by the same atomic update, and a repeat of
+ * the same id is a no-op — so recovery may re-drive an interrupted settlement
+ * without knowing how far it got.
+ *
+ * That guarantee needs one settlement at a time per tenant: two interleaved
+ * settlements leave the id of the later one, and a crash would then charge
+ * the earlier one twice. `dsh-run-scheduler` serializes them.
  * @param userId - the tenant that ran it.
- * @param spent - what the settled root run and its descendants consumed.
- * @returns the tenant's allowance after the charge, or undefined when no
- *   allowance is recorded for that tenant and the charge therefore landed
- *   nowhere.
+ * @param runId - the settled root run, which this charge is recorded under.
+ * @param spent - what that run and its descendants consumed.
+ * @returns the tenant's allowance after the charge — unchanged when this run
+ *   was already charged — or undefined when no allowance is recorded for that
+ *   tenant and the charge therefore landed nowhere.
  * @throws RangeError when the spend is not made of non-negative safe integers.
  */
-async consumeTenantAllowance(userId: UserId, spent: RunSpend): Promise<TenantAllowance | undefined>
+async consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined>
+
+/**
+ * Every run one runtime has open or part-way through settling.
+ *
+ * Only that runtime's own records: two runtimes sharing this medium would
+ * otherwise recover each other's live runs and settle them at boot.
+ * @param runtime - the reading runtime's own audience identifier.
+ * @returns its records, in no defined order.
+ */
+runsOf(runtime: string): Promise<readonly DurableRunRecord[]>
+
+/**
+ * Write the record of one newly opened run.
+ * @param run - the run's accounting, tenant, runtime, and settlement state.
+ * @returns resolution after the write reaches the medium.
+ */
+async openRun(run: DurableRunRecord): Promise<void>
+
+/**
+ * Update what one run has spent, leaving every other field as it is.
+ *
+ * A whole-record write would erase {@link DurableRunRecord.absorbed}, whose
+ * whole purpose is to survive until the settled child it names is deleted.
+ * @param runId - the run being charged.
+ * @param spent - everything charged to it so far.
+ * @returns resolution after the write reaches the medium; a run with no
+ *   record is a no-op, because only a live ledger can say it exists.
+ */
+async recordRunSpend(runId: RunId, spent: RunSpend): Promise<void>
+
+/**
+ * Fold one settled child's charge into its parent, at most once.
+ *
+ * The parent's allowance is what a child's spend is charged to, exactly as a
+ * tenant's is for a root, so this is {@link consumeTenantAllowance} one level
+ * lower and carries the same marker for the same reason: crediting the parent
+ * and deleting the child are two writes, and a crash between them must not
+ * credit the parent twice.
+ * @param parentRunId - the delegating run.
+ * @param childRunId - the settled child, recorded as absorbed.
+ * @param spent - the child's charge, already capped at what it reserved.
+ * @returns resolution after the write reaches the medium; a parent with no
+ *   record is a no-op.
+ */
+async absorbChild(parentRunId: RunId, childRunId: RunId, spent: RunSpend): Promise<void>
+
+/**
+ * Write down what settling one run charges, before that charge is applied.
+ *
+ * This is the durable decision point of a settlement: after it, a recovering
+ * runtime knows the run is finished and how much it owes, whatever else was
+ * interrupted.
+ * @param runId - the run being settled.
+ * @param spent - what it and its descendants consumed.
+ * @returns the marked record, which carries the tenant the charge belongs to.
+ * @throws DomainError when no record is held for that run — a run open in a
+ *   ledger always has one, so an absent record is a lost write rather than a
+ *   run to settle silently.
+ */
+async markRunSettled(runId: RunId, spent: RunSpend): Promise<DurableRunRecord>
+
+/**
+ * Remove one run's record.
+ * @param runId - the run to forget.
+ * @returns true when a record was removed, false when it was already absent.
+ */
+deleteRun(runId: RunId): Promise<boolean>
 ```
 
 Source: [`packages/control-plane/control-plane-store/src/index.ts`](../../packages/control-plane/control-plane-store/src/index.ts)
@@ -190,7 +269,7 @@ async start( token: string, share: (run: { budget: RunBudget }) => RunBudget = r
  * @returns the updated record and the dimensions now used up, or why the
  *   charge was refused.
  */
-charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>
+async charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>
 
 /**
  * Close one run and its descendants, and charge its tenant for what the tree
@@ -202,7 +281,7 @@ charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>
  * @param runId - the run to settle.
  * @returns the settlement, or why it could not be closed.
  */
-async close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>
+close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>
 
 /**
  * Release every hold whose lease has passed and drop nonce records that can

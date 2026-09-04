@@ -222,7 +222,7 @@ describe('a booted Candy scheduler', () => {
     await provision(ctx, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
 
-    ctx.runScheduler.charge(RunId('run-root'), { tokens: 120, wallMs: 900, costMicroUsd: 4_000 })
+    await ctx.runScheduler.charge(RunId('run-root'), { tokens: 120, wallMs: 900, costMicroUsd: 4_000 })
     const settled = await ctx.runScheduler.close(RunId('run-root'))
 
     expect(settled).toMatchObject({ ok: true, value: { spent: { tokens: 120, costMicroUsd: 4_000 } } })
@@ -262,7 +262,7 @@ describe('a booted Candy scheduler', () => {
     const now = Date.now()
     await provision(ctx, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
-    ctx.runScheduler.charge(RunId('run-root'), { tokens: BUDGET.tokens, wallMs: 1, costMicroUsd: 1 })
+    await ctx.runScheduler.charge(RunId('run-root'), { tokens: BUDGET.tokens, wallMs: 1, costMicroUsd: 1 })
     await ctx.runScheduler.close(RunId('run-root'))
 
     const second = await ctx.runScheduler.start(
@@ -314,8 +314,8 @@ describe('a booted Candy scheduler', () => {
       () => SHARE,
       now,
     )
-    ctx.runScheduler.charge(RunId('run-child'), { tokens: 30, wallMs: 5, costMicroUsd: 6 })
-    ctx.runScheduler.charge(RunId('run-root'), { tokens: 12, wallMs: 2, costMicroUsd: 1 })
+    await ctx.runScheduler.charge(RunId('run-child'), { tokens: 30, wallMs: 5, costMicroUsd: 6 })
+    await ctx.runScheduler.charge(RunId('run-root'), { tokens: 12, wallMs: 2, costMicroUsd: 1 })
 
     // A child settles into its parent's record, never into the tenant's.
     await ctx.runScheduler.close(RunId('run-child'))
@@ -346,7 +346,7 @@ describe('a booted Candy scheduler', () => {
     const now = Date.now()
     await provision(ctx, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
-    ctx.runScheduler.charge(RunId('run-root'), { tokens: 55, wallMs: 3, costMicroUsd: 2 })
+    await ctx.runScheduler.charge(RunId('run-root'), { tokens: 55, wallMs: 3, costMicroUsd: 2 })
 
     await ctx.runScheduler.sweep(now + 300_001)
 
@@ -354,9 +354,10 @@ describe('a booted Candy scheduler', () => {
       .toMatchObject({ consumed: { tokens: 55, wallMs: 3, costMicroUsd: 2 } })
   })
 
-  it('keeps sweeping after a settlement write fails', async () => {
-    // The holds a failed sweep could not charge are already released, and a
-    // rejected write must not take the runtime down with it.
+  it('leaves a run open when its settlement cannot be written, and survives', async () => {
+    // Settling first and writing after would lose the charge the write was
+    // carrying. Writing first means a rejected write costs nothing: the run
+    // stays open and its lease brings the next sweep back to try again.
     vi.useFakeTimers({ now: 1_800_000_000_000 })
     onTestFinished(() => {
       vi.useRealTimers()
@@ -366,11 +367,247 @@ describe('a booted Candy scheduler', () => {
     const now = Date.now()
     await provision(ctx, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
-    vi.spyOn(ctx.controlPlaneStore, 'consumeTenantAllowance').mockRejectedValue(new Error('medium is gone'))
+    await ctx.runScheduler.charge(RunId('run-root'), { tokens: 60, wallMs: 1, costMicroUsd: 1 })
+    const charge = vi.spyOn(ctx.controlPlaneStore, 'consumeTenantAllowance')
+      .mockRejectedValue(new Error('medium is gone'))
 
     await vi.advanceTimersByTimeAsync(300_001)
 
+    expect(ctx.runScheduler.ledger.open()).toHaveLength(1)
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 0 } })
+
+    charge.mockRestore()
+    await vi.advanceTimersByTimeAsync(30_001)
+
     expect(ctx.runScheduler.ledger.open()).toEqual([])
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 60 } })
+  })
+
+  it('charges a tenant for a run its runtime restarted out from under', async () => {
+    // The record survives the process that opened it. Before it did, a restart
+    // handed the tenant back the whole allowance whatever was running.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    await first.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await first.runScheduler.charge(RunId('run-root'), { tokens: 250, wallMs: 9, costMicroUsd: 3 })
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    expect(second.runScheduler.ledger.open()).toEqual([])
+    expect(await second.controlPlaneStore.tenantAllowance(ALICE))
+      .toMatchObject({ consumed: { tokens: 250, wallMs: 9, costMicroUsd: 3 } })
+  })
+
+  it('charges a restarted tree once, for everything under its root', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    await first.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await first.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2' }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )
+    await first.runScheduler.charge(RunId('run-child'), { tokens: 30, wallMs: 2, costMicroUsd: 1 })
+    await first.runScheduler.charge(RunId('run-root'), { tokens: 12, wallMs: 1, costMicroUsd: 1 })
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    expect(await second.controlPlaneStore.tenantAllowance(ALICE))
+      .toMatchObject({ consumed: { tokens: 42, wallMs: 3, costMicroUsd: 2 } })
+    expect(await second.controlPlaneStore.runsOf(AUDIENCE)).toEqual([])
+  })
+
+  it('finishes a settlement its runtime was interrupted part-way through', async () => {
+    // A record carrying a settled figure is a run whose charge was written down
+    // and may or may not have been applied; recovery re-drives exactly that.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    await first.controlPlaneStore.openRun({
+      record: {
+        runId: RunId('run-interrupted'), parentRunId: undefined,
+        reserved: SHARE, spent: { tokens: 70, wallMs: 4, costMicroUsd: 5 }, leaseExpiresAt: now + 300_000,
+      },
+      userId: ALICE,
+      runtime: AUDIENCE,
+      settledSpent: { tokens: 70, wallMs: 4, costMicroUsd: 5 },
+      absorbed: undefined,
+    })
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    expect(await second.controlPlaneStore.tenantAllowance(ALICE))
+      .toMatchObject({ consumed: { tokens: 70, wallMs: 4, costMicroUsd: 5 } })
+    expect(await second.controlPlaneStore.runsOf(AUDIENCE)).toEqual([])
+  })
+
+  it('does not charge again for a settlement whose charge already landed', async () => {
+    // The crash window the marker exists for: the tenant was charged and the
+    // record was not yet deleted.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    const spent = { tokens: 70, wallMs: 4, costMicroUsd: 5 }
+    await first.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-interrupted'), spent)
+    await first.controlPlaneStore.openRun({
+      record: {
+        runId: RunId('run-interrupted'), parentRunId: undefined,
+        reserved: SHARE, spent, leaseExpiresAt: now + 300_000,
+      },
+      userId: ALICE,
+      runtime: AUDIENCE,
+      settledSpent: spent,
+      absorbed: undefined,
+    })
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    expect(await second.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: spent })
+    expect(await second.controlPlaneStore.runsOf(AUDIENCE)).toEqual([])
+  })
+
+  it('leaves another runtime\'s records alone', async () => {
+    // Two runtimes sharing a medium must not settle each other's live runs.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    const foreign = {
+      record: {
+        runId: RunId('run-elsewhere'), parentRunId: undefined,
+        reserved: SHARE, spent: { tokens: 5, wallMs: 1, costMicroUsd: 1 }, leaseExpiresAt: now + 300_000,
+      },
+      userId: ALICE,
+      runtime: 'candy-runtime-debian-2',
+      settledSpent: undefined,
+      absorbed: undefined,
+    }
+    await first.controlPlaneStore.openRun(foreign)
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    expect(await second.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 0 } })
+    expect(await second.controlPlaneStore.runsOf('candy-runtime-debian-2')).toEqual([foreign])
+  })
+
+  it('refuses a charge for a run that is not open', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+
+    expect(await ctx.runScheduler.charge(RunId('run-absent'), { tokens: 1, wallMs: 1, costMicroUsd: 1 }))
+      .toEqual({ ok: false, rejection: { reason: 'unknown-run', runId: RunId('run-absent') } })
+  })
+
+  it('settles an expired tree once, not once per record it held', async () => {
+    // The sweep walks a snapshot, and settling the parent closes the child, so
+    // the child it reaches next is already gone.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2' }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )
+    await ctx.runScheduler.charge(RunId('run-child'), { tokens: 20, wallMs: 1, costMicroUsd: 1 })
+
+    const settled = await ctx.runScheduler.sweep(now + 300_001)
+
+    expect(settled.map(settlement => settlement.runId)).toEqual([RunId('run-root')])
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 20 } })
+    expect(await ctx.controlPlaneStore.runsOf(AUDIENCE)).toEqual([])
+  })
+
+  it('returns a hold when the run it funded cannot be written down', async () => {
+    // A run this runtime cannot record is one a restart would forget while its
+    // provider kept spending, so the medium failure travels and the hold goes
+    // back at once rather than at the lease.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    vi.spyOn(ctx.controlPlaneStore, 'openRun').mockRejectedValue(new Error('medium is gone'))
+
+    await expect(ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now))
+      .rejects.toThrow(/medium is gone/)
+
+    expect(ctx.runScheduler.ledger.open()).toEqual([])
+  })
+
+  it('finishes an interrupted settlement that still has descendants recorded', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    const settled = { tokens: 70, wallMs: 4, costMicroUsd: 5 }
+    await first.controlPlaneStore.openRun({
+      record: {
+        runId: RunId('run-root'), parentRunId: undefined,
+        reserved: BUDGET, spent: settled, leaseExpiresAt: now + 300_000,
+      },
+      userId: ALICE, runtime: AUDIENCE, settledSpent: settled, absorbed: undefined,
+    })
+    await first.controlPlaneStore.openRun({
+      record: {
+        runId: RunId('run-child'), parentRunId: RunId('run-root'),
+        reserved: SHARE, spent: { tokens: 3, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
+      },
+      userId: ALICE, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+    })
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    // The root's settled figure already covered its subtree, so the child is
+    // forgotten with it rather than charged again.
+    expect(await second.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: settled })
+    expect(await second.controlPlaneStore.runsOf(AUDIENCE)).toEqual([])
+  })
+
+  it('refuses to boot on records that do not form complete trees', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    await first.controlPlaneStore.openRun({
+      record: {
+        runId: RunId('run-orphan'), parentRunId: RunId('run-gone'),
+        reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
+      },
+      userId: ALICE,
+      runtime: AUDIENCE,
+      settledSpent: undefined,
+      absorbed: undefined,
+    })
+    await first.fiber.dispose()
+    context = undefined
+
+    await expect(boot(root)).rejects.toThrow(/names parent 'run-gone', which no record supplies/)
   })
 
   it('refuses to boot without the assertion secret', async () => {

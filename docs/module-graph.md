@@ -436,6 +436,7 @@ flowchart TD
   pkg_control_plane_store --> pkg_credential_vault
   pkg_control_plane_store --> pkg_provider_accounts
   pkg_control_plane_store --> pkg_run_budget
+  pkg_control_plane_store --> pkg_run_ledger
   pkg_control_plane_store --> pkg_storage_domain
   pkg_control_plane_store --> pkg_tenant_allowance
   pkg_run_start --> pkg_control_plane
@@ -1313,7 +1314,7 @@ flowchart TD
 | [`web-search-perplexity`](../packages/web/web-search-perplexity) | `web` | [`launch-environment`](../packages/util/launch-environment), [`web`](../packages/web/web) |
 | [`api-remotes`](../packages/api/remotes) | `api` | [`scope`](../packages/core/scope) |
 | [`attachment-local`](../packages/attachment/attachment-local) | `attachment` | [`attachment`](../packages/attachment/attachment), [`home-paths`](../packages/util/home-paths) |
-| [`control-plane-store`](../packages/control-plane/control-plane-store) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`provider-accounts`](../packages/control-plane/provider-accounts), [`run-budget`](../packages/control-plane/run-budget), [`storage-domain`](../packages/storage/storage-domain), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
+| [`control-plane-store`](../packages/control-plane/control-plane-store) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`provider-accounts`](../packages/control-plane/provider-accounts), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`storage-domain`](../packages/storage/storage-domain), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
 | [`run-start`](../packages/control-plane/run-start) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`runtime-pool`](../packages/control-plane/runtime-pool) |
 | [`authorization`](../packages/credentials/authorization) | `credentials` | [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
 | [`credentials-local`](../packages/credentials/credentials-local) | `credentials` | [`atomic-write`](../packages/util/atomic-write), [`credentials`](../packages/credentials/credentials), [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment) |

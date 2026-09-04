@@ -11,7 +11,9 @@ English | [中文](README.zh.md)
 
 [`dsh-provider-accounts`](../provider-accounts/README.md) defines its account store as a port, and [`dsh-run-admission`](../run-admission/README.md) requires a credential lookup and a budget lookup as ports. Every one of them was a parameter no deployment could fill, because nothing in the repository held the data.
 
-This service holds it: provider accounts with their sealed credentials, and each tenant's allowance, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
+This service holds it: provider accounts with their sealed credentials, each tenant's allowance, and one record per live run, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
+
+It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once.
 
 ## Table of Contents
 
@@ -98,6 +100,16 @@ export const policy: RunAdmissionPolicy = {
 
 JSON drops an `undefined` property, so a field the runtime types as `number | undefined` — a never-validated account, a never-rewrapped envelope — comes back as an absent key. The schemas declare those `optional` and the converters beside them put the field back. Reading the runtime type straight from `z.infer` would compile and then disagree with itself the first time such an account round-tripped.
 
+### Why a charge carries the id of the run it absorbed
+
+Charging whoever funded a run and then forgetting that run are two writes this medium cannot make one, so a crash between them leaves a settled record a recovering runtime would charge a second time. Both funders — a tenant's allowance and a parent's run record — therefore carry the id of the settlement they last absorbed, written by the same atomic update as the charge itself. A repeat of that id is a no-op, so recovery re-drives an interrupted settlement without knowing how far it got.
+
+The guarantee needs one settlement at a time per funder: two interleaved settlements leave the id of the later one, and a crash would then charge the earlier one twice. [`dsh-run-scheduler`](../run-scheduler/README.md) queues every write to a run record on one chain, which is where that serialization lives.
+
+### Why a run record is stamped with its runtime
+
+`runsOf` answers for one runtime only. Two runtimes sharing this medium would otherwise recover each other's records at boot and settle runs that are still going. The stamp is the reading runtime's own audience identifier, which an execution assertion is already bound to, so two runtimes never share the value.
+
 ### Why the credential lookup checks the tenant
 
 An account is read by id, and the tenant its record names must be the one the verified claims carry. The vault would refuse to open a mismatched envelope anyway, so this is not the enforcement — it keeps a mismatch out of the one call that could otherwise be handed the wrong envelope, and it costs one comparison.
@@ -121,8 +133,9 @@ An account is read by id, and the tenant its record names must be the one the ve
 
 These are current package constraints, not a task backlog.
 
-- **No run records** — the ledger is still in memory, so a restart keeps a tenant's accounts and allowance but loses every open run and the holds it carried. A restart therefore returns the whole unconsumed allowance to the tenant, whatever was running. Durable run records need a settlement story a crash cannot corrupt, which is not this package.
-- **A settlement is written after its hold is released** — `dsh-run-scheduler` closes a run in memory and then charges its tenant here. A crash between the two loses that run's spend, and a failed write loses it as well: the record it would have charged is already gone. Bounding the loss to nothing needs the durable run records above.
+- **A restart ends every run it recovers** — a record this runtime wrote is a run it was driving, and the process that drove it is gone, so `dsh-run-scheduler` settles what it finds rather than resuming it. Nothing here can tell a crashed run from one whose provider is somehow still alive.
+- **Recovery is all-or-nothing on a corrupt store** — records that do not form complete trees fail the boot rather than being dropped, because a hold against a parent that does not exist is one nothing can settle. There is no repair path.
+- **One runtime per audience** — `runsOf` partitions by the runtime stamp, so two processes sharing an audience recover each other's records. An assertion is audience-bound already, so this is a deployment rule rather than a check made here.
 - **No period** — an allowance runs from its grant until an operator changes it, and `setTenantGrant` deliberately keeps what was consumed. Nothing here starts a new billing period, because nothing in the repository decides when one begins.
 - **`listByUser` scans** — the domain keeps every record in memory and this filters them, which is right at one deployment's account count and would not be at a directory's.
 - **No replay store** — the nonce port is [`dsh-run-replay`](../run-replay/README.md), which is in-process by design. A deployment running more than one runtime process needs a durable one, and this domain would be a reasonable home for it.

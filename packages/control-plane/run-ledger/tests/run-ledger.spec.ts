@@ -332,3 +332,107 @@ describe('bounding a subtree by the root grant', () => {
       })
   })
 })
+
+describe('settlementOf', () => {
+  it('reports what closing would charge, and changes nothing', () => {
+    const ledger = rooted()
+    ledger.openChild(ROOT, CHILD, share(), LEASE)
+    ledger.charge(CHILD, spend({ tokens: 40 }))
+    ledger.charge(ROOT, spend({ tokens: 7 }))
+
+    const preview = ledger.settlementOf(ROOT)
+
+    expect(preview).toEqual({ runId: ROOT, spent: spend({ tokens: 47 }), closed: [CHILD] })
+    expect(ledger.open().map(record => record.runId)).toEqual([ROOT, CHILD])
+  })
+
+  it('reports the same charge the close then applies', () => {
+    // The point of the preview: a caller may write the charge down first and
+    // close afterwards, so the two figures must not be able to disagree.
+    const ledger = rooted()
+    ledger.openChild(ROOT, CHILD, share(), LEASE)
+    ledger.openChild(CHILD, GRANDCHILD, share({ tokens: 50, children: 0 }), LEASE)
+    ledger.charge(GRANDCHILD, spend({ tokens: 90, wallMs: 3, costMicroUsd: 4 }))
+
+    const preview = ledger.settlementOf(ROOT)
+    const settled = ledger.close(ROOT)
+
+    expect(settled.ok).toBe(true)
+    if (!settled.ok) return
+    expect(preview).toEqual({ runId: settled.value.runId, spent: settled.value.spent, closed: settled.value.closed })
+  })
+
+  it('caps an overdrawn descendant exactly as the settlement does', () => {
+    const ledger = rooted()
+    ledger.openChild(ROOT, CHILD, share({ tokens: 100 }), LEASE)
+    ledger.charge(CHILD, spend({ tokens: 400 }))
+
+    expect(ledger.settlementOf(ROOT)?.spent).toEqual(spend({ tokens: 100 }))
+  })
+
+  it('answers nothing for a run that is not open', () => {
+    expect(rooted().settlementOf(CHILD)).toBeUndefined()
+  })
+})
+
+describe('restore', () => {
+  it('reinstalls a tree a previous process wrote down', () => {
+    const written = rooted()
+    written.openChild(ROOT, CHILD, share(), LEASE)
+    written.charge(CHILD, spend({ tokens: 30 }))
+    const records = written.open()
+
+    const ledger = new RunLedger()
+    ledger.restore(records)
+
+    expect(ledger.open()).toEqual(records)
+    expect(ledger.settlementOf(ROOT)?.spent).toEqual(spend({ tokens: 30 }))
+  })
+
+  it('reinstalls a child its parent could no longer afford to reserve', () => {
+    // Replaying `openChild` would refuse this: the parent has since spent what
+    // the child's reservation would need. The record was checked when it was
+    // made, and re-checking it against later state is the wrong question.
+    const record = {
+      runId: ROOT, parentRunId: undefined, reserved: budget({ tokens: 1_000 }),
+      spent: spend({ tokens: 990 }), leaseExpiresAt: LEASE,
+    }
+    const child = {
+      runId: CHILD, parentRunId: ROOT, reserved: share({ tokens: 100 }),
+      spent: spend(), leaseExpiresAt: LEASE,
+    }
+
+    const ledger = new RunLedger()
+    ledger.restore([record, child])
+
+    expect(ledger.remaining(ROOT)).toMatchObject({ tokens: 0 })
+    expect(ledger.get(CHILD)).toEqual(child)
+  })
+
+  it('accepts a child listed before its parent', () => {
+    const written = rooted()
+    written.openChild(ROOT, CHILD, share(), LEASE)
+    const records = written.open()
+
+    const ledger = new RunLedger()
+    ledger.restore([...records].reverse())
+
+    expect(ledger.open().map(record => record.runId)).toEqual([CHILD, ROOT])
+  })
+
+  it('refuses a record whose id is already open', () => {
+    const ledger = rooted()
+
+    expect(() => { ledger.restore(ledger.open()) }).toThrow(/a run with that id is already open/)
+  })
+
+  it('refuses a record whose parent no record supplies', () => {
+    // A hold against a parent that does not exist is one nothing can settle:
+    // the ledger would credit a record it cannot find.
+    const orphan = {
+      runId: CHILD, parentRunId: ROOT, reserved: share(), spent: spend(), leaseExpiresAt: LEASE,
+    }
+
+    expect(() => { new RunLedger().restore([orphan]) }).toThrow(/names parent 'run-root', which no record supplies/)
+  })
+})

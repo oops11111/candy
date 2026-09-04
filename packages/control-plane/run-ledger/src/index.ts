@@ -89,12 +89,19 @@ export interface RunChargeResult {
   readonly exhausted: readonly BudgetDimension[]
 }
 
-/** What one run's spending consumed of its parent's allowance when it closed. */
-export interface RunSettlement {
-  /** The run that closed. */
+/**
+ * What settling one run would charge and close, computed without settling it.
+ *
+ * A caller that must make a settlement durable before applying it needs the
+ * figures first: writing the charge and then closing means a rejected write
+ * leaves nothing lost, while closing and then writing loses the charge when
+ * the write fails.
+ */
+export interface RunSettlementPreview {
+  /** The run being settled. */
   readonly runId: RunId
   /**
-   * What this run's allowance was charged: its own spend plus each closed
+   * What this run's allowance is charged: its own spend plus each closed
    * descendant's, capped at what that descendant reserved.
    *
    * It is not the tree's billed total when a descendant overdrew — the excess
@@ -103,8 +110,12 @@ export interface RunSettlement {
    * is its own record's `spent`, read while it is open.
    */
   readonly spent: RunSpend
-  /** Descendants closed with it, deepest first; empty when it had no open children. */
+  /** Descendants closed with it, deepest first; empty when it has no open children. */
   readonly closed: readonly RunId[]
+}
+
+/** What one run's spending consumed of its parent's allowance when it closed. */
+export interface RunSettlement extends RunSettlementPreview {
   /** The parent's remaining allowance after this run's hold was released; absent for a root run. */
   readonly parentRemaining: RunBudget | undefined
 }
@@ -312,6 +323,56 @@ export class RunLedger {
     return [...this.records.values()]
   }
 
+  /**
+   * What settling one run would charge and close, without settling it.
+   *
+   * A caller that must make the charge durable computes it here, writes it,
+   * and only then calls {@link close}: a rejected write then leaves the run
+   * open and nothing lost, where closing first loses the charge the write was
+   * meant to carry.
+   * @param runId - the run to measure.
+   * @returns the charge and the descendants it covers, or `undefined` when the
+   *   run is not open. It reports no `parentRemaining`, which exists only once
+   *   the hold has actually been released.
+   */
+  settlementOf(runId: RunId): RunSettlementPreview | undefined {
+    const record = this.records.get(runId)
+    if (record === undefined) return undefined
+    const closed: RunId[] = []
+    return { runId, spent: this.subtreeSpend(record, closed), closed }
+  }
+
+  /**
+   * Install records this ledger did not open, as a restarting runtime rehydrates
+   * what it wrote down.
+   *
+   * The checks that created these records are deliberately not re-run. A parent
+   * that has since spent most of its allowance no longer has room to reserve a
+   * child it already funded, so replaying `openChild` would refuse records that
+   * are correct; and a record was already checked once, by the ledger that
+   * produced it.
+   * @param records - a complete forest: every record naming a parent must be
+   *   accompanied by that parent, in any order.
+   * @throws Error when a record's id is already open here, or when it names a
+   *   parent no record in this ledger or this batch supplies — either is a
+   *   corrupt store rather than a run to admit, and continuing would leave a
+   *   hold nothing can settle.
+   */
+  restore(records: readonly RunRecord[]): void {
+    for (const record of records) {
+      if (this.records.has(record.runId)) {
+        throw new Error(`dsh-run-ledger: cannot restore '${record.runId}', a run with that id is already open`)
+      }
+      this.records.set(record.runId, record)
+    }
+    for (const record of records) {
+      if (record.parentRunId === undefined || this.records.has(record.parentRunId)) continue
+      throw new Error(
+        `dsh-run-ledger: restored run '${record.runId}' names parent '${record.parentRunId}', which no record supplies`,
+      )
+    }
+  }
+
   /** What one open record may still spend, with every open child's hold taken out. */
   private allowanceOf(record: RunRecord): RunBudget {
     let held = record.spent
@@ -334,7 +395,8 @@ export class RunLedger {
   /** Close one record with its descendants and release its hold on its parent. */
   private settle(record: RunRecord): RunSettlement {
     const closed: RunId[] = []
-    const spent = this.closeSubtree(record, closed)
+    const spent = this.subtreeSpend(record, closed)
+    for (const runId of closed) this.records.delete(runId)
     this.records.delete(record.runId)
     if (record.parentRunId === undefined) {
       return { runId: record.runId, spent, closed, parentRemaining: undefined }
@@ -350,18 +412,20 @@ export class RunLedger {
   }
 
   /**
-   * Close every descendant of one record and report what its subtree consumed.
+   * What one record's subtree consumed, and which descendants it covers.
+   *
+   * Nothing is removed here, so the same computation serves {@link settlementOf}
+   * and {@link settle}; the caller that settles deletes what `closed` names.
    *
    * A descendant's spend is capped at what it reserved before it joins its
    * parent's, for the same reason a settled child's is: the parent authorized
    * the reservation, not whatever the child managed to spend beyond it.
    */
-  private closeSubtree(record: RunRecord, closed: RunId[]): RunSpend {
+  private subtreeSpend(record: RunRecord, closed: RunId[]): RunSpend {
     let spent = record.spent
-    for (const child of [...this.records.values()]) {
+    for (const child of this.records.values()) {
       if (child.parentRunId !== record.runId) continue
-      const childSpent = this.closeSubtree(child, closed)
-      this.records.delete(child.runId)
+      const childSpent = this.subtreeSpend(child, closed)
       closed.push(child.runId)
       spent = plus(spent, cappedAt(childSpent, child.reserved))
     }

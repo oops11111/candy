@@ -17,6 +17,14 @@
  * ledger with no tenant above it lets unrelated trees each hold the whole
  * allowance at once.
  *
+ * Its records are durable, and every settlement is exactly-once across a crash.
+ * A settlement is two writes the medium cannot make one — charge whoever funded
+ * the run, then forget the run — so each charge is written into the funder's own
+ * record together with the id of the run it absorbed, and a repeat of that id is
+ * a no-op. A restarting runtime therefore re-drives an interrupted settlement
+ * without knowing how far it got. That guarantee needs one settlement at a time,
+ * which is why every write to a run record queues on one chain here.
+ *
  * The order queued requests run in is still a decision nothing here makes:
  * this starts the run a caller asks for, or says which step refused it.
  *
@@ -34,11 +42,11 @@ import {
 import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
-import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunSettlement } from '@deepseek-ai/dsh-run-ledger'
+import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunRecord, type RunSettlement } from '@deepseek-ai/dsh-run-ledger'
 import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 import { startRun, type RunStartOutcome } from '@deepseek-ai/dsh-run-start'
 import { remainingAllowance } from '@deepseek-ai/dsh-tenant-allowance'
-import type {} from '@deepseek-ai/dsh-control-plane-store'
+import type { DurableRunRecord } from '@deepseek-ai/dsh-control-plane-store'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -113,14 +121,14 @@ export class RunScheduler extends Service {
   readonly replay: RunReplayStore = new RunReplayStore()
 
   /**
-   * Which tenant each open ROOT run belongs to.
+   * The one chain every write to a run record queues on.
    *
-   * A `RunRecord` carries a run and its parent, not an identity, so the tenant
-   * a tree is charged to would otherwise be lost the moment the assertion that
-   * started it was verified. Only roots are held: a descendant's spend reaches
-   * its tenant through its root's settlement, and a tree has exactly one root.
+   * A settlement charges its funder and then forgets the run, and the marker
+   * that makes the charge repeatable holds only while no other write to those
+   * two records interleaves. Serializing them is what makes the marker a
+   * guarantee rather than a likelihood.
    */
-  private readonly tenants = new Map<RunId, UserId>()
+  private writes: Promise<unknown> = Promise.resolve()
 
   private readonly keyring: CredentialKeyring
   private readonly assertionSecret: Buffer
@@ -141,8 +149,14 @@ export class RunScheduler extends Service {
     }
   }
 
-  /** Start the clock that releases abandoned holds and drops dead nonce records. */
-  protected [Service.init](): void {
+  /**
+   * Finish what a previous process left, then start the clock.
+   *
+   * Cordis awaits this before the service is reachable, so no run is admitted
+   * against an allowance that still counts an interrupted settlement.
+   */
+  protected async [Service.init](): Promise<void> {
+    await this.recover()
     this.ctx.interval(() => {
       // A sweep now writes to the medium, and a rejected write must not become
       // an unhandled rejection that takes the runtime down: the holds it failed
@@ -174,8 +188,26 @@ export class RunScheduler extends Service {
       share,
       leaseExpiresAt: now + (this.config.leaseMs ?? 300_000),
     }, now)
-    if (outcome.started && outcome.value.run.claims.parentRunId === undefined) {
-      this.tenants.set(outcome.value.run.claims.runId, outcome.value.run.claims.userId)
+    if (!outcome.started) return outcome
+    const { claims } = outcome.value.run
+    // `startRun` opened the ledger record, so the ledger has it.
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
+    const record = this.ledger.get(claims.runId)!
+    try {
+      await this.queue(() => this.ctx.controlPlaneStore.openRun({
+        record,
+        userId: claims.userId,
+        runtime: this.config.audience,
+        settledSpent: undefined,
+        absorbed: undefined,
+      }))
+    } catch (unwritable) {
+      // The record was opened a moment ago and has spent nothing, so closing it
+      // returns a child's whole hold to its parent at once. A run this runtime
+      // cannot write down is a run a restart would forget while its provider
+      // kept spending, so the medium failure keeps travelling.
+      this.ledger.close(claims.runId)
+      throw unwritable
     }
     return outcome
   }
@@ -187,8 +219,11 @@ export class RunScheduler extends Service {
    * @returns the updated record and the dimensions now used up, or why the
    *   charge was refused.
    */
-  charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult> {
-    return this.ledger.charge(runId, spend)
+  async charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>> {
+    const charged = this.ledger.charge(runId, spend)
+    if (!charged.ok) return charged
+    await this.queue(() => this.ctx.controlPlaneStore.recordRunSpend(runId, charged.value.record.spent))
+    return charged
   }
 
   /**
@@ -201,10 +236,8 @@ export class RunScheduler extends Service {
    * @param runId - the run to settle.
    * @returns the settlement, or why it could not be closed.
    */
-  async close(runId: RunId): Promise<RunLedgerResult<RunSettlement>> {
-    const outcome = this.ledger.close(runId)
-    if (outcome.ok) await this.chargeTenant(outcome.value)
-    return outcome
+  close(runId: RunId): Promise<RunLedgerResult<RunSettlement>> {
+    return this.queue(() => this.settle(runId))
   }
 
   /**
@@ -218,10 +251,16 @@ export class RunScheduler extends Service {
    * @returns the runs whose holds were released.
    */
   async sweep(now: number): Promise<readonly RunSettlement[]> {
-    const expired = this.ledger.expire(now)
-    for (const settlement of expired) await this.chargeTenant(settlement)
+    const settled: RunSettlement[] = []
+    for (const record of this.ledger.open()) {
+      if (record.leaseExpiresAt > now) continue
+      // Re-read through `settle`: closing one run closes its descendants, and a
+      // descendant already gone is no longer expired.
+      const outcome = await this.queue(() => this.settle(record.runId))
+      if (outcome.ok) settled.push(outcome.value)
+    }
     this.replay.evict(now)
-    return expired
+    return settled
   }
 
   /** The admission policy for this runtime, assembled from the store and this instance's state. */
@@ -251,26 +290,120 @@ export class RunScheduler extends Service {
    * less the reservation every root run of that tenant still open is holding.
    */
   private async tenantRemaining(userId: UserId): Promise<RunBudget | undefined> {
-    const allowance = await this.ctx.controlPlaneStore.tenantAllowance(userId)
+    const store = this.ctx.controlPlaneStore
+    const allowance = await store.tenantAllowance(userId)
     if (allowance === undefined) return undefined
+    // Ownership comes from the durable record, which is the only place a run's
+    // tenant is written down; what it holds comes from the ledger, which is the
+    // accounting authority while the run is open.
+    const owners = new Map((await store.runsOf(this.config.audience)).map(run => [run.record.runId, run.userId]))
     const held = this.ledger.open()
-      .filter(record => this.tenants.get(record.runId) === userId)
+      .filter(record => record.parentRunId === undefined && owners.get(record.runId) === userId)
       .map(record => record.reserved)
     return remainingAllowance(allowance, held)
   }
 
   /**
-   * Charge one settled root run's tree to its tenant and stop tracking it.
+   * Settle one run durably, then in memory.
    *
-   * A settlement for a run this scheduler never opened as a root — a child, or
-   * a root started before a restart — charges nothing: there is no tenant to
-   * charge it to, and guessing one would bill the wrong account.
+   * The order is the guarantee. The charge is computed before anything moves,
+   * written down as the run's own settled figure, applied to whoever funded the
+   * run, and only then are the records forgotten and the hold released. A write
+   * that rejects therefore leaves the run open in both places, and its lease
+   * brings the sweep back to try again — where settling first and writing after
+   * would lose the charge the write was carrying.
+   *
+   * Callers reach this through {@link close} and {@link sweep}, which queue it
+   * on the one write chain; nothing else may run between the charge and the
+   * deletion it is paired with.
    */
-  private async chargeTenant(settlement: RunSettlement): Promise<void> {
-    const userId = this.tenants.get(settlement.runId)
-    if (userId === undefined) return
-    this.tenants.delete(settlement.runId)
-    await this.ctx.controlPlaneStore.consumeTenantAllowance(userId, settlement.spent)
+  private async settle(runId: RunId): Promise<RunLedgerResult<RunSettlement>> {
+    const preview = this.ledger.settlementOf(runId)
+    if (preview === undefined) return { ok: false, rejection: { reason: 'unknown-run', runId } }
+    const store = this.ctx.controlPlaneStore
+    const marked = await store.markRunSettled(runId, preview.spent)
+    await this.applyCharge(marked, preview.spent)
+    for (const descendant of preview.closed) await store.deleteRun(descendant)
+    await store.deleteRun(runId)
+    // Nothing between the preview and here removed the run, because every write
+    // to a run record queues on the chain this call already holds.
+    return this.ledger.close(runId)
+  }
+
+  /**
+   * Charge one settled run to whoever funded it: its parent run, or its tenant
+   * when it has none.
+   *
+   * Both carry the id of the run they last absorbed, so this is repeatable, and
+   * a recovering runtime re-drives it without knowing whether it already ran.
+   */
+  private async applyCharge(run: DurableRunRecord, spent: RunSpend): Promise<void> {
+    const store = this.ctx.controlPlaneStore
+    const { record } = run
+    if (record.parentRunId !== undefined) {
+      await store.absorbChild(record.parentRunId, record.runId, cappedAt(spent, record.reserved))
+      return
+    }
+    await store.consumeTenantAllowance(run.userId, record.runId, spent)
+  }
+
+  /**
+   * Finish every settlement a previous process started, then settle what it
+   * left open.
+   *
+   * A record this runtime wrote is a run it was driving, and the process that
+   * drove it is gone — so nothing is resumed. Settling on the way up is what
+   * keeps a restart from handing a tenant back an allowance its runs consumed;
+   * leaving the records open instead would do that until each lease expired.
+   * @throws Error when the records do not form complete trees, which is a
+   *   corrupt store rather than a run to admit.
+   */
+  private async recover(): Promise<void> {
+    const store = this.ctx.controlPlaneStore
+    const records = await store.runsOf(this.config.audience)
+    const gone = new Set<RunId>()
+    for (const run of records) {
+      if (run.settledSpent === undefined) continue
+      await this.applyCharge(run, run.settledSpent)
+      for (const id of [...descendantsOf(records, run.record.runId), run.record.runId]) {
+        await store.deleteRun(id)
+        gone.add(id)
+      }
+    }
+    const remaining = records.filter(run => !gone.has(run.record.runId))
+    this.ledger.restore(remaining.map(run => run.record))
+    for (const run of remaining) {
+      if (run.record.parentRunId === undefined) await this.settle(run.record.runId)
+    }
+  }
+
+  /** Queue one write, or one settlement, on this runtime's single write chain. */
+  private queue<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.writes.then(work, work)
+    this.writes = next.then(() => undefined, () => undefined)
+    return next
+  }
+}
+
+/** Every record descended from one run, deepest first. */
+function descendantsOf(
+  records: readonly { readonly record: RunRecord }[],
+  runId: RunId,
+): readonly RunId[] {
+  const found: RunId[] = []
+  for (const candidate of records) {
+    if (candidate.record.parentRunId !== runId) continue
+    found.push(...descendantsOf(records, candidate.record.runId), candidate.record.runId)
+  }
+  return found
+}
+
+/** The part of one run's charge its funder's allowance absorbs. */
+function cappedAt(spent: RunSpend, reserved: RunBudget): RunSpend {
+  return {
+    tokens: Math.min(spent.tokens, reserved.tokens),
+    wallMs: Math.min(spent.wallMs, reserved.wallMs),
+    costMicroUsd: Math.min(spent.costMicroUsd, reserved.costMicroUsd),
   }
 }
 

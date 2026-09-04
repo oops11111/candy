@@ -85,6 +85,30 @@ export const released = ledger.expire(now)
 
 `expire` settles every run whose lease has elapsed, earliest first. A run that is still working pushes its lease out with `renew`, so a lease that stops advancing is exactly a run nothing is driving.
 
+### Settling durably, and coming back from a restart
+
+```ts
+import type { RunLedger, RunRecord } from '@deepseek-ai/dsh-run-ledger'
+
+declare const ledger: RunLedger
+declare const written: readonly RunRecord[]
+declare function writeCharge(runId: string, spent: unknown): Promise<void>
+
+export async function restart(): Promise<void> {
+  ledger.restore(written)
+  for (const record of ledger.open()) {
+    const preview = ledger.settlementOf(record.runId)
+    if (preview === undefined) continue
+    await writeCharge(preview.runId, preview.spent)
+    ledger.close(record.runId)
+  }
+}
+```
+
+`settlementOf` reports what closing a run would charge and which descendants it covers, and changes nothing. A caller that must make the charge durable writes it first and closes second, so a rejected write leaves the run open and nothing lost; closing first would lose the charge the write was carrying.
+
+`restore` installs records this ledger did not open. The checks that created them are deliberately not re-run — a parent that has since spent most of its allowance no longer has room to reserve a child it already funded, so replaying `openChild` would refuse records that are correct. It refuses a record whose id is already open, or one naming a parent no record supplies, because a hold against a parent that does not exist is one nothing can settle.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -97,7 +121,7 @@ export const released = ledger.expire(now)
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `RunLedger`, `RunRecord`, `RunChargeResult`, `RunSettlement`, and the ledger rejections |
+| [`src/index.ts`](src/index.ts) | `RunLedger`, `RunRecord`, `RunChargeResult`, `RunSettlementPreview`, `RunSettlement`, and the ledger rejections |
 | — | No runtime invariant companion is published; this module owns no event stream, and the one relation worth checking — that a tree never returns more than it reserved — is arithmetic its unit tests pin directly. |
 
 ### Why an expired run settles exactly
@@ -115,6 +139,10 @@ An overspend is therefore recorded in full, while the parent absorbs only what i
 ### Why closing a run closes its descendants
 
 A child's reservation is a subtraction from its parent's record. If the parent closes while a child is still open, that subtraction has no run left to justify it and no settlement will ever reverse it — the allowance is stranded until the whole tree ends. Closing the subtree keeps the invariant the budget arithmetic exists for: every reservation is eventually returned to the run that made it.
+
+### Why the preview and the settlement cannot disagree
+
+One recursion computes a subtree's charge, and `settle` calls it and then deletes what it named. The preview is not a second implementation of the same arithmetic, so a caller that writes the previewed figure down and then closes writes exactly what the close applies. Two implementations would be free to drift, and the drift would show up as a tenant charged for something other than what its run consumed.
 
 ### Why one ledger holds one tree
 
@@ -139,7 +167,8 @@ A reservation is a subtraction from the parent's record, so a parent and its chi
 
 These are current package constraints, not a task backlog.
 
-- **Nothing persists a ledger** — the records live in memory for the life of the instance, so a restart loses every open run and the holds they carried. The record type is plain data a caller may store, but no store, format, or recovery order is offered here.
+- **Nothing persists a ledger** — the records live in memory for the life of the instance. `settlementOf` and `restore` are what a caller needs to keep them elsewhere, and [`dsh-run-scheduler`](../run-scheduler/README.md) does; no store, format, or recovery order is offered here.
+- **`restore` trusts what it is given** — the records are installed as they arrive, and a forest that is complete but wrong (a reservation larger than its parent ever held) is accepted. Re-deriving the checks is the wrong question, since the state that passed them is gone.
 - **Nothing drives the clock** — `expire` is a call, not a timer. A deployment that never calls it never releases an abandoned hold, and choosing that cadence is the scheduler's.
 - **A lease is not told to the run** — it bounds how long a lost run can hold its parent's tokens, and nothing cancels the run itself when it elapses. Cancelling the work belongs with whoever started it.
 - **One tree, not a tenant** — a ledger holds the runs beneath one root. A tenant-wide view across concurrent unrelated trees is a different accounting seam and is not this one.

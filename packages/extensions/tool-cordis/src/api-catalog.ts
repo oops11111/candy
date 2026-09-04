@@ -715,11 +715,48 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RangeError when the grant is not made of non-negative safe integers.'],
       },
       {
-        signature: 'async consumeTenantAllowance(userId: UserId, spent: RunSpend): Promise<TenantAllowance | undefined>',
-        description: 'Add one settled run\'s spending to what its tenant has consumed.\n\nThe settlement `dsh-run-ledger` reports for a root run already covers its whole subtree, so one call per tree is the whole of a tenant\'s charge.',
-        parameters: [{ name: 'userId', description: 'the tenant that ran it.' }, { name: 'spent', description: 'what the settled root run and its descendants consumed.' }],
-        returns: 'the tenant\'s allowance after the charge, or undefined when no allowance is recorded for that tenant and the charge therefore landed nowhere.',
+        signature: 'async consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined>',
+        description: 'Add one settled run\'s spending to what its tenant has consumed, at most once.\n\nThe settlement `dsh-run-ledger` reports for a root run already covers its whole subtree, so one call per tree is the whole of a tenant\'s charge.\n\nCharging the tenant and deleting the settled run record are two writes this medium cannot make one, so a crash between them leaves a settled record a recovering runtime finds and charges again. The run\'s id is written into the same record as the charge, by the same atomic update, and a repeat of the same id is a no-op — so recovery may re-drive an interrupted settlement without knowing how far it got.\n\nThat guarantee needs one settlement at a time per tenant: two interleaved settlements leave the id of the later one, and a crash would then charge the earlier one twice. `dsh-run-scheduler` serializes them.',
+        parameters: [{ name: 'userId', description: 'the tenant that ran it.' }, { name: 'runId', description: 'the settled root run, which this charge is recorded under.' }, { name: 'spent', description: 'what that run and its descendants consumed.' }],
+        returns: 'the tenant\'s allowance after the charge — unchanged when this run was already charged — or undefined when no allowance is recorded for that tenant and the charge therefore landed nowhere.',
         throws: ['RangeError when the spend is not made of non-negative safe integers.'],
+      },
+      {
+        signature: 'runsOf(runtime: string): Promise<readonly DurableRunRecord[]>',
+        description: 'Every run one runtime has open or part-way through settling.\n\nOnly that runtime\'s own records: two runtimes sharing this medium would otherwise recover each other\'s live runs and settle them at boot.',
+        parameters: [{ name: 'runtime', description: 'the reading runtime\'s own audience identifier.' }],
+        returns: 'its records, in no defined order.',
+      },
+      {
+        signature: 'async openRun(run: DurableRunRecord): Promise<void>',
+        description: 'Write the record of one newly opened run.',
+        parameters: [{ name: 'run', description: 'the run\'s accounting, tenant, runtime, and settlement state.' }],
+        returns: 'resolution after the write reaches the medium.',
+      },
+      {
+        signature: 'async recordRunSpend(runId: RunId, spent: RunSpend): Promise<void>',
+        description: 'Update what one run has spent, leaving every other field as it is.\n\nA whole-record write would erase DurableRunRecord.absorbed, whose whole purpose is to survive until the settled child it names is deleted.',
+        parameters: [{ name: 'runId', description: 'the run being charged.' }, { name: 'spent', description: 'everything charged to it so far.' }],
+        returns: 'resolution after the write reaches the medium; a run with no record is a no-op, because only a live ledger can say it exists.',
+      },
+      {
+        signature: 'async absorbChild(parentRunId: RunId, childRunId: RunId, spent: RunSpend): Promise<void>',
+        description: 'Fold one settled child\'s charge into its parent, at most once.\n\nThe parent\'s allowance is what a child\'s spend is charged to, exactly as a tenant\'s is for a root, so this is consumeTenantAllowance one level lower and carries the same marker for the same reason: crediting the parent and deleting the child are two writes, and a crash between them must not credit the parent twice.',
+        parameters: [{ name: 'parentRunId', description: 'the delegating run.' }, { name: 'childRunId', description: 'the settled child, recorded as absorbed.' }, { name: 'spent', description: 'the child\'s charge, already capped at what it reserved.' }],
+        returns: 'resolution after the write reaches the medium; a parent with no record is a no-op.',
+      },
+      {
+        signature: 'async markRunSettled(runId: RunId, spent: RunSpend): Promise<DurableRunRecord>',
+        description: 'Write down what settling one run charges, before that charge is applied.\n\nThis is the durable decision point of a settlement: after it, a recovering runtime knows the run is finished and how much it owes, whatever else was interrupted.',
+        parameters: [{ name: 'runId', description: 'the run being settled.' }, { name: 'spent', description: 'what it and its descendants consumed.' }],
+        returns: 'the marked record, which carries the tenant the charge belongs to.',
+        throws: ['DomainError when no record is held for that run — a run open in a ledger always has one, so an absent record is a lost write rather than a run to settle silently.'],
+      },
+      {
+        signature: 'deleteRun(runId: RunId): Promise<boolean>',
+        description: 'Remove one run\'s record.',
+        parameters: [{ name: 'runId', description: 'the run to forget.' }],
+        returns: 'true when a record was removed, false when it was already absent.',
       },
     ],
   },
@@ -1360,13 +1397,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the started run, or the step that refused it, with every audit record the attempt produced.',
       },
       {
-        signature: 'charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>',
+        signature: 'async charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>',
         description: 'Record what one run consumed since its last charge.',
         parameters: [{ name: 'runId', description: 'the open run.' }, { name: 'spend', description: 'what the invocation consumed.' }],
         returns: 'the updated record and the dimensions now used up, or why the charge was refused.',
       },
       {
-        signature: 'async close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>',
+        signature: 'close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>',
         description: 'Close one run and its descendants, and charge its tenant for what the tree consumed.\n\nClosing a root is the one point a tenant\'s durable allowance moves. A child settles into its parent\'s record instead, and reaches the tenant when that parent\'s root closes, so a tree is charged once rather than once per run.',
         parameters: [{ name: 'runId', description: 'the run to settle.' }],
         returns: 'the settlement, or why it could not be closed.',
@@ -4049,6 +4086,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DshEnvironmentKey = `${typeof DSH_ENV_PREFIX}${string}`;',
   },
   {
+    name: 'DurableRunRecord',
+    declaration: 'export interface DurableRunRecord {\n    readonly record: RunRecord;\n    readonly userId: TenantId;\n    readonly runtime: string;\n    readonly settledSpent: RunSpend | undefined;\n    readonly absorbed: RunId | undefined;\n}',
+  },
+  {
     name: 'DynamicCordisPackage',
     declaration: 'export interface DynamicCordisPackage {\n    pluginId: CordisDynamicPluginId;\n    packageId: CordisDynamicPackageId;\n    pluginRunId: CordisDynamicPluginRunId;\n    name: string;\n}',
   },
@@ -4838,7 +4879,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RunLedger',
-    declaration: 'export class RunLedger {\n    openRoot(runId: RunId, budget: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    openChild(parentRunId: RunId, runId: RunId, request: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>;\n    renew(runId: RunId, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    close(runId: RunId): RunLedgerResult<RunSettlement>;\n    expire(now: number): RunSettlement[];\n    remaining(runId: RunId): RunBudget | undefined;\n    get(runId: RunId): RunRecord | undefined;\n    open(): RunRecord[];\n}',
+    declaration: 'export class RunLedger {\n    openRoot(runId: RunId, budget: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    openChild(parentRunId: RunId, runId: RunId, request: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>;\n    renew(runId: RunId, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    close(runId: RunId): RunLedgerResult<RunSettlement>;\n    expire(now: number): RunSettlement[];\n    remaining(runId: RunId): RunBudget | undefined;\n    get(runId: RunId): RunRecord | undefined;\n    open(): RunRecord[];\n    settlementOf(runId: RunId): RunSettlementPreview | undefined;\n    restore(records: readonly RunRecord[]): void;\n}',
   },
   {
     name: 'RunLedgerRejection',
@@ -4866,7 +4907,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RunSettlement',
-    declaration: 'export interface RunSettlement {\n    readonly runId: RunId;\n    readonly spent: RunSpend;\n    readonly closed: readonly RunId[];\n    readonly parentRemaining: RunBudget | undefined;\n}',
+    declaration: 'export interface RunSettlement extends RunSettlementPreview {\n    readonly parentRemaining: RunBudget | undefined;\n}',
+  },
+  {
+    name: 'RunSettlementPreview',
+    declaration: 'export interface RunSettlementPreview {\n    readonly runId: RunId;\n    readonly spent: RunSpend;\n    readonly closed: readonly RunId[];\n}',
   },
   {
     name: 'RunSpend',

@@ -12,10 +12,12 @@
  */
 
 import { z } from 'zod'
-import { ProviderAccountId, UserId } from '@deepseek-ai/dsh-control-plane'
+import { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
+import type { UserId as TenantId } from '@deepseek-ai/dsh-control-plane'
 import { CredentialKeyVersion, type CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountRecord } from '@deepseek-ai/dsh-provider-accounts'
-import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
+import type { RunRecord } from '@deepseek-ai/dsh-run-ledger'
 import type { TenantAllowance } from '@deepseek-ai/dsh-tenant-allowance'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 
@@ -77,7 +79,53 @@ const storedConsumed = z.object({
  * from it. The grant is stored beside the consumption rather than decremented
  * in place, so a restart can still report what the tenant was given.
  */
-const storedAllowance = z.object({ grant: storedGrant, consumed: storedConsumed })
+const storedAllowance = z.object({
+  grant: storedGrant,
+  consumed: storedConsumed,
+  /**
+   * The last settled run folded into `consumed`, absent before the first one.
+   *
+   * It is what makes a settlement exactly-once across a crash. Charging the
+   * tenant and deleting the settled run record are two writes this medium
+   * cannot make one, so a crash between them leaves a settled record that a
+   * recovering runtime would charge a second time. Recording which run this
+   * value already absorbed answers that question from the same record the
+   * charge lands in, and therefore from the same atomic write.
+   */
+  lastSettledRunId: z.string().optional(),
+})
+
+/**
+ * One run's durable record: the ledger's own accounting, plus the tenant it is
+ * charged to, the runtime that opened it, and the settlement it is part-way
+ * through.
+ */
+const storedRun = z.object({
+  runId: z.string(),
+  parentRunId: z.string().optional(),
+  userId: z.string(),
+  runtime: z.string(),
+  reserved: storedGrant,
+  spent: storedConsumed,
+  leaseExpiresAt: z.number(),
+  /**
+   * What settling this run charges, written before the charge is applied.
+   *
+   * Its presence is the state: a record carrying it is finished and awaiting a
+   * tenant charge that may already have happened, and a recovering runtime
+   * finishes exactly that. A separate state field could disagree with the
+   * figure it describes.
+   */
+  settledSpent: storedConsumed.optional(),
+  /**
+   * The last settled child whose spend was folded into `spent`.
+   *
+   * The same exactly-once marker `lastSettledRunId` is on an allowance, one
+   * level lower: crediting a parent and deleting the settled child are two
+   * writes, and this one makes the first of them repeatable.
+   */
+  absorbed: z.string().optional(),
+})
 
 /** The durable declaration the control-plane store opens. */
 export const controlPlaneDomainSpec = defineDomain({
@@ -86,11 +134,17 @@ export const controlPlaneDomainSpec = defineDomain({
   // Records stamped 0 are discarded on read: a bare budget cannot say how much
   // of itself was already spent, so admitting one would restore a tenant's
   // whole allowance rather than migrate it.
-  version: 1,
+  //
+  // 2 added run records and the settled-run marker on an allowance. A version 1
+  // allowance is discarded for the same reason: it cannot say which settlement
+  // it already absorbed, so a run record recovered beside it could be charged
+  // twice.
+  version: 2,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),
     allowances: domainTable<UserId, z.infer<typeof storedAllowance>>(storedAllowance),
+    runs: domainTable<RunId, z.infer<typeof storedRun>>(storedRun),
   },
 })
 
@@ -213,6 +267,94 @@ export function fromStoredAllowance(stored: StoredTenantAllowance): TenantAllowa
       tokens: stored.consumed.tokens,
       wallMs: stored.consumed.wallMs,
       costMicroUsd: stored.consumed.costMicroUsd,
+    },
+  }
+}
+
+
+/** The stored run form, for a caller writing one. */
+export type StoredRun = z.infer<typeof storedRun>
+
+/**
+ * One run as the medium holds it: the ledger's record, who it is charged to,
+ * which runtime opened it, and whether its settlement is part-way through.
+ */
+export interface DurableRunRecord {
+  /** The accounting `dsh-run-ledger` owns; restored into a ledger verbatim. */
+  readonly record: RunRecord
+  /** The tenant whose allowance this run's tree is charged to. */
+  readonly userId: TenantId
+  /**
+   * The runtime that opened this run, as its own audience identifier.
+   *
+   * Recovery reads only its own runtime's records. Two runtimes sharing one
+   * medium would otherwise settle each other's live runs at boot, and an
+   * assertion is audience-bound already, so two runtimes never share the value.
+   */
+  readonly runtime: string
+  /** What settling this run charges, once that charge has been written down. */
+  readonly settledSpent: RunSpend | undefined
+  /** The last settled child already folded into `record.spent`. */
+  readonly absorbed: RunId | undefined
+}
+
+/**
+ * Project one run onto the medium.
+ * @param run - the durable record.
+ * @returns the stored form, with absent optional fields omitted.
+ */
+export function toStoredRun(run: DurableRunRecord): StoredRun {
+  return {
+    runId: run.record.runId,
+    userId: run.userId,
+    runtime: run.runtime,
+    reserved: {
+      tokens: run.record.reserved.tokens,
+      wallMs: run.record.reserved.wallMs,
+      costMicroUsd: run.record.reserved.costMicroUsd,
+      children: run.record.reserved.children,
+    },
+    spent: {
+      tokens: run.record.spent.tokens,
+      wallMs: run.record.spent.wallMs,
+      costMicroUsd: run.record.spent.costMicroUsd,
+    },
+    leaseExpiresAt: run.record.leaseExpiresAt,
+    ...present('parentRunId', run.record.parentRunId),
+    ...present('absorbed', run.absorbed),
+    ...present('settledSpent', run.settledSpent === undefined ? undefined : {
+      tokens: run.settledSpent.tokens,
+      wallMs: run.settledSpent.wallMs,
+      costMicroUsd: run.settledSpent.costMicroUsd,
+    }),
+  }
+}
+
+/**
+ * Rebuild one run from the medium.
+ * @param stored - the validated stored run.
+ * @returns the durable record, whose `record` restores into a `RunLedger`.
+ */
+export function fromStoredRun(stored: StoredRun): DurableRunRecord {
+  return {
+    record: {
+      runId: RunId(stored.runId),
+      parentRunId: stored.parentRunId === undefined ? undefined : RunId(stored.parentRunId),
+      reserved: fromStoredGrant(stored.reserved),
+      spent: {
+        tokens: stored.spent.tokens,
+        wallMs: stored.spent.wallMs,
+        costMicroUsd: stored.spent.costMicroUsd,
+      },
+      leaseExpiresAt: stored.leaseExpiresAt,
+    },
+    userId: UserId(stored.userId),
+    runtime: stored.runtime,
+    absorbed: stored.absorbed === undefined ? undefined : RunId(stored.absorbed),
+    settledSpent: stored.settledSpent === undefined ? undefined : {
+      tokens: stored.settledSpent.tokens,
+      wallMs: stored.settledSpent.wallMs,
+      costMicroUsd: stored.settledSpent.costMicroUsd,
     },
   }
 }

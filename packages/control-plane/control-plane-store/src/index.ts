@@ -7,17 +7,17 @@
  * ports. Every one of them was a parameter no deployment could fill, because
  * nothing in the repository held the data. This service holds it.
  *
- * It answers for a tenant, never for a run. `findBudget` takes a run's claims
- * and a child run is admitted against its *parent's* remainder, which lives in
- * an in-memory `RunLedger` rather than here; a caller composes the two, and
- * this service's README shows how. Answering a child from the tenant's own
- * allowance would defeat the check that port exists for.
+ * It holds run records too, but it is not the ledger. `RunLedger` remains the
+ * accounting authority and answers what a run may still spend; what lives here
+ * is the record that survives a restart, and the settlement marker that lets an
+ * interrupted charge be finished exactly once. A child run is still admitted
+ * against its *parent's* remainder, which only a live ledger knows.
  *
  * @module @deepseek-ai/dsh-control-plane-store
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { ProviderAccountId, UserId } from '@deepseek-ai/dsh-control-plane'
+import type { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
 import type { CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
@@ -27,13 +27,17 @@ import {
   controlPlaneDomainSpec,
   fromStoredAllowance,
   fromStoredEntry,
+  fromStoredRun,
   toStoredAllowance,
   toStoredEntry,
+  toStoredRun,
+  type DurableRunRecord,
+  type StoredRun,
   type StoredTenantAllowance,
 } from './spec.ts'
 
 export { controlPlaneDomainSpec } from './spec.ts'
-export type { StoredTenantAllowance } from './spec.ts'
+export type { DurableRunRecord, StoredRun, StoredTenantAllowance } from './spec.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -57,6 +61,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
   // than defensive.
   private accounts!: KvTable<ProviderAccountId, ReturnType<typeof toStoredEntry>>
   private allowances!: KvTable<UserId, StoredTenantAllowance>
+  private runs!: KvTable<RunId, StoredRun>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -68,6 +73,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
     this.ctx.effect(() => () => domain.close(), 'controlPlaneStore.domainClose')
     this.accounts = domain.table('accounts')
     this.allowances = domain.table('allowances')
+    this.runs = domain.table('runs')
   }
 
   /**
@@ -164,23 +170,137 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
   }
 
   /**
-   * Add one settled run's spending to what its tenant has consumed.
+   * Add one settled run's spending to what its tenant has consumed, at most once.
    *
    * The settlement `dsh-run-ledger` reports for a root run already covers its
    * whole subtree, so one call per tree is the whole of a tenant's charge.
+   *
+   * Charging the tenant and deleting the settled run record are two writes this
+   * medium cannot make one, so a crash between them leaves a settled record a
+   * recovering runtime finds and charges again. The run's id is written into
+   * the same record as the charge, by the same atomic update, and a repeat of
+   * the same id is a no-op — so recovery may re-drive an interrupted settlement
+   * without knowing how far it got.
+   *
+   * That guarantee needs one settlement at a time per tenant: two interleaved
+   * settlements leave the id of the later one, and a crash would then charge
+   * the earlier one twice. `dsh-run-scheduler` serializes them.
    * @param userId - the tenant that ran it.
-   * @param spent - what the settled root run and its descendants consumed.
-   * @returns the tenant's allowance after the charge, or undefined when no
-   *   allowance is recorded for that tenant and the charge therefore landed
-   *   nowhere.
+   * @param runId - the settled root run, which this charge is recorded under.
+   * @param spent - what that run and its descendants consumed.
+   * @returns the tenant's allowance after the charge — unchanged when this run
+   *   was already charged — or undefined when no allowance is recorded for that
+   *   tenant and the charge therefore landed nowhere.
    * @throws RangeError when the spend is not made of non-negative safe integers.
    */
-  async consumeTenantAllowance(userId: UserId, spent: RunSpend): Promise<TenantAllowance | undefined> {
+  async consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined> {
     const stored = this.allowances.get(userId)
     if (stored === undefined) return undefined
+    if (stored.lastSettledRunId === runId) return fromStoredAllowance(stored)
     const charged = consumeAllowance(fromStoredAllowance(stored), spent)
-    await this.allowances.put(userId, toStoredAllowance(charged))
+    await this.allowances.put(userId, { ...toStoredAllowance(charged), lastSettledRunId: runId })
     return charged
+  }
+
+  /**
+   * Every run one runtime has open or part-way through settling.
+   *
+   * Only that runtime's own records: two runtimes sharing this medium would
+   * otherwise recover each other's live runs and settle them at boot.
+   * @param runtime - the reading runtime's own audience identifier.
+   * @returns its records, in no defined order.
+   */
+  runsOf(runtime: string): Promise<readonly DurableRunRecord[]> {
+    const owned: DurableRunRecord[] = []
+    for (const [, stored] of this.runs.entries()) {
+      if (stored.runtime === runtime) owned.push(fromStoredRun(stored))
+    }
+    return Promise.resolve(owned)
+  }
+
+  /**
+   * Write the record of one newly opened run.
+   * @param run - the run's accounting, tenant, runtime, and settlement state.
+   * @returns resolution after the write reaches the medium.
+   */
+  async openRun(run: DurableRunRecord): Promise<void> {
+    await this.runs.put(run.record.runId, toStoredRun(run))
+  }
+
+  /**
+   * Update what one run has spent, leaving every other field as it is.
+   *
+   * A whole-record write would erase {@link DurableRunRecord.absorbed}, whose
+   * whole purpose is to survive until the settled child it names is deleted.
+   * @param runId - the run being charged.
+   * @param spent - everything charged to it so far.
+   * @returns resolution after the write reaches the medium; a run with no
+   *   record is a no-op, because only a live ledger can say it exists.
+   */
+  async recordRunSpend(runId: RunId, spent: RunSpend): Promise<void> {
+    if (this.runs.get(runId) === undefined) return
+    await this.runs.update(runId, current => ({
+      ...current,
+      spent: { tokens: spent.tokens, wallMs: spent.wallMs, costMicroUsd: spent.costMicroUsd },
+    }))
+  }
+
+  /**
+   * Fold one settled child's charge into its parent, at most once.
+   *
+   * The parent's allowance is what a child's spend is charged to, exactly as a
+   * tenant's is for a root, so this is {@link consumeTenantAllowance} one level
+   * lower and carries the same marker for the same reason: crediting the parent
+   * and deleting the child are two writes, and a crash between them must not
+   * credit the parent twice.
+   * @param parentRunId - the delegating run.
+   * @param childRunId - the settled child, recorded as absorbed.
+   * @param spent - the child's charge, already capped at what it reserved.
+   * @returns resolution after the write reaches the medium; a parent with no
+   *   record is a no-op.
+   */
+  async absorbChild(parentRunId: RunId, childRunId: RunId, spent: RunSpend): Promise<void> {
+    const parent = this.runs.get(parentRunId)
+    if (parent === undefined || parent.absorbed === childRunId) return
+    await this.runs.update(parentRunId, current => ({
+      ...current,
+      spent: {
+        tokens: current.spent.tokens + spent.tokens,
+        wallMs: current.spent.wallMs + spent.wallMs,
+        costMicroUsd: current.spent.costMicroUsd + spent.costMicroUsd,
+      },
+      absorbed: childRunId,
+    }))
+  }
+
+  /**
+   * Write down what settling one run charges, before that charge is applied.
+   *
+   * This is the durable decision point of a settlement: after it, a recovering
+   * runtime knows the run is finished and how much it owes, whatever else was
+   * interrupted.
+   * @param runId - the run being settled.
+   * @param spent - what it and its descendants consumed.
+   * @returns the marked record, which carries the tenant the charge belongs to.
+   * @throws DomainError when no record is held for that run — a run open in a
+   *   ledger always has one, so an absent record is a lost write rather than a
+   *   run to settle silently.
+   */
+  async markRunSettled(runId: RunId, spent: RunSpend): Promise<DurableRunRecord> {
+    const stored = await this.runs.update(runId, current => ({
+      ...current,
+      settledSpent: { tokens: spent.tokens, wallMs: spent.wallMs, costMicroUsd: spent.costMicroUsd },
+    }))
+    return fromStoredRun(stored)
+  }
+
+  /**
+   * Remove one run's record.
+   * @param runId - the run to forget.
+   * @returns true when a record was removed, false when it was already absent.
+   */
+  deleteRun(runId: RunId): Promise<boolean> {
+    return this.runs.delete(runId)
   }
 
 }

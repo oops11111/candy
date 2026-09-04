@@ -85,6 +85,30 @@ export const released = ledger.expire(now)
 
 `expire` 会结算每一次租约已到期的运行，最早到期的先结算。仍在工作的运行用 `renew` 把自己的租约往后推，因此一份不再往前推的租约，恰好就是一次没有任何东西在驱动的运行。
 
+### 持久地结算，以及从一次重启中回来
+
+```ts
+import type { RunLedger, RunRecord } from '@deepseek-ai/dsh-run-ledger'
+
+declare const ledger: RunLedger
+declare const written: readonly RunRecord[]
+declare function writeCharge(runId: string, spent: unknown): Promise<void>
+
+export async function restart(): Promise<void> {
+  ledger.restore(written)
+  for (const record of ledger.open()) {
+    const preview = ledger.settlementOf(record.runId)
+    if (preview === undefined) continue
+    await writeCharge(preview.runId, preview.spent)
+    ledger.close(record.runId)
+  }
+}
+```
+
+`settlementOf` 报告关闭一次运行会记多少账、会覆盖哪些后代，并且不改变任何东西。必须把这笔账做成持久的调用方先写、后关闭，于是一次被拒绝的写入留下的是仍然开启的运行和毫无损失；先关闭则会丢掉那次写入本要携带的那笔账。
+
+`restore` 安装本账本并未开启过的记录。创建它们时所做的检查刻意不再重跑 —— 一个此后已经花掉大部分额度的父运行，已经腾不出空间去预留一个它早已拨过款的子运行，因此重放 `openChild` 会拒绝掉正确的记录。它拒绝一条 id 已经开启的记录，也拒绝一条指名了无任何记录提供的父运行的记录，因为对一个并不存在的父运行的占用，是没有任何东西能结算的。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -116,6 +140,10 @@ export const released = ledger.expire(now)
 
 子运行的预留是从父运行记录里做的一次扣除。如果父运行在子运行仍开启时关闭，那次扣除就没有任何运行为它作证，也不会再有任何结算把它逆转 —— 这份额度会被搁浅到整棵树结束为止。关闭整个子树，守住的正是预算算术存在的理由：每一份预留最终都会回到做出它的那次运行。
 
+### 为什么预览与结算不可能彼此不一致
+
+一次递归算出一棵子树的账，而 `settle` 调用它、随后删除它所指名的那些记录。预览不是同一套算术的第二份实现，因此把预览出来的数字写下来再关闭的调用方，写下的正是关闭所应用的东西。两份实现可以各自漂移，而那份漂移会表现为租户被按照并非其运行所消耗的数额计费。
+
 ### 为什么一个账本只持有一棵树
 
 预留是从父运行记录里做的一次扣除，因此父运行与它的子运行必须共用同一个实例。两个账本会各自认为自己持有全部额度，而委派上限在两边都不成立。
@@ -139,7 +167,8 @@ export const released = ledger.expire(now)
 
 以下是本包当前的约束，不是任务清单。
 
-- **没有任何东西持久化账本** —— 记录只在实例存活期间留在内存里，因此一次重启会丢掉每一次开启中的运行以及它们携带的占用。记录类型是调用方可以自行存储的纯数据，但这里不提供任何存储、格式或恢复顺序。
+- **没有任何东西持久化账本** —— 记录只在实例存活期间留在内存里。`settlementOf` 与 `restore` 是调用方把它们保存到别处所需要的东西，而 [`dsh-run-scheduler`](../run-scheduler/README.zh.md) 正是这么做的；这里不提供任何存储、格式或恢复顺序。
+- **`restore` 信任它拿到的东西** —— 记录被原样安装，而一片完整却错误的森林（某个预留大于其父运行曾经持有过的额度）会被接受。重新推导那些检查是错误的问题，因为通过它们时的那个状态已经不在了。
 - **没有任何东西驱动时钟** —— `expire` 是一次调用，不是一个定时器。从不调用它的部署就永远不会释放被遗弃的占用，而选择那个节奏是调度器的事。
 - **租约不会告知运行本身** —— 它约束的是一次丢失的运行能占着父运行 token 多久，而在它到期时并不会取消那次运行本身。取消工作属于启动它的那一方。
 - **一棵树，而不是一个租户** —— 一个账本持有的是一个根之下的那些运行。跨越并发的无关树的租户级视图是另一条记账缝隙，不是这一条。
