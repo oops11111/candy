@@ -107,6 +107,12 @@ A run cut short still reports the counts it did send — the translator keeps th
 
 ### The isolation check is enforced here, not merely reported
 
+### Why a failure is redacted
+
+A `result` frame's text becomes the failure message verbatim, so a CLI that quotes its credential back — in an authentication error, or any diagnostic that echoes its environment — would put the tenant's key in the session log and in front of the model. This package holds the injected key, and [`dsh-claude-cli-protocol`](../claude-cli-protocol/README.md) translates frames without knowing it, so the substitution happens here or nowhere.
+
+Only diagnostic text is rewritten. Model output is the tenant's own content, and silently editing it would corrupt a legitimate answer about, say, the shape of a key.
+
 ### Why the run carries a stdout ceiling
 
 The subprocess seam offers `'pipe'` for a caller that decodes its own protocol, and hands over the raw stream — so bounding it is this package's, and nothing else on this route bounds anything. Every byte read is accumulated: into a partial line while one is open, and into a content block once its frames parse. This route also refuses `maxTokens`, because the CLI has no output-token flag, so response length has no other ceiling either.

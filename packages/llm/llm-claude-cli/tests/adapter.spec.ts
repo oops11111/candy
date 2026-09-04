@@ -218,6 +218,37 @@ describe('a run whose stdout ends without a trailing newline', () => {
 })
 
 describe('credential isolation', () => {
+  it('takes the injected key back out of a failure that quotes it', async () => {
+    // A `result` frame's text becomes the failure message verbatim, so a CLI
+    // that echoes its credential would put it in the session log.
+    const frames = [
+      JSON.stringify({ type: 'system', subtype: 'init', apiKeySource: 'ANTHROPIC_API_KEY' }),
+      JSON.stringify({
+        type: 'result',
+        is_error: true,
+        result: `authentication failed for ${ISOLATION.apiKey}`,
+        terminal_reason: 'auth',
+      }),
+    ].join('\n')
+    const { instance } = adapter({ stdout: frames, outcome: { exitCode: 1, signal: null } })
+
+    const chunks = await collect(instance.stream(request()))
+
+    expect(JSON.stringify(chunks).includes(ISOLATION.apiKey)).toBe(false)
+    expect(chunks.at(-1)).toMatchObject({
+      reason: { failure: { message: 'authentication failed for [redacted]' } },
+    })
+  })
+
+  it('leaves model output alone', async () => {
+    // The tenant's own content, which a silent rewrite would corrupt.
+    const { instance } = adapter({ stdout: recorded('text-turn.jsonl') })
+
+    const chunks = await collect(instance.stream(request()))
+
+    expect(chunks.some(chunk => chunk.type === 'text-delta')).toBe(true)
+  })
+
   it('fails a run that writes past its stdout ceiling, and reaps it', async () => {
     // The seam hands this route the raw stream, so nothing but the adapter
     // bounds what one tenant's process makes the runtime hold.
