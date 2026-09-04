@@ -33,7 +33,7 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it } from 'vitest'
 
 declare const SECRET: string
-declare function viaSeam(script: 'ok' | 'fail' | 'open'): AsyncIterable<StreamChunk>
+declare function viaSeam(script: 'ok' | 'fail' | 'leak' | 'open'): AsyncIterable<StreamChunk>
 declare function releasedSoFar(): boolean
 
 testLlmAdapterContract({
@@ -41,6 +41,7 @@ testLlmAdapterContract({
   secret: SECRET,
   run: () => viaSeam('ok'),
   failingRun: () => viaSeam('fail'),
+  leakingRun: () => viaSeam('leak'),
   openRun: () => ({ chunks: viaSeam('open'), released: releasedSoFar }),
 }, { describe, it, expect })
 ```
@@ -55,9 +56,12 @@ testLlmAdapterContract({
 |---|---|
 | `run` | 产出内容并正常结束；当套件传入 `signal` 时遵守它 |
 | `failingRun` | 在适配器已经提交之后失败 —— 凭据被拒、配额耗尽、崩溃 |
+| `leakingRun` | 以凭据被引述在提供方自己文本里的方式失败 —— 例如一个点名了被拒密钥的错误响应体 |
 | `openRun` | 产出至少一个 chunk，然后停下而不结束，代表仍然存活的进程或连接 |
 
 `secret` 必须是适配器构造时所用的那个确切凭据。套件会在每个 chunk、每条消息与每个嵌套错误属性中搜索该字符串；若给的是占位符，它会通过，却什么也没有证明。
+
+`leakingRun` 之所以存在，是因为 `failingRun` 自己证明不了脱敏。一份从行为良好的提供方录制来的 fixture 里没有凭据，因此无论适配器是否移除凭据，那条断言都会通过 —— 它量的是 fixture。把提供方脚本成会把密钥引述回来，同一条断言就转而量适配器了。要按那个提供方真会泄漏的方式来写；把秘密注入到适配器根本不会读的地方，同样什么也证明不了。
 
 -----
 

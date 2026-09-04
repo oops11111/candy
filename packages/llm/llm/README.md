@@ -68,6 +68,8 @@ After a successful mount, `ctx.llm.listProviders()` reports the registered route
 
 Every stream ends in exactly one terminal `finish` chunk: `{ kind: 'error', failure }` on failure, `{ kind: 'aborted', failure }` on cancellation. Failures carry stable codes such as `NO_ADAPTER`, `MISSING_CREDENTIAL`, `AUTH`, `RATE_LIMIT`, and `CONTEXT_WINDOW_EXCEEDED`; consumers route on the code, never on message text. A request naming an unregistered provider fails with `NO_ADAPTER`, and a malformed credential fails with `INVALID_CREDENTIAL` instead of surfacing as an opaque fetch error. This service never re-runs a request: retrying is the job of `dsh-llm-retry` at the agent's failed-step extension point.
 
+A failure carries provider text, and provider text quotes the request that failed — including, for a rejected credential, the key it rejected. `redactApiKey` and `redactChunkApiKey` are the one definition of taking it back out, exported as plain functions the way `dsh-subprocess` exports its environment scrub, because the adapter is the only place that holds both the credential and the provider's words at once. A failure that has left an adapter no longer says which secret it was made with. Only failure text is rewritten; model output is the caller's own content.
+
 -----
 
 <a id="understand-the-implementation"></a>

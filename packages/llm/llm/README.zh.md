@@ -68,6 +68,8 @@ for await (const chunk of ctx.llm.stream({
 
 每个流都恰好以一个终止 `finish` 分片结束：失败为 `{ kind: 'error', failure }`，取消为 `{ kind: 'aborted', failure }`。失败携带稳定 code，如 `NO_ADAPTER`、`MISSING_CREDENTIAL`、`AUTH`、`RATE_LIMIT` 与 `CONTEXT_WINDOW_EXCEEDED`；消费方依据 code 路由，绝不解析消息文本。点名未注册提供方的请求会以 `NO_ADAPTER` 失败，格式错误的凭据会以 `INVALID_CREDENTIAL` 失败，而不是表现为不透明的 fetch 错误。本服务从不自行重跑请求：重试是 `dsh-llm-retry` 在 agent 失败步骤扩展点上的职责。
 
+失败携带提供方的文本，而提供方的文本会引述那次失败的请求 —— 对一次被拒绝的凭据来说，其中就包括它所拒绝的那个密钥。`redactApiKey` 与 `redactChunkApiKey` 是把它取回来的唯一定义，像 `dsh-subprocess` 导出它的环境擦洗那样作为普通函数导出，因为适配器是唯一同时握着凭据与提供方原话的地方。一个已经离开适配器的失败，不再说得出它是用哪个秘密造出来的。只有失败文本会被改写；模型输出是调用方自己的内容。
+
 -----
 
 <a id="understand-the-implementation"></a>

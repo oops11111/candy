@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assertUsableApiKey, INVALID_CREDENTIAL_CODE, normalizeApiKey } from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, INVALID_CREDENTIAL_CODE, normalizeApiKey, redactApiKey, redactChunkApiKey, type StreamChunk } from '@deepseek-ai/dsh-llm'
 
 describe('normalizeApiKey', () => {
   it('accepts a printable-ASCII key unchanged', () => {
@@ -66,5 +66,55 @@ describe('assertUsableApiKey', () => {
     } catch (error) {
       expect((error as Error).message).not.toContain('supersecret')
     }
+  })
+})
+
+describe('redactApiKey', () => {
+  it('replaces every occurrence of the credential', () => {
+    expect(redactApiKey('key sk-live-1 rejected; sk-live-1 is revoked', 'sk-live-1'))
+      .toBe('key [redacted] rejected; [redacted] is revoked')
+  })
+
+  it('leaves text that does not quote the credential alone', () => {
+    expect(redactApiKey('Authentication Fails', 'sk-live-1')).toBe('Authentication Fails')
+  })
+
+  it('matches the literal key rather than a pattern', () => {
+    // A key is opaque text; treating it as a pattern would let its own
+    // characters decide what else got replaced.
+    expect(redactApiKey('a.b and axb', 'a.b')).toBe('[redacted] and axb')
+  })
+
+  it('refuses an empty credential rather than mangling the text', () => {
+    expect(redactApiKey('nothing to hide', '')).toBe('nothing to hide')
+  })
+})
+
+describe('redactChunkApiKey', () => {
+  const KEY = 'sk-live-1'
+
+  it('redacts the failure a terminal chunk carries', () => {
+    const chunk: StreamChunk = {
+      type: 'finish',
+      reason: { kind: 'error', failure: { message: `rejected ${KEY}`, code: 'AUTH' } },
+    }
+
+    expect(redactChunkApiKey(chunk, KEY)).toEqual({
+      type: 'finish',
+      reason: { kind: 'error', failure: { message: 'rejected [redacted]', code: 'AUTH' } },
+    })
+  })
+
+  it('leaves a terminal chunk that carries no failure alone', () => {
+    const chunk: StreamChunk = { type: 'finish', reason: { kind: 'stop' } }
+
+    expect(redactChunkApiKey(chunk, KEY)).toBe(chunk)
+  })
+
+  it('leaves model output alone', () => {
+    // The caller's own content, which a silent rewrite would corrupt.
+    const chunk: StreamChunk = { type: 'text-delta', index: 0, text: `explain ${KEY}` }
+
+    expect(redactChunkApiKey(chunk, KEY)).toBe(chunk)
   })
 })

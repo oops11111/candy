@@ -27,6 +27,7 @@ import {
   type LlmProviderInfo,
   type LlmResolvedModelInfo,
   type ReasoningEffortId,
+  redactChunkApiKey,
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -82,9 +83,6 @@ export interface ClaudeCliAdapterOptions {
    */
   readonly requireCredentialIsolation: boolean
 }
-
-/** Stands in for the injected credential wherever provider diagnostics quote it back. */
-const REDACTED_CREDENTIAL = '[redacted]'
 
 /** Efforts this adapter exposes, mirroring the levels the CLI accepts. */
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
@@ -180,36 +178,10 @@ export class ClaudeCliAdapter extends LlmAdapter {
     try {
       const stdout = child.stdout
       if (stdout === undefined) throw new LlmError('claude CLI stdout was not piped', CLI_EXIT_CODE)
-      for await (const chunk of this.readRun(child, stdout, signal)) yield this.redactCredential(chunk)
+      for await (const chunk of this.readRun(child, stdout, signal)) yield redactChunkApiKey(chunk, this.options.isolation.apiKey)
       completed = true
     } finally {
       if (!completed) child.terminate()
-    }
-  }
-
-  /**
-   * Take the injected credential back out of a failure this run reports.
-   *
-   * A `result` frame's text becomes the failure message verbatim, so a CLI
-   * that quotes the key back — in an authentication error, or any diagnostic
-   * that echoes its environment — would put it in the session log and in front
-   * of the model. The boundaries page calls for provider output to reach a
-   * caller through a redacted adapter, and nothing upstream of here can do it:
-   * `dsh-claude-cli-protocol` translates frames without knowing the secret.
-   *
-   * Only diagnostic text is rewritten. Model output is the tenant's own
-   * content, and silently editing it would corrupt a legitimate answer about,
-   * say, the shape of a key.
-   */
-  private redactCredential(chunk: StreamChunk): StreamChunk {
-    if (chunk.type !== 'finish' || !('failure' in chunk.reason)) return chunk
-    const { failure } = chunk.reason
-    // The key is known non-empty: `claudeCliEnvironment` refuses an empty one
-    // while building the spawn spec, which happens before any chunk exists.
-    const scrub = (text: string): string => text.split(this.options.isolation.apiKey).join(REDACTED_CREDENTIAL)
-    return {
-      ...chunk,
-      reason: { ...chunk.reason, failure: { ...failure, message: scrub(failure.message), code: scrub(failure.code) } },
     }
   }
 

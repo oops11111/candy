@@ -99,6 +99,15 @@ testLlmAdapterContract({
     const { handle } = scripted(Readable.from([recorded('auth-failure.jsonl')]), { exitCode: 1, signal: null })
     return viaSeam(adapterOver(handle))
   },
+  leakingRun: (): AsyncIterable<StreamChunk> => {
+    // A CLI that quotes the injected key back in its terminal frame.
+    const frames = [
+      JSON.stringify({ type: 'system', subtype: 'init', apiKeySource: 'ANTHROPIC_API_KEY' }),
+      JSON.stringify({ type: 'result', is_error: true, result: `authentication failed for ${SECRET}`, terminal_reason: 'auth' }),
+    ].join('\n')
+    const { handle } = scripted(Readable.from([frames]), { exitCode: 1, signal: null })
+    return viaSeam(adapterOver(handle))
+  },
   openRun: () => {
     const { handle, terminated } = scripted(openPipe(THROUGH_FIRST_CHUNK))
     return { chunks: viaSeam(adapterOver(handle)), released: terminated }

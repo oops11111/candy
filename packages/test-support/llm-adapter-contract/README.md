@@ -33,7 +33,7 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it } from 'vitest'
 
 declare const SECRET: string
-declare function viaSeam(script: 'ok' | 'fail' | 'open'): AsyncIterable<StreamChunk>
+declare function viaSeam(script: 'ok' | 'fail' | 'leak' | 'open'): AsyncIterable<StreamChunk>
 declare function releasedSoFar(): boolean
 
 testLlmAdapterContract({
@@ -41,6 +41,7 @@ testLlmAdapterContract({
   secret: SECRET,
   run: () => viaSeam('ok'),
   failingRun: () => viaSeam('fail'),
+  leakingRun: () => viaSeam('leak'),
   openRun: () => ({ chunks: viaSeam('open'), released: releasedSoFar }),
 }, { describe, it, expect })
 ```
@@ -55,9 +56,12 @@ testLlmAdapterContract({
 |---|---|
 | `run` | Produces content and finishes normally; honors `signal` when the suite supplies one |
 | `failingRun` | Fails after the adapter committed — a rejected credential, an exhausted quota, a crash |
+| `leakingRun` | Fails with the credential quoted in the provider's own text — an error body naming the rejected key |
 | `openRun` | Produces at least one chunk, then stops without finishing, standing in for a live process or connection |
 
 `secret` must be the exact credential the adapter was constructed with. The suite searches every chunk, message, and nested error property for that string; given a placeholder it would pass while proving nothing.
+
+`leakingRun` exists because `failingRun` cannot prove redaction on its own. A fixture recorded from a well-behaved provider contains no credential, so the assertion passes whether or not the adapter removes one — it measures the fixture. Scripting the provider to quote the key back turns the same assertion onto the adapter. Script it the way that provider would leak; injecting the secret somewhere the adapter never reads proves nothing either.
 
 -----
 

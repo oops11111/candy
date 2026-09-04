@@ -44,6 +44,7 @@ import {
   LlmAdapter,
   LlmError,
   ReasoningEffortId,
+  redactChunkApiKey,
 } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions,
@@ -393,7 +394,9 @@ export class PiAiAdapter extends LlmAdapter {
             exhausted = true
             return
           }
-          yield result.value
+          // The SDK's failure text quotes the request that failed, and a
+          // rejected-credential error may name the key it rejected.
+          yield apiKey === undefined ? result.value : redactChunkApiKey(result.value, apiKey)
         }
       } finally {
         if (!exhausted) {

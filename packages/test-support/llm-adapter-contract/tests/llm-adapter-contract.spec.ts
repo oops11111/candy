@@ -69,6 +69,7 @@ function subject(overrides: Partial<LlmAdapterContractSubject> = {}): LlmAdapter
     secret: SECRET,
     run: () => conformingRun(),
     failingRun: () => conformingRun(),
+    leakingRun: () => conformingRun(),
     openRun: () => ({ chunks: neverEndingRun(), released: () => true }),
     ...overrides,
   }

@@ -71,6 +71,12 @@ testLlmAdapterContract({
     status: 401,
     body: '{"error":{"message":"Authentication Fails"}}',
   }]),
+  leakingRun: () => streamed([{
+    kind: 'http-error',
+    status: 401,
+    // A provider that quotes the rejected credential back in its error body.
+    body: JSON.stringify({ error: { message: `Authentication Fails for key ${SECRET}` } }),
+  }]),
   openRun: () => {
     let released = false
     // The first two events open a text block, so a consumer has a chunk to

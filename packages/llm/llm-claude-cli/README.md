@@ -111,7 +111,7 @@ A run cut short still reports the counts it did send — the translator keeps th
 
 A `result` frame's text becomes the failure message verbatim, so a CLI that quotes its credential back — in an authentication error, or any diagnostic that echoes its environment — would put the tenant's key in the session log and in front of the model. This package holds the injected key, and [`dsh-claude-cli-protocol`](../claude-cli-protocol/README.md) translates frames without knowing it, so the substitution happens here or nowhere.
 
-Only diagnostic text is rewritten. Model output is the tenant's own content, and silently editing it would corrupt a legitimate answer about, say, the shape of a key.
+Only diagnostic text is rewritten. Model output is the tenant's own content, and silently editing it would corrupt a legitimate answer about, say, the shape of a key. The substitution itself is [`dsh-llm`](../llm/README.md)'s `redactChunkApiKey`, so every adapter on the seam removes a credential the same way.
 
 ### Why the run carries a stdout ceiling
 

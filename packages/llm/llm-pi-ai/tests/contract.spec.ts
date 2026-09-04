@@ -58,6 +58,11 @@ testLlmAdapterContract({
     status: 401,
     body: '{"error":{"message":"Incorrect API key provided"}}',
   }]),
+  leakingRun: () => streamed([{
+    status: 401,
+    // A provider that quotes the rejected credential back in its error body.
+    body: JSON.stringify({ error: { message: `Incorrect API key provided: ${SECRET}` } }),
+  }]),
   openRun: () => {
     let close: (() => boolean) | undefined
     // The first two events open a text block, so a consumer has a chunk to
