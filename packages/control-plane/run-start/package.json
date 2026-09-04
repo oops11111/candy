@@ -1,0 +1,51 @@
+{
+  "name": "@deepseek-ai/dsh-run-start",
+  "description": "The Candy control plane's composition root: admit a request, fund the run, place it in its pool, and undo the funding when the placement fails",
+  "version": "0.1.2-alpha.5",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/control-plane/run-start"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-control-plane": "workspace:^",
+    "@deepseek-ai/dsh-credential-vault": "workspace:^",
+    "@deepseek-ai/dsh-run-admission": "workspace:^",
+    "@deepseek-ai/dsh-run-budget": "workspace:^",
+    "@deepseek-ai/dsh-run-ledger": "workspace:^",
+    "@deepseek-ai/dsh-runtime-pool": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-brand": "workspace:^",
+    "@deepseek-ai/dsh-control-plane": "workspace:^",
+    "@deepseek-ai/dsh-credential-vault": "workspace:^",
+    "@deepseek-ai/dsh-execution-assertion": "workspace:^",
+    "@deepseek-ai/dsh-run-admission": "workspace:^",
+    "@deepseek-ai/dsh-run-budget": "workspace:^",
+    "@deepseek-ai/dsh-run-ledger": "workspace:^",
+    "@deepseek-ai/dsh-run-replay": "workspace:^",
+    "@deepseek-ai/dsh-runtime-pool": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^"
+  }
+}

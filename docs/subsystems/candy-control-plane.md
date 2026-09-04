@@ -2,9 +2,9 @@
 
 English | [中文](candy-control-plane.zh.md)
 
-The [control-plane group](../../packages/control-plane) is what turns a request from an untrusted client into one provider process that can only spend one tenant's money in one tenant's directory. It is ten packages and no running Cordis service: every package is imported directly, and the OAuth, device pairing, and account store that would make it a service belong to the [proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md), not to this repository yet.
+The [control-plane group](../../packages/control-plane) is what turns a request from an untrusted client into one provider process that can only spend one tenant's money in one tenant's directory. It is eleven packages and no running Cordis service: every package is imported directly, and the OAuth, device pairing, and account store that would make it a service belong to the [proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md), not to this repository yet.
 
-That absence is the reason this page exists. The packages compose in exactly one order, each step's output is the next step's only tenant-specific input, and nothing in the repository performs the sequence outside its tests. This page is that sequence. [Candy Runtime Boundaries](../candy-runtime-boundaries.md) owns the trust boundaries and abuse cases the design answers to.
+That absence is the reason this page exists. The packages compose in exactly one order, and each step's output is the next step's only tenant-specific input. This page is that sequence; [`dsh-run-start`](../../packages/control-plane/run-start) performs the first half of it — Admit, Open and Place — and owns the rollback between them, because opening a run's funding before placing it means a refused placement would otherwise leave a parent short until the lease expires. [Candy Runtime Boundaries](../candy-runtime-boundaries.md) owns the trust boundaries and abuse cases the design answers to.
 
 ## The order of operations
 

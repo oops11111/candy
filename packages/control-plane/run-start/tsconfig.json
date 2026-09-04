@@ -1,0 +1,20 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../control-plane" },
+    { "path": "../credential-vault" },
+    { "path": "../run-admission" },
+    { "path": "../run-budget" },
+    { "path": "../run-ledger" },
+    { "path": "../runtime-pool" }
+  ]
+}

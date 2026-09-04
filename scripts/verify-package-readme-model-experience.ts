@@ -40,6 +40,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/control-plane/run-budget': 'The package only does arithmetic over allowances; nothing it produces reaches a model request.',
   'packages/control-plane/run-ledger': 'The package only records what open runs hold and have spent; nothing it produces reaches a model request.',
   'packages/control-plane/run-replay': 'The package only records which nonces were spent; nothing it produces reaches a model request.',
+  'packages/control-plane/run-start': 'The package composes admission, funding and placement; nothing it produces reaches a model request.',
   'packages/control-plane/runtime-pool': 'The package only derives an isolation key and a directory path; nothing it produces reaches a model request.',
   'packages/util/brand': 'The package only constructs plain string values and registers nothing model-facing.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',

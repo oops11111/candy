@@ -2,9 +2,9 @@
 
 [English](candy-control-plane.md) | 中文
 
-[control-plane 组](../../packages/control-plane)负责把一个来自不受信任客户端的请求，变成一个只能花某一个租户的钱、只能待在某一个租户目录里的提供方进程。它由十个包组成，没有正在运行的 Cordis 服务：每个包都被直接导入，而那些会让它成为服务的 OAuth、设备配对与账户存储属于[提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md)，尚不属于本仓库。
+[control-plane 组](../../packages/control-plane)负责把一个来自不受信任客户端的请求，变成一个只能花某一个租户的钱、只能待在某一个租户目录里的提供方进程。它由十一个包组成，没有正在运行的 Cordis 服务：每个包都被直接导入，而那些会让它成为服务的 OAuth、设备配对与账户存储属于[提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md)，尚不属于本仓库。
 
-正是这项缺席让本页面有存在的必要。这些包只能按一种顺序组合，每一步的输出都是下一步唯一与租户相关的输入，而仓库里除了它的测试之外没有任何东西执行这套序列。本页面就是那套序列。[Candy 运行时边界](../candy-runtime-boundaries.zh.md)拥有本设计所要应对的信任边界与滥用场景。
+正是这项缺席让本页面有存在的必要。这些包只能按一种顺序组合，每一步的输出都是下一步唯一与租户相关的输入。本页面就是那套序列；[`dsh-run-start`](../../packages/control-plane/run-start) 执行它的前半段 —— 准入、开启与放置 —— 并拥有它们之间的回滚，因为在放置之前就为一次运行拨款，意味着一次被拒的放置否则会让父运行一直少掉一份，直到租约到期。[Candy 运行时边界](../candy-runtime-boundaries.zh.md)拥有本设计所要应对的信任边界与滥用场景。
 
 ## 操作顺序
 
