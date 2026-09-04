@@ -72,6 +72,7 @@ export const adapter = new ClaudeCliAdapter({
   cwd: run.poolRoot,
   isolation: { home: run.poolRoot, apiKey: Buffer.from(run.secret).toString('utf8') },
   graceMs: 5_000,
+  maxOutputBytes: 16 * 1024 * 1024,
   spawn: spec => subprocess.spawn(spec),
   requireCredentialIsolation: true,
 })
@@ -105,6 +106,12 @@ CLI 的终止帧结束一次正常的运行。当 stdout 在没有终止帧的�
 被中断的运行仍然报告它已经发送过的计数 —— 翻译器保留最后一次 `message_delta` 的用量，正是为了让被杀死的进程有账可算，而不是悄悄免费。
 
 ### 隔离检查在这里被强制执行，而不只是被报告
+
+### 为什么这次运行带着一个 stdout 上限
+
+子进程缝隙为自行解码协议的调用方提供 `'pipe'`，并把原始流交出来 —— 因此界定它是本包的事，而这条路由上没有任何别的东西界定任何东西。读进来的每一个字节都会被累积：在一行尚未结束时累积进那半行，在它的帧解析成功后累积进一个内容块。这条路由还会拒绝 `maxTokens`，因为 CLI 没有输出 token 的开关，于是响应长度也没有别的上限。
+
+`maxOutputBytes` 就是那个上限，按字节而不是按码元计数，因此它界定的是运行时真正持有的东西。超过它会终止进程并让这次运行失败，而不是截断：截断适合模型要读的工具结果，而一个写了一半的帧根本解析不了，因此一个被截短的响应看上去反倒像是完整的。默认值是 16 MiB —— 录制到的运行把一次简短的对话装在 8 KB 里，而一个最大的响应仍在约一兆字节以内，因为文本在 `result` 帧里被带一次，在各个增量里又被带一次。
 
 `dsh-claude-cli-protocol` 能说出 CLI 是否用注入的密钥完成了认证；但只有本包拥有一次可供失败的运行。在 `requireCredentialIsolation`（默认开启）下，一个指向其他凭据来源的 init 帧会在流中途抛出，于是一次触及了宿主自身登录态的运行会停下，而不是完成并记账给一个从未提出请求的人。
 

@@ -57,6 +57,7 @@ function adapter(script?: FakeProcess, overrides: Partial<ClaudeCliAdapterOption
       cwd: '/workspace',
       isolation: ISOLATION,
       graceMs: 5_000,
+      maxOutputBytes: 1_000_000,
       spawn,
       requireCredentialIsolation: false,
       ...overrides,
@@ -217,6 +218,61 @@ describe('a run whose stdout ends without a trailing newline', () => {
 })
 
 describe('credential isolation', () => {
+  it('fails a run that writes past its stdout ceiling, and reaps it', async () => {
+    // The seam hands this route the raw stream, so nothing but the adapter
+    // bounds what one tenant's process makes the runtime hold.
+    let terminated = false
+    const flood = Readable.from(['x'.repeat(64), 'y'.repeat(64)])
+    const { spawn } = fakeSpawn({ stdout: flood, hang: true })
+    const instance = new ClaudeCliAdapter({
+      executable: '/usr/bin/claude',
+      cwd: '/workspace',
+      isolation: ISOLATION,
+      graceMs: 5_000,
+      maxOutputBytes: 100,
+      spawn: spec => ({ ...spawn(spec), terminate: () => { terminated = true } }),
+      requireCredentialIsolation: false,
+    })
+
+    const chunks = await collect(instance.stream(request()))
+
+    expect(chunks.at(-1)).toEqual({
+      type: 'finish',
+      reason: { kind: 'error', failure: { message: expect.stringContaining('more than 100 bytes'), code: 'OUTPUT_LIMIT' } },
+    })
+    expect(terminated).toBe(true)
+  })
+
+  it('counts the ceiling in bytes, not code units', async () => {
+    // Four code units of astral text are sixteen bytes; a ceiling read in
+    // code units would admit four times what it promised to hold.
+    const { spawn } = fakeSpawn({ stdout: Readable.from(['\u{1f600}'.repeat(4)]), hang: true })
+    const instance = new ClaudeCliAdapter({
+      executable: '/usr/bin/claude',
+      cwd: '/workspace',
+      isolation: ISOLATION,
+      graceMs: 5_000,
+      maxOutputBytes: 12,
+      spawn,
+      requireCredentialIsolation: false,
+    })
+
+    const chunks = await collect(instance.stream(request()))
+
+    expect(chunks.at(-1)).toMatchObject({ reason: { failure: { code: 'OUTPUT_LIMIT' } } })
+  })
+
+  it('admits a run that stays inside its ceiling', async () => {
+    const turn = recorded('text-turn.jsonl')
+    const { instance } = adapter({ stdout: turn, outcome: { exitCode: 0, signal: null } }, {
+      maxOutputBytes: Buffer.byteLength(turn, 'utf8'),
+    })
+
+    const chunks = await collect(instance.stream(request()))
+
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
   it('checks a run whose init frame arrived in an unterminated final line', async () => {
     const init = recorded('text-turn.jsonl').split('\n')
       .find(line => line.includes('"subtype":"init"')) ?? ''
@@ -260,6 +316,7 @@ describe('a process the seam gave no stdout pipe', () => {
       cwd: '/workspace',
       isolation: ISOLATION,
       graceMs: 5_000,
+      maxOutputBytes: 1_000_000,
       spawn: spec => ({ ...spawn(spec), stdout: undefined, terminate: () => { terminated = true } }),
       requireCredentialIsolation: false,
     })

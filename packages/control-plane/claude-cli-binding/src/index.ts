@@ -35,6 +35,14 @@ export interface ClaudeCliDeployment {
   readonly executable: string
   /** Process-tree termination grace in milliseconds. */
   readonly graceMs: number
+  /**
+   * Most stdout bytes one run may write before it is failed and reaped.
+   *
+   * A host fact like the two above: it bounds what one tenant's process can
+   * make a shared runtime hold, so it is the same for every tenant here and is
+   * not read from the admission.
+   */
+  readonly maxOutputBytes: number
 }
 
 /**
@@ -130,6 +138,7 @@ export function bindClaudeCliRun(
       cwd: run.poolRoot,
       isolation: { home: run.poolRoot, apiKey: decoded.key },
       graceMs: deployment.graceMs,
+      maxOutputBytes: deployment.maxOutputBytes,
       maxBudgetUsd: allowance.costMicroUsd / MICRO_USD_PER_USD,
       // Not a deployment choice. A run that authenticated with anything but the
       // injected key is spending a tenant that did not authorize it, and every

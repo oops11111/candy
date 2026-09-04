@@ -960,6 +960,8 @@ export interface Config {
   maxBudgetUsd?: number
   /** Fail a run the CLI authenticated with another credential; defaults to true. */
   requireCredentialIsolation?: boolean
+  /** Most stdout bytes one run may write before it is failed; defaults to 16 MiB. */
+  maxOutputBytes?: number
 }
 ```
 

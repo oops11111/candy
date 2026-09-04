@@ -42,6 +42,8 @@ export interface Config {
   maxBudgetUsd?: number
   /** Fail a run the CLI authenticated with another credential; defaults to true. */
   requireCredentialIsolation?: boolean
+  /** Most stdout bytes one run may write before it is failed; defaults to 16 MiB. */
+  maxOutputBytes?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -52,12 +54,26 @@ export const Config: z<Config> = z.object({
   graceMs: z.number().step(1).min(1).default(5_000),
   maxBudgetUsd: z.number().min(Number.MIN_VALUE),
   requireCredentialIsolation: z.boolean().default(true),
+  maxOutputBytes: z.number().step(1).min(1).default(16 * 1024 * 1024),
 })
 
 /** Defaults a composition may omit, named once here rather than inside `apply`. */
 export const DEFAULT_EXECUTABLE = 'claude'
 /** Environment variable a composition reads its credential from by default. */
 export const DEFAULT_API_KEY_ENV = 'ANTHROPIC_API_KEY'
+/**
+ * Stdout ceiling a composition gets when it names none: 16 MiB.
+ *
+ * Recorded runs of this CLI frame a short text turn in 8 KB of stdout, and the
+ * response text is the only term that grows — it is carried once in the
+ * `result` frame and again across the `stream_event` deltas, so stdout runs to
+ * roughly twice the text plus JSON escaping. A maximal single response is a
+ * few hundred kilobytes of text, which puts a legitimate run under about a
+ * megabyte. This leaves better than an order of magnitude of headroom while
+ * still bounding a runaway, and a deployment that knows its own ceiling sets
+ * one.
+ */
+export const DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 /** Process-tree termination grace a composition gets when it names none. */
 export const DEFAULT_GRACE_MS = 5_000
 
@@ -90,6 +106,7 @@ export function resolveAdapterOptions(
     graceMs: config.graceMs ?? DEFAULT_GRACE_MS,
     maxBudgetUsd: config.maxBudgetUsd,
     requireCredentialIsolation: config.requireCredentialIsolation ?? true,
+    maxOutputBytes: config.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
   }
 }
 

@@ -22,7 +22,7 @@ import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 import { openRuntimePool } from '@deepseek-ai/dsh-runtime-pool'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { bindClaudeCliRun, type ClaudeCliDeployment } from '../src/index.ts'
-import { admitFor } from './admit.ts'
+import { admitFor, MAX_OUTPUT_BYTES } from './admit.ts'
 
 /**
  * A stand-in `claude` that answers with the environment it was handed.
@@ -150,7 +150,7 @@ async function runFor(
   // Creating the pool directory is the deployment's, not the binding's; a
   // launch into a directory nobody made fails at spawn.
   await openRuntimePool(join(root, 'pools'), run.poolKey)
-  const deployment: ClaudeCliDeployment = { executable: process.execPath, graceMs: 2_000 }
+  const deployment: ClaudeCliDeployment = { executable: process.execPath, graceMs: 2_000, maxOutputBytes: MAX_OUTPUT_BYTES }
   const result = bindClaudeCliRun(run, deployment, run.budget)
   if (!result.bound) throw new Error(`the fixture run would not bind: ${result.rejection}`)
   const adapter = new ClaudeCliAdapter({
@@ -186,7 +186,7 @@ async function startHangingRun(signal?: AbortSignal): Promise<{
 }> {
   const run = await admitted('sk-ant-alice')
   await openRuntimePool(join(root, 'pools'), run.poolKey)
-  const result = bindClaudeCliRun(run, { executable: process.execPath, graceMs: 2_000 }, run.budget)
+  const result = bindClaudeCliRun(run, { executable: process.execPath, graceMs: 2_000, maxOutputBytes: MAX_OUTPUT_BYTES }, run.budget)
   if (!result.bound) throw new Error(`the fixture run would not bind: ${result.rejection}`)
   const pidFile = join(root, 'stand-in-pids.json')
   const adapter = new ClaudeCliAdapter({

@@ -57,6 +57,24 @@ export interface ClaudeCliAdapterOptions {
   /** Per-invocation spend ceiling in US dollars, when the deployment sets one. */
   readonly maxBudgetUsd?: number | undefined
   /**
+   * Most stdout bytes one run may write before it is failed and its process
+   * terminated.
+   *
+   * The seam hands this route the raw stream — `stdout: 'pipe'` is documented
+   * as the caller's to decode and therefore the caller's to bound — and every
+   * byte read is accumulated, into a partial line while one is open and into a
+   * content block once its frames parse. Without a ceiling one run's output
+   * exhausts a runtime that other tenants share, and this route has no other
+   * bound on response length: the CLI has no output-token flag, so
+   * {@link projectRequest} refuses `maxTokens` rather than passing it on.
+   *
+   * Exceeding it fails the run instead of truncating. Truncation is right for
+   * a tool result a model reads and wrong for a protocol stream: a half-written
+   * frame does not parse, and a response cut short would otherwise be delivered
+   * as though it were complete.
+   */
+  readonly maxOutputBytes: number
+  /**
    * Fail a run whose CLI reports authenticating with anything but the injected
    * key. A multi-tenant deployment sets this: a run that reached another
    * credential is spending someone other than the tenant, and finishing it
@@ -189,9 +207,26 @@ export class ClaudeCliAdapter extends LlmAdapter {
     }
 
     let finished = false
+    let bytes = 0
     stdout.setEncoding('utf8')
     for await (const chunk of stdout) {
-      const batch = consume(decoder.push(chunk as string))
+      const text = chunk as string
+      // Bytes, not code units: the ceiling bounds what the runtime holds.
+      bytes += Buffer.byteLength(text, 'utf8')
+      if (bytes > this.options.maxOutputBytes) {
+        // Nothing else reaps the child here: this generator returns normally,
+        // so `runProcess` treats the run as completed and leaves it alone.
+        child.terminate()
+        yield* translator.end({
+          kind: 'error',
+          failure: {
+            message: `claude CLI wrote more than ${String(this.options.maxOutputBytes)} bytes of stdout`,
+            code: 'OUTPUT_LIMIT',
+          },
+        })
+        return
+      }
+      const batch = consume(decoder.push(text))
       finished = finished || batch.finished
       yield* batch.chunks
     }

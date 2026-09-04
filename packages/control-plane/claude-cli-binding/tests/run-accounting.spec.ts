@@ -22,7 +22,7 @@ import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 import { openRuntimePool } from '@deepseek-ai/dsh-runtime-pool'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { bindClaudeCliRun } from '../src/index.ts'
-import { admitFor, BUDGET, NOW } from './admit.ts'
+import { admitFor, BUDGET, MAX_OUTPUT_BYTES, NOW } from './admit.ts'
 
 /** A stand-in that reports the ceiling it was given and bills a fixed amount. */
 const STAND_IN = `
@@ -79,7 +79,7 @@ function spendOf(usage: TokenUsage, wallMs: number): RunSpend {
 
 /** Run one invocation under the given allowance, and report what it billed. */
 async function invoke(run: AdmittedRun, allowance: RunBudget): Promise<{ ceiling: string; usage: TokenUsage }> {
-  const result = bindClaudeCliRun(run, { executable: process.execPath, graceMs: 2_000 }, allowance)
+  const result = bindClaudeCliRun(run, { executable: process.execPath, graceMs: 2_000, maxOutputBytes: MAX_OUTPUT_BYTES }, allowance)
   if (!result.bound) throw new Error(`the fixture run would not bind: ${result.rejection}`)
   const adapter = new ClaudeCliAdapter({
     ...result.binding,

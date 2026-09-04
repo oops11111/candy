@@ -23,6 +23,9 @@ export const NOW = 1_800_000_000_000
 /** How long a fixture assertion is valid for. */
 export const LIFETIME = 60_000
 
+/** Stdout ceiling every fixture deployment applies; large enough that no case here reaches it. */
+export const MAX_OUTPUT_BYTES = 1_000_000
+
 /** The allowance the fixture budget store answers with. */
 export const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 2_500_000, children: 4 }
 

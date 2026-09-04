@@ -72,6 +72,7 @@ export const adapter = new ClaudeCliAdapter({
   cwd: run.poolRoot,
   isolation: { home: run.poolRoot, apiKey: Buffer.from(run.secret).toString('utf8') },
   graceMs: 5_000,
+  maxOutputBytes: 16 * 1024 * 1024,
   spawn: spec => subprocess.spawn(spec),
   requireCredentialIsolation: true,
 })
@@ -105,6 +106,12 @@ The CLI's terminal frame ends a normal run. When stdout closes without one, the 
 A run cut short still reports the counts it did send — the translator keeps the last `message_delta` usage precisely so a killed process is accounted for rather than silently free.
 
 ### The isolation check is enforced here, not merely reported
+
+### Why the run carries a stdout ceiling
+
+The subprocess seam offers `'pipe'` for a caller that decodes its own protocol, and hands over the raw stream — so bounding it is this package's, and nothing else on this route bounds anything. Every byte read is accumulated: into a partial line while one is open, and into a content block once its frames parse. This route also refuses `maxTokens`, because the CLI has no output-token flag, so response length has no other ceiling either.
+
+`maxOutputBytes` is that ceiling, counted in bytes rather than code units so it bounds what the runtime actually holds. Exceeding it terminates the process and fails the run rather than truncating: truncation suits a tool result a model reads, and a half-written frame does not parse, so a response cut short would otherwise arrive looking complete. The default is 16 MiB — recorded runs frame a short turn in 8 KB, and a maximal response stays under about a megabyte, since the text is carried once in the `result` frame and again across the deltas.
 
 `dsh-claude-cli-protocol` can say whether the CLI authenticated with the injected key; only this package owns a run to fail. With `requireCredentialIsolation` (the default), an init frame naming another credential source throws mid-stream, so a run that reached the host's own login stops instead of completing and billing someone who never asked for it.
 

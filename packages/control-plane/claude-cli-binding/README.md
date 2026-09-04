@@ -36,7 +36,7 @@ import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
 declare const run: AdmittedRun
 declare const spawn: ClaudeCliAdapterOptions['spawn']
 
-const deployment = { executable: '/opt/candy/bin/claude', graceMs: 5_000 }
+const deployment = { executable: '/opt/candy/bin/claude', graceMs: 5_000, maxOutputBytes: 16 * 1024 * 1024 }
 const result = bindClaudeCliRun(run, deployment, run.budget)
 
 export const options: ClaudeCliAdapterOptions | undefined = result.bound
