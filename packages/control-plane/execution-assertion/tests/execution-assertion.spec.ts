@@ -161,10 +161,28 @@ describe('admitExecutionAssertion', () => {
       .toEqual({ admitted: false, rejection: 'signature' })
   })
 
-  it('rejects a tampered tenant even when every other claim is untouched', () => {
+  it.each([
+    ['tenant', { userId: UserId('user-2') }],
+    ['device', { deviceId: DeviceId('device-2') }],
+    ['account', { accountId: ProviderAccountId('account-2') }],
+    ['provider', { provider: 'claude-cli' } as const],
+    ['workspace grant', { workspaceGrantId: WorkspaceGrantId('grant-2') }],
+    ['conversation', { conversationId: ConversationId('conversation-2') }],
+    ['session', { sessionId: brandString<SessionId>('session-2') }],
+    ['run', { runId: RunId('run-2') }],
+    ['parent run', { parentRunId: RunId('run-0') }],
+    ['nonce', { nonce: 'nonce-2' }],
+    ['issuer', { issuer: 'another-control-plane' }],
+    ['audience', { audience: 'another-runtime' }],
+    ['issued instant', { issuedAt: ISSUED_AT - 1 }],
+    ['expiry', { expiresAt: ISSUED_AT + LIFETIME + 1 }],
+  ])('rejects a forged %s while every other claim is untouched', (_claim, overrides) => {
+    // Every claim is inside the MAC, so none of them can be swapped under a
+    // signature the control plane produced. A claim moved out of the signed
+    // payload would keep the tenant case passing while becoming forgeable, so
+    // the whole set is pinned rather than one member of it.
     const [version, , signature] = mintExecutionAssertion(claims(), SECRET).split('.')
-    const forged = Buffer.from(JSON.stringify(claims({ userId: UserId('user-2') })), 'utf8')
-      .toString('base64url')
+    const forged = Buffer.from(JSON.stringify(claims(overrides)), 'utf8').toString('base64url')
 
     expect(admitExecutionAssertion(
       `${String(version)}.${forged}.${String(signature)}`, SECRET, EXPECTATION, ISSUED_AT,

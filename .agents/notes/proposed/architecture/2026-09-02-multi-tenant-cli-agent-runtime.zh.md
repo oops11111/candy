@@ -92,10 +92,12 @@ flowchart LR
 
 ### R0 — Boundary and threat model
 
-- [ ] 记录继承的 Harness 能力以及归 Candy 所有的控制平面职责。
-- [ ] 建模凭据窃取、租户混淆、路径遍历、事件泄漏、进程逃逸、重放和 confused-deputy 威胁。
-- [ ] 定义浏览器、手机客户端、控制平面、Candy 运行时、提供方进程和 Windows 配套程序的信任边界。
-- [ ] 为后续任务增加架构决策和滥用场景评审门禁。
+R0 已交付为 [Candy 运行时边界](../../../../docs/candy-runtime-boundaries.zh.md)，后续每一项任务都对它负责。
+
+- [x] 记录继承的 Harness 能力以及归 Candy 所有的控制平面职责 —— 见其 *Inherited Harness Capabilities* 与 *Candy-Owned Control Plane* 两节，其中包括这条规则：Candy 附着到既有的 Harness 边界上，而不是分叉出一份平行实现。
+- [x] 建模凭据窃取、租户混淆、路径遍历、事件泄漏、进程逃逸、重放和 confused-deputy 威胁 —— 其 *Abuse Cases* 一节为每一种威胁各写了一段。
+- [x] 定义浏览器、手机客户端、控制平面、Candy 运行时、提供方进程和 Windows 配套程序的信任边界 —— 见其 *Trust Boundaries* 一节。
+- [x] 为后续任务增加架构决策和滥用场景评审门禁 —— 其 *Review Requirements* 一节为 R1 到 R6 每一项任务各写了一条，而上面的交付表承载对应的退出证据。R1 的门禁已满足：`dsh-run-admission` 的测试集证明跨租户读取快速失败、已吊销账户无法开启新工作，`redactCredential` 负责脱敏读取，而每一个身份声明都被证明位于断言的 MAC 之内，而不只是租户 —— 一个被移到签名之外的声明，会让只测一个声明的用例继续通过，同时变得可伪造。
 
 ### R1 — Tenant and account foundation
 

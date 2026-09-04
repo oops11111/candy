@@ -92,10 +92,12 @@ The runtime pool key is `userId + provider + accountId`. Workers may share immut
 
 ### R0 — Boundary and threat model
 
-- [ ] Record the inherited Harness capabilities and the Candy-owned control-plane responsibilities.
-- [ ] Model credential theft, tenant confusion, path traversal, event leakage, process escape, replay, and confused-deputy threats.
-- [ ] Define trust boundaries for browser, mobile client, control plane, Candy runtime, provider process, and Windows companion.
-- [ ] Add architecture-decision and abuse-case review gates to subsequent tasks.
+R0 is delivered as [Candy Runtime Boundaries](../../../../docs/candy-runtime-boundaries.md), which every later task answers to.
+
+- [x] Record the inherited Harness capabilities and the Candy-owned control-plane responsibilities — its *Inherited Harness Capabilities* and *Candy-Owned Control Plane* sections, including the rule that Candy attaches to an existing Harness boundary rather than forking a parallel implementation.
+- [x] Model credential theft, tenant confusion, path traversal, event leakage, process escape, replay, and confused-deputy threats — its *Abuse Cases* section carries one paragraph per threat.
+- [x] Define trust boundaries for browser, mobile client, control plane, Candy runtime, provider process, and Windows companion — its *Trust Boundaries* section.
+- [x] Add architecture-decision and abuse-case review gates to subsequent tasks — its *Review Requirements* section states one per task, R1 through R6, and the delivery table above carries the matching exit evidence. R1's gate is met: cross-tenant reads fail closed and revoked accounts cannot start new work in `dsh-run-admission`'s suite, reads are redacted by `redactCredential`, and every identity claim is proven to sit inside the assertion's MAC rather than only the tenant — a claim moved outside the signature would leave a single-claim test passing while becoming forgeable.
 
 ### R1 — Tenant and account foundation
 
