@@ -728,6 +728,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'its records, in no defined order.',
       },
       {
+        signature: 'runsOfSession(runtime: string, sessionId: SessionId): readonly DurableRunRecord[]',
+        description: 'Every run of this runtime that drives one harness session.\n\nA model request carries the session it was assembled for, so this is the lookup that turns a stream into the run it is charged to. More than one result means the control plane minted two runs for one session, which is a bookkeeping error rather than a choice a caller may resolve.',
+        parameters: [{ name: 'runtime', description: 'the reading runtime\'s own audience identifier.' }, { name: 'sessionId', description: 'the session a request names.' }],
+        returns: 'the matching records, in no defined order.',
+      },
+      {
         signature: 'async openRun(run: DurableRunRecord): Promise<void>',
         description: 'Write the record of one newly opened run.',
         parameters: [{ name: 'run', description: 'the run\'s accounting, tenant, runtime, and settlement state.' }],
@@ -4122,7 +4128,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DurableRunRecord',
-    declaration: 'export interface DurableRunRecord {\n    readonly record: RunRecord;\n    readonly userId: TenantId;\n    readonly runtime: string;\n    readonly settledSpent: RunSpend | undefined;\n    readonly absorbed: RunId | undefined;\n}',
+    declaration: 'export interface DurableRunRecord {\n    readonly record: RunRecord;\n    readonly userId: TenantId;\n    readonly sessionId: SessionId;\n    readonly runtime: string;\n    readonly settledSpent: RunSpend | undefined;\n    readonly absorbed: RunId | undefined;\n}',
   },
   {
     name: 'DynamicCordisPackage',

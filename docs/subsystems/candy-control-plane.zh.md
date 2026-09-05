@@ -181,6 +181,19 @@ async consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Pro
 runsOf(runtime: string): Promise<readonly DurableRunRecord[]>
 
 /**
+ * Every run of this runtime that drives one harness session.
+ *
+ * A model request carries the session it was assembled for, so this is the
+ * lookup that turns a stream into the run it is charged to. More than one
+ * result means the control plane minted two runs for one session, which is
+ * a bookkeeping error rather than a choice a caller may resolve.
+ * @param runtime - the reading runtime's own audience identifier.
+ * @param sessionId - the session a request names.
+ * @returns the matching records, in no defined order.
+ */
+runsOfSession(runtime: string, sessionId: SessionId): readonly DurableRunRecord[]
+
+/**
  * Write the record of one newly opened run.
  * @param run - the run's accounting, tenant, runtime, and settlement state.
  * @returns resolution after the write reaches the medium.
@@ -260,6 +273,8 @@ async recordAudit( subject: AuditSubject, records: readonly RunAuditRecord[], re
  */
 auditsOf(subject: AuditSubject): readonly RunAuditRecord[]
 ```
+
+Types: [SessionId](core.zh.md)
 
 Source: [`packages/control-plane/control-plane-store/src/index.ts`](../../packages/control-plane/control-plane-store/src/index.ts)
 

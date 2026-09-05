@@ -4271,6 +4271,9 @@ importers:
       '@deepseek-ai/dsh-run-ledger':
         specifier: workspace:^
         version: link:../run-ledger
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
       '@deepseek-ai/dsh-storage':
         specifier: workspace:^
         version: link:../../storage/storage

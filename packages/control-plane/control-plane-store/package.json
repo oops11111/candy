@@ -34,6 +34,7 @@
     "@deepseek-ai/dsh-provider-accounts": "workspace:^",
     "@deepseek-ai/dsh-run-budget": "workspace:^",
     "@deepseek-ai/dsh-run-ledger": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-storage-domain": "workspace:^",
     "@deepseek-ai/dsh-tenant-allowance": "workspace:^"
   },
@@ -50,6 +51,7 @@
     "@deepseek-ai/dsh-provider-accounts": "workspace:^",
     "@deepseek-ai/dsh-run-budget": "workspace:^",
     "@deepseek-ai/dsh-run-ledger": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-storage": "workspace:^",
     "@deepseek-ai/dsh-storage-domain": "workspace:^",
     "@deepseek-ai/dsh-storage-sqlite": "workspace:^",

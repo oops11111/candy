@@ -45,8 +45,8 @@ import {
   type CredentialKeyring,
 } from '@deepseek-ai/dsh-credential-vault'
 import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
-import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import { meterRun } from '@deepseek-ai/dsh-run-metering'
+import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { meterRun, RUN_NOT_OPEN } from '@deepseek-ai/dsh-run-metering'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunRecord, type RunSettlement } from '@deepseek-ai/dsh-run-ledger'
@@ -173,6 +173,14 @@ export class RunScheduler extends Service {
    */
   protected async [Service.init](): Promise<void> {
     await this.recover()
+    // Every model request the harness assembles carries the session it was
+    // assembled for, which is the only thing a provider stream and an admitted
+    // run have in common. A request naming no session of this runtime's is not
+    // this runtime's to charge and passes through untouched.
+    this.ctx.on('llm/stream', (options: GenerateOptions, next) => this.meterRequest(options, next), {
+      global: true,
+      prepend: true,
+    })
     this.ctx.interval(() => {
       // A sweep now writes to the medium, and a rejected write must not become
       // an unhandled rejection that takes the runtime down: the holds it failed
@@ -216,6 +224,7 @@ export class RunScheduler extends Service {
       await this.queue(() => this.ctx.controlPlaneStore.openRun({
         record,
         userId: claims.userId,
+        sessionId: claims.sessionId,
         runtime: this.config.audience,
         settledSpent: undefined,
         absorbed: undefined,
@@ -244,6 +253,27 @@ export class RunScheduler extends Service {
     if (!charged.ok) return charged
     await this.queue(() => this.ctx.controlPlaneStore.recordRunSpend(runId, charged.value.record.spent))
     return charged
+  }
+
+  /**
+   * Meter one assembled request against the run whose session it names.
+   *
+   * A request with no session, or one naming no run this runtime has open,
+   * is not this runtime's to charge and is passed through. A session that two
+   * open runs both claim is refused: the control plane minted two runs for one
+   * session, and charging either tree is a misbilling a caller cannot detect.
+   */
+  private meterRequest(
+    options: GenerateOptions,
+    next: () => AsyncIterable<StreamChunk>,
+  ): AsyncIterable<StreamChunk> {
+    if (options.sessionId === undefined) return next()
+    const open = this.ctx.controlPlaneStore.runsOfSession(this.config.audience, options.sessionId)
+    if (open.length === 0) return next()
+    if (open.length > 1) return ambiguous(options.sessionId, open.map(run => run.record.runId))
+    // The length check above establishes the entry.
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
+    return this.meter(open[0]!.record.runId, next())
   }
 
   /**
@@ -531,6 +561,21 @@ function refusedByTenant(
     action,
     outcome,
   }]
+}
+
+/** The stream a request gets when its session cannot say which run to charge. */
+// oxlint-disable-next-line typescript/require-await -- the seam's stream type is an async iterable
+async function* ambiguous(sessionId: string, runIds: readonly RunId[]): AsyncIterable<StreamChunk> {
+  yield {
+    type: 'finish',
+    reason: {
+      kind: 'error',
+      failure: {
+        message: `session '${sessionId}' is claimed by ${String(runIds.length)} open runs (${runIds.join(', ')}), so this call cannot be charged to one`,
+        code: RUN_NOT_OPEN,
+      },
+    },
+  }
 }
 
 /** Every record descended from one run, deepest first. */

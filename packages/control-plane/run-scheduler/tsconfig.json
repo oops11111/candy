@@ -21,6 +21,7 @@
     { "path": "../run-ledger" },
     { "path": "../run-metering" },
     { "path": "../../llm/llm" },
+    { "path": "../../core/session" },
     { "path": "../run-replay" },
     { "path": "../run-start" },
     { "path": "../tenant-allowance" }

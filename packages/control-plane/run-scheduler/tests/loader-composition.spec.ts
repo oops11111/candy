@@ -38,7 +38,26 @@ import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import Llm, { LlmAdapter, type GenerateOptions } from '@deepseek-ai/dsh-llm'
 import RunScheduler from '../src/index.ts'
+
+/** A provider that reports one usage figure and stops. */
+class FakeAdapter extends LlmAdapter {
+  async *stream(): AsyncIterable<StreamChunk> {
+    yield { type: 'usage', usage: { inputTokens: 30, outputTokens: 12, costMicroUsd: 900 } }
+    yield { type: 'finish', reason: { kind: 'stop' } }
+  }
+}
+
+/** One assembled request, as the loop stamps it for a session. */
+function request(sessionId: SessionId | undefined): GenerateOptions {
+  return {
+    provider: 'fake',
+    model: 'fake-1',
+    messages: [],
+    ...sessionId === undefined ? {} : { sessionId },
+  }
+}
 
 const SECRET = 'candy-assertion-secret-at-least-32-bytes'
 const KEY = 'candy-credential-key-32-bytes!!!'
@@ -47,6 +66,7 @@ const ISSUER = 'candy-control-plane'
 const AUDIENCE = 'candy-runtime-debian-1'
 const LIFETIME = 60_000
 const ALICE = UserId('user-alice')
+const SESSION = brandString<SessionId>('session-1')
 const ACCOUNT = ProviderAccountId('account-1')
 const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 2_500_000, children: 4 }
 /** A share small enough that the tenant's grant still funds another run beside it. */
@@ -67,7 +87,25 @@ afterEach(async () => {
   vi.unstubAllEnvs()
 })
 
-async function boot(at: string, overrides: Readonly<Record<string, number>> = {}): Promise<Context> {
+/** The composition entry for the scheduler, as a deployment writes it. */
+function schedulerEntry(at: string, overrides: Readonly<Record<string, number>>): readonly string[] {
+  return [
+    '- id: run-scheduler',
+    "  name: '@deepseek-ai/dsh-run-scheduler'",
+    '  config:',
+    `    issuer: ${JSON.stringify(ISSUER)}`,
+    `    audience: ${JSON.stringify(AUDIENCE)}`,
+    `    credentialKeyVersion: ${JSON.stringify(KEY_VERSION)}`,
+    `    poolBase: ${JSON.stringify(join(at, 'pools'))}`,
+    ...Object.entries(overrides).map(([key, value]) => `    ${key}: ${String(value)}`),
+  ]
+}
+
+async function boot(
+  at: string,
+  overrides: Readonly<Record<string, number>> = {},
+  mountScheduler = true,
+): Promise<Context> {
   vi.stubEnv('CANDY_ASSERTION_SECRET', SECRET)
   vi.stubEnv('CANDY_CREDENTIAL_KEY', KEY)
   await mkdir(join(at, 'pools'), { mode: 0o700, recursive: true })
@@ -87,14 +125,8 @@ async function boot(at: string, overrides: Readonly<Record<string, number>> = {}
     '    backend: sqlite',
     '- id: control-plane-store',
     "  name: '@deepseek-ai/dsh-control-plane-store'",
-    '- id: run-scheduler',
-    "  name: '@deepseek-ai/dsh-run-scheduler'",
-    '  config:',
-    `    issuer: ${JSON.stringify(ISSUER)}`,
-    `    audience: ${JSON.stringify(AUDIENCE)}`,
-    `    credentialKeyVersion: ${JSON.stringify(KEY_VERSION)}`,
-    `    poolBase: ${JSON.stringify(join(at, 'pools'))}`,
-    ...Object.entries(overrides).map(([key, value]) => `    ${key}: ${String(value)}`),
+    // A test that owns the scheduler's own fiber mounts it directly instead.
+    ...mountScheduler ? schedulerEntry(at, overrides) : [],
     '',
   ].join('\n'))
 
@@ -140,7 +172,7 @@ function claims(now: number, overrides: Partial<ExecutionAssertionClaims> = {}):
     provider: 'claude-cli',
     workspaceGrantId: WorkspaceGrantId('grant-1'),
     conversationId: ConversationId('conversation-1'),
-    sessionId: brandString<SessionId>('session-1'),
+    sessionId: SESSION,
     runId: RunId('run-root'),
     parentRunId: undefined,
     nonce: 'nonce-1',
@@ -443,6 +475,7 @@ describe('a booted Candy scheduler', () => {
         reserved: SHARE, spent: { tokens: 70, wallMs: 4, costMicroUsd: 5 }, leaseExpiresAt: now + 300_000,
       },
       userId: ALICE,
+      sessionId: SESSION,
       runtime: AUDIENCE,
       settledSpent: { tokens: 70, wallMs: 4, costMicroUsd: 5 },
       absorbed: undefined,
@@ -472,6 +505,7 @@ describe('a booted Candy scheduler', () => {
         reserved: SHARE, spent, leaseExpiresAt: now + 300_000,
       },
       userId: ALICE,
+      sessionId: SESSION,
       runtime: AUDIENCE,
       settledSpent: spent,
       absorbed: undefined,
@@ -497,6 +531,7 @@ describe('a booted Candy scheduler', () => {
         reserved: SHARE, spent: { tokens: 5, wallMs: 1, costMicroUsd: 1 }, leaseExpiresAt: now + 300_000,
       },
       userId: ALICE,
+      sessionId: SESSION,
       runtime: 'candy-runtime-debian-2',
       settledSpent: undefined,
       absorbed: undefined,
@@ -559,6 +594,103 @@ describe('a booted Candy scheduler', () => {
       type: 'finish',
       reason: { kind: 'error', failure: { message: "run 'run-root' has spent tokens", code: 'RUN_BUDGET_EXHAUSTED' } },
     }])
+  })
+
+  it('charges a request assembled for a run\'s session, through the real waterfall', async () => {
+    // The join: a model request carries the session it was assembled for, and
+    // that is the only thing it and an admitted run have in common.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(ctx.runScheduler.ledger.get(RunId('run-root')))
+      .toMatchObject({ spent: { tokens: 42, costMicroUsd: 900 } })
+  })
+
+  it('leaves a request that belongs to no run of this runtime alone', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    const other: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(brandString<SessionId>('session-elsewhere')))) other.push(chunk)
+    const unnamed: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(undefined))) unnamed.push(chunk)
+
+    expect(other.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(unnamed.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toMatchObject({ spent: { tokens: 0 } })
+  })
+
+  it('refuses a request whose session two open runs both claim', async () => {
+    // Charging either tree would be a misbilling the caller cannot detect, so
+    // the bookkeeping error stops the call instead.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+    await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'nonce-2' }), Buffer.from(SECRET, 'utf8')),
+      () => SHARE,
+      now,
+    )
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    expect(seen).toEqual([{
+      type: 'finish',
+      reason: {
+        kind: 'error',
+        failure: {
+          message: "session 'session-1' is claimed by 2 open runs (run-root, run-2), so this call cannot be charged to one",
+          code: 'RUN_NOT_OPEN',
+        },
+      },
+    }])
+  })
+
+  it('stops metering when its own fiber is disposed', async () => {
+    // A listener that outlived its service would meter against a ledger nobody
+    // owns, which is what the disposal contract exists to prevent.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root, {}, false)
+    const now = Date.now()
+    const fiber = ctx.plugin(RunScheduler, {
+      issuer: ISSUER,
+      audience: AUDIENCE,
+      credentialKeyVersion: KEY_VERSION,
+      poolBase: join(root, 'pools'),
+    })
+    await ctx.loader.await()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+    const scheduler = ctx.runScheduler
+
+    await fiber.dispose()
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(scheduler.ledger.get(RunId('run-root'))).toMatchObject({ spent: { tokens: 0 } })
   })
 
   it('records what a started run did, against the tenant that ran it', async () => {
@@ -710,14 +842,14 @@ describe('a booted Candy scheduler', () => {
         runId: RunId('run-root'), parentRunId: undefined,
         reserved: BUDGET, spent: settled, leaseExpiresAt: now + 300_000,
       },
-      userId: ALICE, runtime: AUDIENCE, settledSpent: settled, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, runtime: AUDIENCE, settledSpent: settled, absorbed: undefined,
     })
     await first.controlPlaneStore.openRun({
       record: {
         runId: RunId('run-child'), parentRunId: RunId('run-root'),
         reserved: SHARE, spent: { tokens: 3, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
       },
-      userId: ALICE, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
     })
     await first.fiber.dispose()
     context = undefined
@@ -741,6 +873,7 @@ describe('a booted Candy scheduler', () => {
         reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
       },
       userId: ALICE,
+      sessionId: SESSION,
       runtime: AUDIENCE,
       settledSpent: undefined,
       absorbed: undefined,

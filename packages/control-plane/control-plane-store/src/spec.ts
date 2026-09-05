@@ -13,6 +13,7 @@
 
 import { z } from 'zod'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
 import type { UserId as TenantId } from '@deepseek-ai/dsh-control-plane'
 import { CredentialKeyVersion, type CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
@@ -105,6 +106,8 @@ const storedRun = z.object({
   runId: z.string(),
   parentRunId: z.string().optional(),
   userId: z.string(),
+  /** The harness session this run drives; how its model calls find it. */
+  sessionId: z.string(),
   runtime: z.string(),
   reserved: storedGrant,
   spent: storedConsumed,
@@ -314,6 +317,14 @@ export interface DurableRunRecord {
   /** The tenant whose allowance this run's tree is charged to. */
   readonly userId: TenantId
   /**
+   * The harness session this run drives.
+   *
+   * A model request carries the session it was assembled for, so this is what
+   * lets a stream find the run it should be charged to without the request
+   * carrying a Candy concept of its own.
+   */
+  readonly sessionId: SessionId
+  /**
    * The runtime that opened this run, as its own audience identifier.
    *
    * Recovery reads only its own runtime's records. Two runtimes sharing one
@@ -336,6 +347,7 @@ export function toStoredRun(run: DurableRunRecord): StoredRun {
   return {
     runId: run.record.runId,
     userId: run.userId,
+    sessionId: run.sessionId,
     runtime: run.runtime,
     reserved: {
       tokens: run.record.reserved.tokens,
@@ -378,6 +390,7 @@ export function fromStoredRun(stored: StoredRun): DurableRunRecord {
       leaseExpiresAt: stored.leaseExpiresAt,
     },
     userId: UserId(stored.userId),
+    sessionId: brandString<SessionId>(stored.sessionId),
     runtime: stored.runtime,
     absorbed: stored.absorbed === undefined ? undefined : RunId(stored.absorbed),
     settledSpent: stored.settledSpent === undefined ? undefined : {

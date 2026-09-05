@@ -116,6 +116,10 @@ That makes this a place to look at recent activity rather than somewhere to keep
 
 Every stage past the assertion works from verified claims, so its record names the tenant, account and run it refused. An assertion that fails to verify names none this runtime may believe — and it is also the record an operator most wants — so it is filed against the runtime that refused it. The `t_` and `r_` prefixes on a subject key keep the two spaces from colliding.
 
+### Why a run record names a session
+
+A model request carries the session it was assembled for and no Candy concept of its own, and an execution assertion names the session its run drives. Recording that session on the run makes `runsOfSession` the whole of the lookup that turns a provider stream into the run it is charged to — without a `runId` on `GenerateOptions`, which would let one consumer dictate a contract the whole `dsh-llm` seam shares.
+
 ### Why a run record is stamped with its runtime
 
 `runsOf` answers for one runtime only. Two runtimes sharing this medium would otherwise recover each other's records at boot and settle runs that are still going. The stamp is the reading runtime's own audience identifier, which an execution assertion is already bound to, so two runtimes never share the value.
@@ -146,6 +150,7 @@ These are current package constraints, not a task backlog.
 - **A restart ends every run it recovers** — a record this runtime wrote is a run it was driving, and the process that drove it is gone, so `dsh-run-scheduler` settles what it finds rather than resuming it. Nothing here can tell a crashed run from one whose provider is somehow still alive.
 - **Recovery is all-or-nothing on a corrupt store** — records that do not form complete trees fail the boot rather than being dropped, because a hold against a parent that does not exist is one nothing can settle. There is no repair path.
 - **One runtime per audience** — `runsOf` partitions by the runtime stamp, so two processes sharing an audience recover each other's records. An assertion is audience-bound already, so this is a deployment rule rather than a check made here.
+- **`runsOfSession` scans** — the domain keeps every run record in memory and this filters them, which is right at a runtime's live-run count and would not be at a fleet's.
 - **A trail is bounded and rewritten whole** — one subject's records live in one document, so each append rewrites that document, and records past the cap are dropped rather than archived. It suits a window of recent activity at a deployment's scale and not an audit archive at a directory's.
 - **The trail records what the control plane observes** — scheduling attempts and vault operations. Routing, delegation, tool authorization and terminal state are not in it, because nothing in this repository produces those records yet.
 - **No period** — an allowance runs from its grant until an operator changes it, and `setTenantGrant` deliberately keeps what was consumed. Nothing here starts a new billing period, because nothing in the repository decides when one begins.

@@ -14,7 +14,9 @@ import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import {
   CredentialKeyVersion,
   sealCredential,
@@ -30,6 +32,7 @@ import ControlPlaneStore, { runtimeSubject, tenantSubject, type RunAuditRecord }
 
 const NOW = 1_800_000_000_000
 const ALICE = UserId('user-alice')
+const SESSION = brandString<SessionId>('session-1')
 const BOBBY = UserId('user-bobby')
 const ACCOUNT = ProviderAccountId('account-1')
 const KEY_VERSION = CredentialKeyVersion('2026-09-a')
@@ -199,7 +202,7 @@ describe('a booted control-plane store', () => {
         runId: RunId('run-root'), parentRunId: undefined,
         reserved: BUDGET, spent: { tokens: 5, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: NOW,
       },
-      userId: ALICE, runtime: 'runtime-1', settledSpent: undefined, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, runtime: 'runtime-1', settledSpent: undefined, absorbed: undefined,
     })
 
     await ctx.controlPlaneStore.absorbChild(RunId('run-root'), RunId('run-child'), { tokens: 30, wallMs: 1, costMicroUsd: 2 })

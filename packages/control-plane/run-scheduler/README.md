@@ -13,7 +13,7 @@ Everything this service composes already existed as a library. What did not exis
 
 `ctx.runScheduler` holds that state, starts a run from an execution assertion, drives the clock, and charges a settled tree to whoever funded it. It is where a tenant's durable allowance and its live runs meet, and that meeting is the whole of Candy's tenant-level bound: read on its own, either half admits a run it should refuse.
 
-It also meters the provider streams a run makes, which is where an allowance stops being an accounting figure: a call is refused before the provider is reached when the run has nothing left, and cut when it outruns the wall time the run still had.
+It also meters the provider streams a run makes, which is where an allowance stops being an accounting figure: a call is refused before the provider is reached when the run has nothing left, and cut when it outruns the wall time the run still had. It finds those streams by the session a request was assembled for, so an agent driven on a run's session is metered without anyone threading a run id through the model request.
 
 Its records are durable and every settlement is exactly-once across a crash, and every scheduling attempt it makes leaves a record — a started run, a denial and the tenant it refused, and the vault operations each attempt produced. The order queued requests run in is still a decision nothing here makes.
 
@@ -81,6 +81,24 @@ Every stage past the assertion works from verified claims, so its record names t
 
 ### Metering the calls a run makes
 
+Nothing has to ask. Every model request the harness assembles carries the session it was assembled for, and an execution assertion names the session its run drives — so a request whose session belongs to an open run of this runtime is metered against it automatically:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const request: GenerateOptions
+
+// Charged to the run whose claims named `request.sessionId`, if there is one.
+export const stream = ctx.llm.stream(request)
+```
+
+A request naming no session, or one naming no run this runtime has open, passes through untouched — it is not this runtime's to charge. A session two open runs both claim is refused with a terminal `error` finish: charging either tree would be a misbilling the caller cannot detect.
+
+### Metering one stream by hand
+
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
 import type { RunId } from '@deepseek-ai/dsh-control-plane'
@@ -95,7 +113,7 @@ declare const request: GenerateOptions
 export const stream = ctx.runScheduler.meter(runId, adapter.stream(request))
 ```
 
-`meter` charges the call — durably — before its terminal chunk reaches the consumer, so the next call is admitted against a ledger that already knows about this one. A run with nothing left never reaches the provider, and a call that outruns the wall time its run had is cut with a terminal `error` finish. A cut ends the call, not the run: the record stays open with what the call consumed.
+A caller holding a run and a stream directly can skip the lookup. `meter` charges the call — durably — before its terminal chunk reaches the consumer, so the next call is admitted against a ledger that already knows about this one. A run with nothing left never reaches the provider, and a call that outruns the wall time its run had is cut with a terminal `error` finish. A cut ends the call, not the run: the record stays open with what the call consumed.
 
 -----
 
@@ -134,6 +152,12 @@ A record this runtime wrote is a run it was driving, and the process that drove 
 
 Recovery reads its own runtime's records only, by the audience stamp on each one. Records that do not form complete trees fail the boot rather than being dropped: a hold against a parent that does not exist is one nothing can settle.
 
+### Why the session is the join
+
+A model request carries no Candy concept and should not: `dsh-llm` is the inherited seam, and adding a `runId` to `GenerateOptions` would let one consumer dictate a service contract every other consumer shares. What the request already carries is `sessionId`, stamped by the loop, and an execution assertion already names the session its run drives. The two meet without either side learning about the other — the same selection [`dsh-session-checkpoint-policy`](../../session/session-checkpoint-policy/README.md) makes for its own streams.
+
+That leaves one case the mapping cannot answer: a session two open runs both claim. It means the control plane minted two runs for one session, and the call is refused rather than charged to whichever was found first, because a misbilled tenant is not a failure anyone would notice.
+
 ### Why a run's tenant lives on its record
 
 A `RunRecord` names a run and its parent, not an identity, so the tenant a tree is charged to is written on the durable record instead. That is the only place it exists, so a settlement, a recovery, and the tenant-remainder lookup all read the same fact; a map beside the ledger would be a second copy that a restart does not have.
@@ -170,6 +194,7 @@ These are current package constraints, not a task backlog.
 - **A rejected sweep is logged, not retried immediately** — the runs it could not settle stay open with expired leases, so the next sweep retries them. A medium that stays unavailable holds those allowances until it comes back.
 - **It does not run the provider** — binding and cancellation stay with the caller; `meter` wraps a stream the caller opened, and this service holds no process.
 - **A trail is a window, not an archive** — `auditRetention` records per tenant, and per runtime for attempts that named none; older records are dropped rather than shipped anywhere. A deployment that needs to keep them reads them from here and sends them on.
+- **Metering follows the session, not the process** — a request assembled for a run's session is metered wherever it is made, and a request made outside that session is not metered at all, even if the same run caused it. A deployment that runs work for a tenant without a session of its own is unmetered.
 - **The trail covers scheduling, not the run's work** — starting, denying, and the vault operations an attempt produced. Routing, delegation, tool authorization and terminal state are not recorded, because nothing produces those records yet.
 - **A metered call is bounded, a silent one is not** — `meter` checks wall time as chunks arrive, so a provider that stalls without emitting runs past its deadline until the lease sweep reaches its run.
 

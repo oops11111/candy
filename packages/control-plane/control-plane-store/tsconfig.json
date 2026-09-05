@@ -17,6 +17,7 @@
     { "path": "../run-budget" },
     { "path": "../run-ledger" },
     { "path": "../tenant-allowance" },
-    { "path": "../../storage/storage-domain" }
+    { "path": "../../storage/storage-domain" },
+    { "path": "../../core/session" }
   ]
 }

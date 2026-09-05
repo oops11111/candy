@@ -435,14 +435,6 @@ flowchart TD
   pkg_api_remotes --> pkg_scope
   pkg_attachment_local --> pkg_attachment
   pkg_attachment_local --> pkg_home_paths
-  pkg_control_plane_store --> pkg_brand
-  pkg_control_plane_store --> pkg_control_plane
-  pkg_control_plane_store --> pkg_credential_vault
-  pkg_control_plane_store --> pkg_provider_accounts
-  pkg_control_plane_store --> pkg_run_budget
-  pkg_control_plane_store --> pkg_run_ledger
-  pkg_control_plane_store --> pkg_storage_domain
-  pkg_control_plane_store --> pkg_tenant_allowance
   pkg_run_metering --> pkg_control_plane
   pkg_run_metering --> pkg_llm
   pkg_run_metering --> pkg_run_budget
@@ -473,6 +465,15 @@ flowchart TD
   pkg_claude_cli_binding --> pkg_llm_claude_cli
   pkg_claude_cli_binding --> pkg_run_admission
   pkg_claude_cli_binding --> pkg_run_budget
+  pkg_control_plane_store --> pkg_brand
+  pkg_control_plane_store --> pkg_control_plane
+  pkg_control_plane_store --> pkg_credential_vault
+  pkg_control_plane_store --> pkg_provider_accounts
+  pkg_control_plane_store --> pkg_run_budget
+  pkg_control_plane_store --> pkg_run_ledger
+  pkg_control_plane_store --> pkg_session
+  pkg_control_plane_store --> pkg_storage_domain
+  pkg_control_plane_store --> pkg_tenant_allowance
   pkg_execution_assertion --> pkg_session
   pkg_persona --> pkg_system_prompt
   pkg_sandbox --> pkg_llm
@@ -613,6 +614,7 @@ flowchart TD
   pkg_run_scheduler --> pkg_run_metering
   pkg_run_scheduler --> pkg_run_replay
   pkg_run_scheduler --> pkg_run_start
+  pkg_run_scheduler --> pkg_session
   pkg_run_scheduler --> pkg_tenant_allowance
   pkg_fs_e2b --> pkg_e2b
   pkg_fs_e2b --> pkg_fs
@@ -1324,7 +1326,6 @@ flowchart TD
 | [`web-search-perplexity`](../packages/web/web-search-perplexity) | `web` | [`launch-environment`](../packages/util/launch-environment), [`web`](../packages/web/web) |
 | [`api-remotes`](../packages/api/remotes) | `api` | [`scope`](../packages/core/scope) |
 | [`attachment-local`](../packages/attachment/attachment-local) | `attachment` | [`attachment`](../packages/attachment/attachment), [`home-paths`](../packages/util/home-paths) |
-| [`control-plane-store`](../packages/control-plane/control-plane-store) | `control-plane` | [`brand`](../packages/util/brand), [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`provider-accounts`](../packages/control-plane/provider-accounts), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`storage-domain`](../packages/storage/storage-domain), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
 | [`run-metering`](../packages/control-plane/run-metering) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`llm`](../packages/llm/llm), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger) |
 | [`run-start`](../packages/control-plane/run-start) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`runtime-pool`](../packages/control-plane/runtime-pool) |
 | [`authorization`](../packages/credentials/authorization) | `credentials` | [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
@@ -1334,6 +1335,7 @@ flowchart TD
 | [`app-boot`](../packages/boot/app-boot) | `boot` | [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment), [`system-prompt`](../packages/core/system-prompt) |
 | [`code-runtime-worker-thread`](../packages/code-runtime/code-runtime-worker-thread) | `code-runtime` | [`code-runtime`](../packages/code-runtime/code-runtime), [`session`](../packages/core/session), [`timeout`](../packages/util/timeout) |
 | [`claude-cli-binding`](../packages/control-plane/claude-cli-binding) | `control-plane` | [`llm-claude-cli`](../packages/llm/llm-claude-cli), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget) |
+| [`control-plane-store`](../packages/control-plane/control-plane-store) | `control-plane` | [`brand`](../packages/util/brand), [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`provider-accounts`](../packages/control-plane/provider-accounts), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`session`](../packages/core/session), [`storage-domain`](../packages/storage/storage-domain), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
 | [`execution-assertion`](../packages/control-plane/execution-assertion) | `control-plane` | [`session`](../packages/core/session) |
 | [`persona`](../packages/preset/persona) | `preset` | [`system-prompt`](../packages/core/system-prompt) |
 | [`sandbox`](../packages/sandbox/sandbox) | `sandbox` | [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
@@ -1370,7 +1372,7 @@ flowchart TD
 | [`file-reference`](../packages/context/file-reference) | `context` | [`agent`](../packages/core/agent) |
 | [`time-context`](../packages/context/time-context) | `context` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection) |
 | [`tmux-context`](../packages/context/tmux-context) | `context` | [`agent`](../packages/core/agent), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`shell`](../packages/shell/shell) |
-| [`run-scheduler`](../packages/control-plane/run-scheduler) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`control-plane-store`](../packages/control-plane/control-plane-store), [`credential-vault`](../packages/control-plane/credential-vault), [`execution-assertion`](../packages/control-plane/execution-assertion), [`llm`](../packages/llm/llm), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`run-metering`](../packages/control-plane/run-metering), [`run-replay`](../packages/control-plane/run-replay), [`run-start`](../packages/control-plane/run-start), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
+| [`run-scheduler`](../packages/control-plane/run-scheduler) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`control-plane-store`](../packages/control-plane/control-plane-store), [`credential-vault`](../packages/control-plane/credential-vault), [`execution-assertion`](../packages/control-plane/execution-assertion), [`llm`](../packages/llm/llm), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`run-metering`](../packages/control-plane/run-metering), [`run-replay`](../packages/control-plane/run-replay), [`run-start`](../packages/control-plane/run-start), [`session`](../packages/core/session), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
 | [`fs-e2b`](../packages/e2b/fs-e2b) | `e2b` | [`e2b`](../packages/e2b/e2b), [`fs`](../packages/fs/fs) |
 | [`commands`](../packages/interaction/commands) | `interaction` | [`agent`](../packages/core/agent), [`attachment`](../packages/attachment/attachment), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol) |
 | [`user-approval`](../packages/interaction/user-approval) | `interaction` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt) |

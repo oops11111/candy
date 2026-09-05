@@ -18,6 +18,7 @@
 
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
@@ -221,6 +222,25 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
       if (stored.runtime === runtime) owned.push(fromStoredRun(stored))
     }
     return Promise.resolve(owned)
+  }
+
+  /**
+   * Every run of this runtime that drives one harness session.
+   *
+   * A model request carries the session it was assembled for, so this is the
+   * lookup that turns a stream into the run it is charged to. More than one
+   * result means the control plane minted two runs for one session, which is
+   * a bookkeeping error rather than a choice a caller may resolve.
+   * @param runtime - the reading runtime's own audience identifier.
+   * @param sessionId - the session a request names.
+   * @returns the matching records, in no defined order.
+   */
+  runsOfSession(runtime: string, sessionId: SessionId): readonly DurableRunRecord[] {
+    const found: DurableRunRecord[] = []
+    for (const [, stored] of this.runs.entries()) {
+      if (stored.runtime === runtime && stored.sessionId === sessionId) found.push(fromStoredRun(stored))
+    }
+    return found
   }
 
   /**
