@@ -51,6 +51,13 @@ class FakeAdapter extends LlmAdapter {
   }
 }
 
+/** Drain one stream to its terminal chunk. */
+async function collectChunks(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[]> {
+  const seen: StreamChunk[] = []
+  for await (const chunk of stream) seen.push(chunk)
+  return seen
+}
+
 /** One assembled request, as the loop stamps it for a session. */
 function request(sessionId: SessionId | undefined): GenerateOptions {
   return {
@@ -754,6 +761,139 @@ describe('a booted Candy scheduler', () => {
       type: 'finish',
       reason: { kind: 'error', failure: { code: 'CREDENTIAL_REVOKED' } },
     })
+  })
+
+  it('never lets two concurrent calls on one run outspend it', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    // Funded for exactly one call from the fake adapter.
+    await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')),
+      () => ({ tokens: 42, wallMs: 60_000, costMicroUsd: 900, children: 0 }),
+      now,
+    )
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    const drain = async (): Promise<StreamChunk | undefined> => {
+      const seen: StreamChunk[] = []
+      for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+      return seen.at(-1)
+    }
+    const [first, second] = await Promise.all([drain(), drain()])
+
+    // One call spends the run's tokens; the one behind it reads what is left.
+    expect(first).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(second).toMatchObject({ reason: { kind: 'error', failure: { code: 'RUN_BUDGET_EXHAUSTED' } } })
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))?.spent.tokens).toBe(42)
+  })
+
+  it('releases the line when a call fails instead of finishing', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+    // A charge that cannot be written leaves the stream by throwing, which is
+    // not an ending the done path sees.
+    const spend = vi.spyOn(ctx.controlPlaneStore, 'recordRunSpend').mockRejectedValue(new Error('medium is gone'))
+
+    await expect(collectChunks(ctx.llm.stream(request(SESSION)))).rejects.toThrow(/medium is gone/)
+
+    spend.mockRestore()
+    const seen = await collectChunks(ctx.llm.stream(request(SESSION)))
+
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('releases the line for a consumer that never reads the stream at all', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    // Closed before the first read: no call was ever started, so there is
+    // nothing to close but the line still has to be given up.
+    await ctx.llm.stream(request(SESSION))[Symbol.asyncIterator]().return?.(undefined)
+
+    const seen = await collectChunks(ctx.llm.stream(request(SESSION)))
+
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('leaves the line once, however a consumer ends the stream', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    // A consumer may close an iterator it has already drained; the second
+    // leave must not release a line this call no longer holds.
+    const reader = ctx.llm.stream(request(SESSION))[Symbol.asyncIterator]()
+    let step = await reader.next()
+    while (step.done !== true) step = await reader.next()
+    await reader.return?.(undefined)
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('lets a run make its next call once the one before it is abandoned', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    // A consumer that reads one chunk and stops must not hold the line.
+    for await (const _chunk of ctx.llm.stream(request(SESSION))) break
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('does not make one tenant wait on another tenant\'s run', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await provisionBobby(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now, {
+      userId: BOBBY,
+      accountId: ProviderAccountId('account-2'),
+      sessionId: SECOND_SESSION,
+      runId: RunId('run-bobby'),
+      nonce: 'nonce-bobby',
+    }), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    const drain = async (session: SessionId): Promise<StreamChunk | undefined> => {
+      const seen: StreamChunk[] = []
+      for await (const chunk of ctx.llm.stream(request(session))) seen.push(chunk)
+      return seen.at(-1)
+    }
+    const [alice, bobby] = await Promise.all([drain(SESSION), drain(SECOND_SESSION)])
+
+    expect(alice).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(bobby).toEqual({ type: 'finish', reason: { kind: 'stop' } })
   })
 
   it('keeps metering a call whose run still holds a usable account', async () => {

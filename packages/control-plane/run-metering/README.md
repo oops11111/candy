@@ -98,6 +98,12 @@ A refusal is the whole of what a consumer sees — one terminal `error` finish �
 
 The port's implementation settles its own failures. A rejection here would leave the stream without the one terminal chunk this seam promises, which is a worse outcome than an unrecorded refusal. A caller metering by hand passes nothing and the refusals go unrecorded.
 
+### Why a run's calls wait for each other
+
+A meter reads what the run may spend once, before the provider is called, and charges once the call ends. Two calls that overlap therefore both start against a remainder neither has been charged against yet: a run funded for one call from the fake adapter spent two calls' worth, 84 tokens against an allowance of 42. The dimensions bound the run, not the call, so they hold only if the calls do not observe the same remainder.
+
+`RunScheduler.meter` holds a run's calls in a line, so each reads a remainder the one before it has already been charged against. The line is per run, so two tenants never wait for each other, and a run whose calls are sequential — an agent loop's are — never waits either, because the line is empty when its next call starts. A consumer that abandons a stream part-way leaves the line as well; otherwise every later call on that run would wait on a stream nobody is draining.
+
 ### Why a cut is one call, not the run
 
 The stream ends; the run stays open with what the call consumed on its record. Ending the run here would take a decision that belongs to whoever started it — a caller may report the exhaustion, ask for more allowance, or settle. What this guarantees is that the work stops.
@@ -151,7 +157,7 @@ These are current package constraints, not a task backlog.
 
 - **A cut source is told to close, not watched closing** — on the deadline path the close is started and not awaited, because a source blocked on the same silence would not answer it either. A provider process is therefore reaped by whoever owns it, not by the time this returns.
 - **Tokens are charged once per call** — a stream reports usage at most once, so an over-long single response is measured only when it ends. The wall-time cut is what bounds one call; the token cut bounds the next.
-- **Concurrent calls each read the same remainder** — two streams metered against one run both start against the allowance neither has charged yet. A run whose calls overlap can overshoot by one call's worth per stream.
+- **Concurrent calls each read the same remainder** — two streams metered against one run both start against the allowance neither has charged yet. Ordering a run's calls is the caller's: [`dsh-run-scheduler`](../run-scheduler/README.md) holds them in a line per run, and a caller metering by hand owns that itself.
 - **A charge that cannot be written is thrown, not finished** — the two budget endings are terminal chunks, but a rejected charge leaves the stream by throwing. That is what the [`dsh-llm`](../../llm/llm/README.md) seam says of middleware failures, and it means a consumer that only handles a failed call also needs to handle a failed medium.
 - **No cancellation is propagated** — a cut stops reading the source and lets the generator close it. A provider that ignores that keeps running until whoever launched it reaps it.
 

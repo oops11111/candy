@@ -160,13 +160,14 @@ async function refuse(ports: RunMeterPorts, runId: RunId, message: string, code:
  * @param source - the provider's stream for one call.
  * @param runId - the open run this call is charged to.
  * @param ports - how to read the run's remainder, charge it, and read the clock.
- * @returns the same chunks, ending early when the run cannot afford the rest.
+ * @returns the same chunks, ending early when the run cannot afford the rest;
+ *   a generator, so a consumer that stops reading can close the source it holds.
  */
 export async function* meterRun(
   source: AsyncIterable<StreamChunk>,
   runId: RunId,
   ports: RunMeterPorts,
-): AsyncIterable<StreamChunk> {
+): AsyncGenerator<StreamChunk, void, undefined> {
   const now = ports.now ?? Date.now
   const available = ports.remaining(runId)
   if (available === undefined) {

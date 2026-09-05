@@ -171,6 +171,9 @@ export class RunScheduler extends Service {
    */
   private readonly ended = new Set<SessionId>()
 
+  /** Per run, the call that must end before the next one may read its remainder. */
+  private readonly callLines = new Map<RunId, Promise<void>>()
+
   private readonly keyring: CredentialKeyring
   private readonly assertionSecret: Buffer
 
@@ -368,11 +371,82 @@ export class RunScheduler extends Service {
    * @returns the same chunks, ending early when the run cannot afford the rest.
    */
   meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
-    return meterRun(source, runId, {
+    return this.oneCallAtATime(runId, () => meterRun(source, runId, {
       remaining: id => this.ledger.remaining(id),
       charge: (id, spend) => this.charge(id, spend),
       refused: (id, code, message) => this.fileRefusal(id, code, message),
-    })
+    }))
+  }
+
+  /**
+   * Hold one run's calls in a line, so each reads a remainder the one before
+   * it has already been charged against.
+   *
+   * A meter reads what the run may spend once, before the provider is called,
+   * and charges once the call ends. Two calls that overlap therefore both start
+   * against a remainder neither has been charged against yet, and a run allowed
+   * one call's worth of tokens spends two calls' worth. The dimensions are
+   * bounds on the run, not on a call, so they can only hold if the calls do not
+   * observe the same remainder.
+   *
+   * The line is per run, not per runtime: two tenants' calls never wait for
+   * each other. A run whose calls are sequential — an agent loop's are — never
+   * waits either, because the line is already empty when the next call starts.
+   *
+   * @param runId - the run whose calls share one allowance.
+   * @param start - builds the metered stream, called once this call's turn comes.
+   * @returns the metered stream, which begins reading when the call before it ends.
+   */
+  private oneCallAtATime(
+    runId: RunId,
+    start: () => AsyncGenerator<StreamChunk, void, undefined>,
+  ): AsyncIterable<StreamChunk> {
+    return {
+      [Symbol.asyncIterator]: () => {
+        const ahead = this.callLines.get(runId) ?? Promise.resolve()
+        // Both are built now, not once this call's turn comes: a consumer may
+        // close the stream before it ever reads, and the line has to be
+        // givable up from the moment it is taken.
+        let leave!: () => void
+        const held = new Promise<void>((resolve) => { leave = resolve })
+        const line = ahead.then(() => held)
+        this.callLines.set(runId, line)
+        // Dropping the entry once nothing waits behind it keeps a long-lived
+        // runtime from holding one promise per run it ever metered.
+        void line.then(() => { if (this.callLines.get(runId) === line) this.callLines.delete(runId) })
+        let reader: AsyncGenerator<StreamChunk, void, undefined> | undefined
+        let left = false
+        const leaveLine = (): void => {
+          if (left) return
+          left = true
+          leave()
+        }
+        return {
+          next: async () => {
+            if (reader === undefined) {
+              await ahead
+              reader = start()
+            }
+            try {
+              const step = await reader.next()
+              if (step.done === true) leaveLine()
+              return step
+            } catch (failure) {
+              leaveLine()
+              throw failure
+            }
+          },
+          return: async () => {
+            // A consumer that stops reading part-way leaves the line too, or
+            // every later call on this run would wait on a stream nobody is
+            // draining. `meterRun` charges what the abandoned call used.
+            if (reader !== undefined) await reader.return()
+            leaveLine()
+            return { done: true, value: undefined }
+          },
+        }
+      },
+    }
   }
 
   /**
