@@ -728,6 +728,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'its records, in no defined order.',
       },
       {
+        signature: 'findRun(runId: RunId): DurableRunRecord | undefined',
+        description: 'One run\'s record by id, whatever runtime opened it.\n\nA child run is checked against its parent\'s identity, and the parent is named by the claims rather than found by scanning.',
+        parameters: [{ name: 'runId', description: 'the run to read.' }],
+        returns: 'its record, or undefined when none is held.',
+      },
+      {
         signature: 'runsOfSession(runtime: string, sessionId: SessionId): readonly DurableRunRecord[]',
         description: 'Every run of this runtime that drives one harness session.\n\nA model request carries the session it was assembled for, so this is the lookup that turns a stream into the run it is charged to. More than one result means the control plane minted two runs for one session, which is a bookkeeping error rather than a choice a caller may resolve.',
         parameters: [{ name: 'runtime', description: 'the reading runtime\'s own audience identifier.' }, { name: 'sessionId', description: 'the session a request names.' }],
@@ -4128,7 +4134,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DurableRunRecord',
-    declaration: 'export interface DurableRunRecord {\n    readonly record: RunRecord;\n    readonly userId: TenantId;\n    readonly sessionId: SessionId;\n    readonly runtime: string;\n    readonly settledSpent: RunSpend | undefined;\n    readonly absorbed: RunId | undefined;\n}',
+    declaration: 'export interface DurableRunRecord {\n    readonly record: RunRecord;\n    readonly userId: TenantId;\n    readonly sessionId: SessionId;\n    readonly accountId: ProviderAccountId;\n    readonly runtime: string;\n    readonly settledSpent: RunSpend | undefined;\n    readonly absorbed: RunId | undefined;\n}',
   },
   {
     name: 'DynamicCordisPackage',
@@ -4944,7 +4950,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RunRejection',
-    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'session\';\n    readonly reason: \'already-driven\';\n    readonly holder: RunId;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
+    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'lineage\';\n    readonly reason: \'tenant-mismatch\' | \'account-mismatch\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'session\';\n    readonly reason: \'already-driven\';\n    readonly holder: RunId;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
   },
   {
     name: 'RunReplayStore',

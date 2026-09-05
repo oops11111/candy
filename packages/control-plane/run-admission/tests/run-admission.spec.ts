@@ -77,6 +77,7 @@ function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy
     findBudget: () => Promise.resolve(BUDGET),
     spendNonce: subject => Promise.resolve(replay.spend(subject, NOW)),
     findSessionRun: () => Promise.resolve(undefined),
+    findParentIdentity: () => Promise.resolve(undefined),
     findCredential: subject => Promise.resolve(
       subject.userId === UserId('user-alice') ? sealedFor(subject) : undefined,
     ),
@@ -440,6 +441,48 @@ describe('the budget a run is admitted against', () => {
     }), NOW)
 
     expect(order).toEqual(['budget', 'session', 'nonce', 'credential'])
+  })
+
+  it.each([
+    ['tenant-mismatch', { userId: UserId('user-bobby'), accountId: ProviderAccountId('account-1') }],
+    ['account-mismatch', { userId: UserId('user-alice'), accountId: ProviderAccountId('account-9') }],
+  ])('refuses a child that widens its parent\'s grant: %s', async (reason, parent) => {
+    // The parent held exactly one tenant and one account, and neither of a pair
+    // is a subset of the other.
+    let spent = false
+
+    const refused = await admitRun({
+      token: mintExecutionAssertion(claims({ parentRunId: RunId('run-parent') }), ASSERTION_SECRET),
+    }, policy({
+      findParentIdentity: () => Promise.resolve(parent),
+      spendNonce: () => { spent = true; return Promise.resolve(true) },
+    }), NOW)
+
+    expect(refused).toMatchObject({ admitted: false, rejection: { stage: 'lineage', reason } })
+    expect(spent).toBe(false)
+  })
+
+  it('admits a child whose parent this deployment does not know, leaving the budget to deny it', async () => {
+    // A parent with no record is a parent with no allowance, which the budget
+    // lookup already reports; inventing a lineage refusal would hide that.
+    const refused = await admitRun({
+      token: mintExecutionAssertion(claims({ parentRunId: RunId('run-parent') }), ASSERTION_SECRET),
+    }, policy({
+      findParentIdentity: () => Promise.resolve(undefined),
+      findBudget: () => Promise.resolve(undefined),
+    }), NOW)
+
+    expect(refused).toMatchObject({ admitted: false, rejection: { stage: 'budget', reason: 'no-budget' } })
+  })
+
+  it('checks a root run\'s lineage against nothing at all', async () => {
+    let asked = false
+
+    await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findParentIdentity: () => { asked = true; return Promise.resolve(undefined) },
+    }), NOW)
+
+    expect(asked).toBe(false)
   })
 
   it('refuses a run whose session another run already drives, and keeps its nonce', async () => {

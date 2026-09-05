@@ -202,7 +202,7 @@ describe('a booted control-plane store', () => {
         runId: RunId('run-root'), parentRunId: undefined,
         reserved: BUDGET, spent: { tokens: 5, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: NOW,
       },
-      userId: ALICE, sessionId: SESSION, runtime: 'runtime-1', settledSpent: undefined, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: 'runtime-1', settledSpent: undefined, absorbed: undefined,
     })
 
     await ctx.controlPlaneStore.absorbChild(RunId('run-root'), RunId('run-child'), { tokens: 30, wallMs: 1, costMicroUsd: 2 })
@@ -243,6 +243,13 @@ describe('a booted control-plane store', () => {
 
     await expect(ctx.controlPlaneStore.recordAudit(tenantSubject(ALICE), [record], 0))
       .rejects.toThrow(/audit retention must be a positive safe integer, got 0/)
+  })
+
+  it('answers nothing for a run it holds no record for', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+
+    expect(ctx.controlPlaneStore.findRun(RunId('run-absent'))).toBeUndefined()
   })
 
   it('writes nothing about a run it holds no record for', async () => {

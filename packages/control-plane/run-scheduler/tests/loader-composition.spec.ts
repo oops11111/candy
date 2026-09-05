@@ -185,6 +185,23 @@ function claims(now: number, overrides: Partial<ExecutionAssertionClaims> = {}):
   }
 }
 
+/** Give a second tenant an allowance and a sealed credential of its own. */
+async function provisionBobby(ctx: Context, now: number): Promise<void> {
+  await ctx.controlPlaneStore.setTenantGrant(BOBBY, BUDGET)
+  await ctx.controlPlaneStore.save({
+    record: {
+      id: ProviderAccountId('account-2'), userId: BOBBY, provider: 'claude-cli', label: 'work',
+      createdAt: now, updatedAt: now, validatedAt: undefined, revokedAt: undefined, deletedAt: undefined, isDefault: true,
+    },
+    credential: sealCredential(
+      Buffer.from('sk-ant-bobby', 'utf8'),
+      { userId: BOBBY, accountId: ProviderAccountId('account-2') },
+      KEYRING,
+      now,
+    ).envelope,
+  })
+}
+
 /** Give the tenant an allowance and a sealed credential, as a control plane would. */
 async function provision(ctx: Context, now: number): Promise<void> {
   await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
@@ -480,6 +497,7 @@ describe('a booted Candy scheduler', () => {
       },
       userId: ALICE,
       sessionId: SESSION,
+      accountId: ACCOUNT,
       runtime: AUDIENCE,
       settledSpent: { tokens: 70, wallMs: 4, costMicroUsd: 5 },
       absorbed: undefined,
@@ -510,6 +528,7 @@ describe('a booted Candy scheduler', () => {
       },
       userId: ALICE,
       sessionId: SESSION,
+      accountId: ACCOUNT,
       runtime: AUDIENCE,
       settledSpent: spent,
       absorbed: undefined,
@@ -536,6 +555,7 @@ describe('a booted Candy scheduler', () => {
       },
       userId: ALICE,
       sessionId: SESSION,
+      accountId: ACCOUNT,
       runtime: 'candy-runtime-debian-2',
       settledSpent: undefined,
       absorbed: undefined,
@@ -652,7 +672,7 @@ describe('a booted Candy scheduler', () => {
         runId: RunId('run-elsewhere'), parentRunId: undefined,
         reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
       },
-      userId: ALICE, sessionId: SESSION, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
     })
     await ctx.plugin(Llm)
     ctx.llm.registerAdapter(['fake'], new FakeAdapter())
@@ -681,19 +701,7 @@ describe('a booted Candy scheduler', () => {
     const ctx = await boot(root)
     const now = Date.now()
     await provision(ctx, now)
-    await ctx.controlPlaneStore.setTenantGrant(BOBBY, BUDGET)
-    await ctx.controlPlaneStore.save({
-      record: {
-        id: ProviderAccountId('account-2'), userId: BOBBY, provider: 'claude-cli', label: 'work',
-        createdAt: now, updatedAt: now, validatedAt: undefined, revokedAt: undefined, deletedAt: undefined, isDefault: true,
-      },
-      credential: sealCredential(
-        Buffer.from('sk-ant-bobby', 'utf8'),
-        { userId: BOBBY, accountId: ProviderAccountId('account-2') },
-        KEYRING,
-        now,
-      ).envelope,
-    })
+    await provisionBobby(ctx, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
 
     const second = await ctx.runScheduler.start(
@@ -734,6 +742,77 @@ describe('a booted Candy scheduler', () => {
 
     expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
     expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toMatchObject({ spent: { tokens: 42 } })
+  })
+
+  it('refuses a child that names another tenant, and bills nobody for it', async () => {
+    // Without the check the child runs on the other tenant's credential while
+    // its spend settles into this parent's tree: the parent's tenant funds work
+    // it never authorized, and the child's tenant is billed nothing.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await provisionBobby(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+    const child = await ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, {
+          userId: BOBBY, accountId: ProviderAccountId('account-2'),
+          runId: RunId('run-child'), parentRunId: RunId('run-root'),
+          nonce: 'n2', sessionId: CHILD_SESSION,
+        }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )
+
+    expect(child).toMatchObject({
+      started: false,
+      rejection: { stage: 'admission', rejection: { stage: 'lineage', reason: 'tenant-mismatch' } },
+    })
+    expect(ctx.runScheduler.ledger.open().map(record => record.runId)).toEqual([RunId('run-root')])
+  })
+
+  it('refuses a child that names another account of its own tenant', async () => {
+    // One account is not a subset of another: the parent held exactly one, and
+    // a child reaching a second credential widens the grant it inherited.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.controlPlaneStore.save({
+      record: {
+        id: ProviderAccountId('account-3'), userId: ALICE, provider: 'claude-cli', label: 'second',
+        createdAt: now, updatedAt: now, validatedAt: undefined, revokedAt: undefined, deletedAt: undefined, isDefault: false,
+      },
+      credential: sealCredential(
+        Buffer.from('sk-ant-alice-2', 'utf8'),
+        { userId: ALICE, accountId: ProviderAccountId('account-3') },
+        KEYRING,
+        now,
+      ).envelope,
+    })
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+    const child = await ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, {
+          accountId: ProviderAccountId('account-3'),
+          runId: RunId('run-child'), parentRunId: RunId('run-root'),
+          nonce: 'n2', sessionId: CHILD_SESSION,
+        }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )
+
+    expect(child).toMatchObject({
+      started: false,
+      rejection: { stage: 'admission', rejection: { stage: 'lineage', reason: 'account-mismatch' } },
+    })
   })
 
   it('records what a started run did, against the tenant that ran it', async () => {
@@ -887,14 +966,14 @@ describe('a booted Candy scheduler', () => {
         runId: RunId('run-root'), parentRunId: undefined,
         reserved: BUDGET, spent: settled, leaseExpiresAt: now + 300_000,
       },
-      userId: ALICE, sessionId: SESSION, runtime: AUDIENCE, settledSpent: settled, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: settled, absorbed: undefined,
     })
     await first.controlPlaneStore.openRun({
       record: {
         runId: RunId('run-child'), parentRunId: RunId('run-root'),
         reserved: SHARE, spent: { tokens: 3, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
       },
-      userId: ALICE, sessionId: SESSION, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
     })
     await first.fiber.dispose()
     context = undefined
@@ -919,6 +998,7 @@ describe('a booted Candy scheduler', () => {
       },
       userId: ALICE,
       sessionId: SESSION,
+      accountId: ACCOUNT,
       runtime: AUDIENCE,
       settledSpent: undefined,
       absorbed: undefined,

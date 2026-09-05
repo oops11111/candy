@@ -225,6 +225,7 @@ export class RunScheduler extends Service {
         record,
         userId: claims.userId,
         sessionId: claims.sessionId,
+        accountId: claims.accountId,
         runtime: this.config.audience,
         settledSpent: undefined,
         absorbed: undefined,
@@ -359,6 +360,9 @@ export class RunScheduler extends Service {
       findSessionRun: (claims: ExecutionAssertionClaims) => Promise.resolve(
         store.runsOfSession(this.config.audience, claims.sessionId)[0]?.record.runId,
       ),
+      // A child that named another tenant or another account would run on that
+      // identity's credential while its spend settled into this parent's tree.
+      findParentIdentity: (parentRunId: RunId) => Promise.resolve(store.findRun(parentRunId)),
       findCredential: (claims: ExecutionAssertionClaims) => store.findCredential(claims),
       // A child is admitted against its parent's remainder, not the tenant's
       // own allowance: a tenant with plenty left can have an exhausted parent.

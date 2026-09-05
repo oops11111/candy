@@ -35,7 +35,7 @@ import {
   hasRemainingBudget,
   type RunBudget,
 } from '@deepseek-ai/dsh-run-budget'
-import type { RunId } from '@deepseek-ai/dsh-control-plane'
+import type { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
 import {
   runtimePoolKey,
   runtimePoolRoot,
@@ -117,6 +117,27 @@ export interface RunAdmissionPolicy {
    * same reason its parent does.
    */
   readonly findSessionRun: (claims: ExecutionAssertionClaims) => Promise<RunId | undefined>
+  /**
+   * Report the identity the parent run these claims name was admitted for.
+   *
+   * A child inherits a subset of its parent's grants and may not widen any of
+   * them, so a child naming another tenant or another account is refused: the
+   * parent held exactly one of each, and neither of a pair is a subset of the
+   * other. Without the check, a child of one tenant runs on the other's
+   * credential while its spend settles into the parent's tree — the parent's
+   * tenant funds work it never authorized, and the child's tenant is billed
+   * nothing.
+   *
+   * Answering `undefined` for a parent this deployment does not know leaves
+   * the refusal to the budget lookup, which already denies a child whose
+   * parent holds no allowance.
+   *
+   * It is asked only about a run that has a parent, so it takes that parent's
+   * id rather than the claims naming it.
+   */
+  readonly findParentIdentity: (
+    parentRunId: RunId,
+  ) => Promise<{ readonly userId: UserId; readonly accountId: ProviderAccountId } | undefined>
   /** Look up the sealed credential for the tenant and account the assertion names. */
   readonly findCredential: (claims: ExecutionAssertionClaims) => Promise<CredentialEnvelope | undefined>
 }
@@ -166,6 +187,11 @@ export type RunRejection =
   | {
     readonly stage: 'budget'
     readonly reason: 'no-budget' | 'exhausted'
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'lineage'
+    readonly reason: 'tenant-mismatch' | 'account-mismatch'
     readonly claims: ExecutionAssertionClaims
   }
   | {
@@ -246,6 +272,11 @@ export async function admitRun(
   // topping up and presenting the same still-valid assertion — so burning its
   // single-use token would turn a recoverable refusal into a round trip to the
   // control plane. It is also a cheap read that touches no secret.
+  const lineage = await parentMismatch(policy, claims)
+  if (lineage !== undefined) {
+    return { admitted: false, rejection: { stage: 'lineage', reason: lineage, claims }, audits: [] }
+  }
+
   const budget = await policy.findBudget(claims)
   if (budget === undefined) {
     return { admitted: false, rejection: { stage: 'budget', reason: 'no-budget', claims }, audits: [] }
@@ -297,4 +328,23 @@ export async function admitRun(
       budget,
     },
   }
+}
+
+
+/**
+ * The grant a child would widen, if any.
+ *
+ * A root run has no parent to inherit from, and a parent this deployment does
+ * not know is left to the budget lookup, which denies a child whose parent
+ * holds no allowance.
+ */
+async function parentMismatch(
+  policy: RunAdmissionPolicy,
+  claims: ExecutionAssertionClaims,
+): Promise<'tenant-mismatch' | 'account-mismatch' | undefined> {
+  if (claims.parentRunId === undefined) return undefined
+  const parent = await policy.findParentIdentity(claims.parentRunId)
+  if (parent === undefined) return undefined
+  if (parent.userId !== claims.userId) return 'tenant-mismatch'
+  return parent.accountId === claims.accountId ? undefined : 'account-mismatch'
 }

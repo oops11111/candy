@@ -181,6 +181,16 @@ async consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Pro
 runsOf(runtime: string): Promise<readonly DurableRunRecord[]>
 
 /**
+ * One run's record by id, whatever runtime opened it.
+ *
+ * A child run is checked against its parent's identity, and the parent is
+ * named by the claims rather than found by scanning.
+ * @param runId - the run to read.
+ * @returns its record, or undefined when none is held.
+ */
+findRun(runId: RunId): DurableRunRecord | undefined
+
+/**
  * Every run of this runtime that drives one harness session.
  *
  * A model request carries the session it was assembled for, so this is the

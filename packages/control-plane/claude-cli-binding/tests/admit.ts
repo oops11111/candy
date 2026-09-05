@@ -115,6 +115,7 @@ export async function admissionFor(
     findBudget,
     spendNonce,
     findSessionRun: () => Promise.resolve(undefined),
+    findParentIdentity: () => Promise.resolve(undefined),
     findCredential: () => Promise.resolve(
       sealCredential(secret, { userId: subject.userId, accountId: subject.accountId }, KEYRING, NOW).envelope,
     ),

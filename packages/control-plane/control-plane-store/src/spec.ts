@@ -108,6 +108,8 @@ const storedRun = z.object({
   userId: z.string(),
   /** The harness session this run drives; how its model calls find it. */
   sessionId: z.string(),
+  /** The provider account this run was admitted for; a child may not name another. */
+  accountId: z.string(),
   runtime: z.string(),
   reserved: storedGrant,
   spent: storedConsumed,
@@ -170,7 +172,11 @@ export const controlPlaneDomainSpec = defineDomain({
   //
   // 3 added audit trails. Nothing else changed, and a stale trail is discarded
   // rather than read, which loses history a version 2 store never kept.
-  version: 3,
+  //
+  // 4 added a run's session and account. A version 3 run record cannot say
+  // which session its model calls belong to or which account a child of it may
+  // name, so it is discarded rather than recovered as either.
+  version: 4,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),
@@ -325,6 +331,13 @@ export interface DurableRunRecord {
    */
   readonly sessionId: SessionId
   /**
+   * The provider account this run was admitted for.
+   *
+   * A child run inherits a subset of its parent's grants and may not widen
+   * them, so this is what a child's own claimed account is checked against.
+   */
+  readonly accountId: ProviderAccountId
+  /**
    * The runtime that opened this run, as its own audience identifier.
    *
    * Recovery reads only its own runtime's records. Two runtimes sharing one
@@ -348,6 +361,7 @@ export function toStoredRun(run: DurableRunRecord): StoredRun {
     runId: run.record.runId,
     userId: run.userId,
     sessionId: run.sessionId,
+    accountId: run.accountId,
     runtime: run.runtime,
     reserved: {
       tokens: run.record.reserved.tokens,
@@ -391,6 +405,7 @@ export function fromStoredRun(stored: StoredRun): DurableRunRecord {
     },
     userId: UserId(stored.userId),
     sessionId: brandString<SessionId>(stored.sessionId),
+    accountId: ProviderAccountId(stored.accountId),
     runtime: stored.runtime,
     absorbed: stored.absorbed === undefined ? undefined : RunId(stored.absorbed),
     settledSpent: stored.settledSpent === undefined ? undefined : {
