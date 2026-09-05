@@ -27,6 +27,7 @@ import {
 import ControlPlaneStore from '@deepseek-ai/dsh-control-plane-store'
 import {
   CredentialKeyVersion,
+  revokeCredential,
   sealCredential,
   type CredentialKeyring,
 } from '@deepseek-ai/dsh-credential-vault'
@@ -813,6 +814,118 @@ describe('a booted Candy scheduler', () => {
       started: false,
       rejection: { stage: 'admission', rejection: { stage: 'lineage', reason: 'account-mismatch' } },
     })
+  })
+
+  it('refuses a run on a revoked account, and records both the attempt and the refusal', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    const entry = await ctx.controlPlaneStore.find(ACCOUNT)
+    expect(entry).toBeDefined()
+    if (entry === undefined) return
+    await ctx.controlPlaneStore.save({
+      record: { ...entry.record, revokedAt: now + 1 },
+      credential: revokeCredential(entry.credential, now + 1).envelope,
+    })
+
+    const outcome = await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+    expect(outcome).toMatchObject({
+      started: false,
+      rejection: { stage: 'admission', rejection: { stage: 'credential', reason: 'revoked' } },
+    })
+    // The vault's own record of the attempt, and the refusal naming whose run
+    // it was: an operator can see a revoked account being used, not just that
+    // something was denied.
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toEqual([
+      { at: expect.any(Number) as number, userId: ALICE, accountId: ACCOUNT, event: 'credential', action: 'open', outcome: 'revoked' },
+      { at: now, runId: RunId('run-root'), userId: ALICE, accountId: ACCOUNT, event: 'refused', action: 'credential', outcome: 'revoked' },
+    ])
+  })
+
+  it('refuses a call on a session whose run has ended', async () => {
+    // A lease can expire under an agent that is still working. The run record
+    // is gone by then, so without a memory of the ending its next call looks
+    // like one this runtime never had and runs for free.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+    await ctx.runScheduler.sweep(now + 300_001)
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    expect(seen).toEqual([{
+      type: 'finish',
+      reason: {
+        kind: 'error',
+        failure: {
+          message: "session 'session-1' has no open run: the run driving it has ended",
+          code: 'RUN_NOT_OPEN',
+        },
+      },
+    }])
+  })
+
+  it('meters a session again once a new run drives it', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+    await ctx.runScheduler.close(RunId('run-root'))
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'n2' }), Buffer.from(SECRET, 'utf8')),
+      () => SHARE,
+      now,
+    )
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(ctx.runScheduler.ledger.get(RunId('run-2'))).toMatchObject({ spent: { tokens: 42 } })
+  })
+
+  it('forgets an ended session once its memory is full', async () => {
+    // The memory bounds what the runtime holds; an evicted session falls back
+    // to passing its calls through.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root, { endedSessionMemory: 1 })
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+    for (const attempt of [0, 1]) {
+      await ctx.runScheduler.start(
+        mintExecutionAssertion(
+          claims(now, {
+            runId: RunId(`run-${String(attempt)}`),
+            nonce: `n${String(attempt)}`,
+            sessionId: brandString<SessionId>(`session-${String(attempt)}`),
+          }),
+          Buffer.from(SECRET, 'utf8'),
+        ),
+        () => SHARE,
+        now,
+      )
+      await ctx.runScheduler.close(RunId(`run-${String(attempt)}`))
+    }
+
+    const evicted: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(brandString<SessionId>('session-0')))) evicted.push(chunk)
+    const remembered: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(brandString<SessionId>('session-1')))) remembered.push(chunk)
+
+    expect(evicted.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(remembered.at(-1)).toMatchObject({ reason: { kind: 'error', failure: { code: 'RUN_NOT_OPEN' } } })
   })
 
   it('records what a started run did, against the tenant that ran it', async () => {

@@ -46,6 +46,7 @@ import {
 } from '@deepseek-ai/dsh-credential-vault'
 import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { meterRun, refusedCall, RUN_NOT_OPEN } from '@deepseek-ai/dsh-run-metering'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
@@ -87,6 +88,8 @@ export interface Config {
   leaseMs?: number
   /** How often the clock releases expired holds and drops spent-nonce records. */
   sweepMs?: number
+  /** How many ended sessions this runtime remembers, so their calls stay refused. */
+  endedSessionMemory?: number
   /** Most audit records kept per tenant, and per runtime for attempts that named none. */
   auditRetention?: number
 }
@@ -101,6 +104,7 @@ export const Config: z<Config> = z.object({
   poolBase: z.string().required(),
   leaseMs: z.number().step(1).min(1).default(300_000),
   sweepMs: z.number().step(1).min(1).default(30_000),
+  endedSessionMemory: z.number().step(1).min(1).default(1_000),
   auditRetention: z.number().step(1).min(1).default(200),
 })
 
@@ -145,6 +149,21 @@ export class RunScheduler extends Service {
    * guarantee rather than a likelihood.
    */
   private writes: Promise<unknown> = Promise.resolve()
+
+  /**
+   * Sessions whose run this instance settled, most recently ended last.
+   *
+   * A run ends while the agent driving its session may still be alive — a
+   * lease that expired under a working agent is exactly that case — and the
+   * run record is gone by then, so a request naming that session would look
+   * like one this runtime never had and pass through unmetered. The run that
+   * was cut off for outliving its lease would run for free.
+   *
+   * It is in memory rather than on the medium because it must outlive the run
+   * and need not outlive the process: the agent that could make the call lives
+   * in this process too, and goes with it.
+   */
+  private readonly ended = new Set<SessionId>()
 
   private readonly keyring: CredentialKeyring
   private readonly assertionSecret: Buffer
@@ -230,6 +249,7 @@ export class RunScheduler extends Service {
         settledSpent: undefined,
         absorbed: undefined,
       }))
+      this.ended.delete(claims.sessionId)
     } catch (unwritable) {
       // The record was opened a moment ago and has spent nothing, so closing it
       // returns a child's whole hold to its parent at once. A run this runtime
@@ -270,7 +290,13 @@ export class RunScheduler extends Service {
   ): AsyncIterable<StreamChunk> {
     if (options.sessionId === undefined) return next()
     const open = this.ctx.controlPlaneStore.runsOfSession(this.config.audience, options.sessionId)
-    if (open.length === 0) return next()
+    if (open.length === 0) {
+      if (!this.ended.has(options.sessionId)) return next()
+      return refusedCall(
+        `session '${options.sessionId}' has no open run: the run driving it has ended`,
+        RUN_NOT_OPEN,
+      )
+    }
     if (open.length > 1) {
       const runIds = open.map(run => run.record.runId).join(', ')
       return refusedCall(
@@ -412,6 +438,7 @@ export class RunScheduler extends Service {
     await this.applyCharge(marked, preview.spent)
     for (const descendant of preview.closed) await store.deleteRun(descendant)
     await store.deleteRun(runId)
+    this.remember(marked.sessionId)
     // Nothing between the preview and here removed the run, because every write
     // to a run record queues on the chain this call already holds.
     return this.ledger.close(runId)
@@ -530,6 +557,24 @@ export class RunScheduler extends Service {
       return
     }
     yield refusalOf(outcome.rejection, at, this.config.audience)
+  }
+
+  /**
+   * Remember one ended session, dropping the oldest once the cap is reached.
+   *
+   * An evicted session falls back to passing its calls through: the memory
+   * bounds what this runtime holds, and a session old enough to be evicted is
+   * one whose agent has almost certainly gone with its run.
+   */
+  private remember(sessionId: SessionId): void {
+    this.ended.delete(sessionId)
+    this.ended.add(sessionId)
+    const cap = this.config.endedSessionMemory ?? 1_000
+    // Insertion order makes the first entry the oldest.
+    for (const oldest of this.ended) {
+      if (this.ended.size <= cap) break
+      this.ended.delete(oldest)
+    }
   }
 
   /** Queue one write, or one settlement, on this runtime's single write chain. */
