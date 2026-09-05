@@ -690,6 +690,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the account and its sealed credential, or undefined.',
       },
       {
+        signature: 'accountOf(id: ProviderAccountId): ProviderAccountRecord | undefined',
+        description: 'One account\'s record, read without awaiting.\n\nfind is the port `dsh-provider-accounts` consumes and stays async because another backend need not answer from memory. This runtime decides whether an in-flight call may still spend, on the synchronous path a waterfall listener runs on, and it needs the record rather than the sealed credential beside it.',
+        parameters: [{ name: 'id', description: 'the account to read.' }],
+        returns: 'its secret-free record, or undefined when none is held.',
+      },
+      {
         signature: 'async save(entry: ProviderAccountEntry): Promise<void>',
         description: 'Write one account, replacing any record under the same id.',
         parameters: [{ name: 'entry', description: 'the account and its sealed credential.' }],

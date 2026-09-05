@@ -145,6 +145,7 @@ describe('a booted control-plane store', () => {
     const ctx = await boot(root)
 
     expect(await ctx.controlPlaneStore.find(ACCOUNT)).toBeUndefined()
+    expect(ctx.controlPlaneStore.accountOf(ACCOUNT)).toBeUndefined()
     expect(await ctx.controlPlaneStore.findCredential({ userId: ALICE, accountId: ACCOUNT })).toBeUndefined()
   })
 
@@ -378,6 +379,9 @@ describe('a booted control-plane store', () => {
     await ctx.controlPlaneStore.save(populated)
 
     expect(await ctx.controlPlaneStore.find(ACCOUNT)).toEqual(populated)
+    // The synchronous reader answers the same record, minus the credential a
+    // metering decision has no business touching.
+    expect(ctx.controlPlaneStore.accountOf(ACCOUNT)).toEqual(populated.record)
   })
 
   it('reads back what an earlier boot wrote to the same database', async () => {

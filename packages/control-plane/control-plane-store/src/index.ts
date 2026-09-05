@@ -20,7 +20,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
-import type { ProviderAccountEntry, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
+import type { ProviderAccountEntry, ProviderAccountRecord, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { consumeAllowance, openAllowance, type TenantAllowance } from '@deepseek-ai/dsh-tenant-allowance'
@@ -28,6 +28,7 @@ import {
   controlPlaneDomainSpec,
   fromStoredAllowance,
   fromStoredEntry,
+  fromStoredRecord,
   fromStoredRun,
   toStoredAllowance,
   toStoredEntry,
@@ -117,6 +118,22 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
   find(id: ProviderAccountId): Promise<ProviderAccountEntry | undefined> {
     const stored = this.accounts.get(id)
     return Promise.resolve(stored === undefined ? undefined : fromStoredEntry(stored))
+  }
+
+  /**
+   * One account's record, read without awaiting.
+   *
+   * {@link find} is the port `dsh-provider-accounts` consumes and stays async
+   * because another backend need not answer from memory. This runtime decides
+   * whether an in-flight call may still spend, on the synchronous path a
+   * waterfall listener runs on, and it needs the record rather than the sealed
+   * credential beside it.
+   * @param id - the account to read.
+   * @returns its secret-free record, or undefined when none is held.
+   */
+  accountOf(id: ProviderAccountId): ProviderAccountRecord | undefined {
+    const stored = this.accounts.get(id)
+    return stored === undefined ? undefined : fromStoredRecord(stored.record)
   }
 
   /**

@@ -100,6 +100,8 @@ A request naming no session, or one naming a session this runtime never had a ru
 
 The mapping is kept unambiguous where it is created: a run whose session another run already drives is refused at `start`, before its nonce is spent, so it can be retried once that session settles. A request whose session two records still claim is refused with a terminal `error` finish — that state arrives only from outside `start`, and charging either tree would be a misbilling the caller cannot detect.
 
+The run's account is read again on every call, not trusted from admission. A run opens its credential once and holds it for as long as it lives, so revoking the account destroys the stored envelope without reaching a process already authenticated with it. Reading the record per call is what makes a revocation stop work that is already under way: the call is refused with `CREDENTIAL_REVOKED` before the provider is reached, and nothing is charged. The run itself stays open until it settles or its lease expires, so a revocation stops the spending rather than releasing the hold.
+
 ### Metering one stream by hand
 
 ```ts

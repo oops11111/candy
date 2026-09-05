@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md
-2026-09-02-multi-tenant-cli-agent-runtime.md: 5e80facdd7d757957845aa6f7baae7afb772fe37
-2026-09-02-multi-tenant-cli-agent-runtime.zh.md: 78f6e2e9b53a71f3c3d50781131f8b38893552fe
+2026-09-02-multi-tenant-cli-agent-runtime.md: be9adf591e27835a2e7f6d6df268c4526f578b30
+2026-09-02-multi-tenant-cli-agent-runtime.zh.md: 15f57bb9e697f6c0f6f75173c347ab827748fb6e

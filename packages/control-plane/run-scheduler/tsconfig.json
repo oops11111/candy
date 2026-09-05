@@ -19,6 +19,7 @@
     { "path": "../run-admission" },
     { "path": "../run-budget" },
     { "path": "../run-ledger" },
+    { "path": "../provider-accounts" },
     { "path": "../run-metering" },
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },

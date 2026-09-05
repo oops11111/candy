@@ -47,7 +47,8 @@ import {
 import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { meterRun, refusedCall, RUN_NOT_OPEN } from '@deepseek-ai/dsh-run-metering'
+import { isProviderAccountUsable } from '@deepseek-ai/dsh-provider-accounts'
+import { CREDENTIAL_REVOKED, meterRun, refusedCall, RUN_NOT_OPEN } from '@deepseek-ai/dsh-run-metering'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunRecord, type RunSettlement } from '@deepseek-ai/dsh-run-ledger'
@@ -308,6 +309,12 @@ export class RunScheduler extends Service {
    * is not this runtime's to charge and is passed through. A session that two
    * open runs both claim is refused: the control plane minted two runs for one
    * session, and charging either tree is a misbilling a caller cannot detect.
+   *
+   * The run's account is read again here rather than trusted from admission. A
+   * run opens its credential once and holds it, so revoking the account
+   * destroys the stored envelope without reaching the process already
+   * authenticated with it; reading the record per call is what makes a
+   * revocation stop work that is already under way.
    */
   private meterRequest(
     options: GenerateOptions,
@@ -331,7 +338,15 @@ export class RunScheduler extends Service {
     }
     // The length check above establishes the entry.
     // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
-    return this.meter(open[0]!.record.runId, next())
+    const run = open[0]!
+    const account = this.ctx.controlPlaneStore.accountOf(run.accountId)
+    if (account === undefined || !isProviderAccountUsable(account)) {
+      return refusedCall(
+        `account '${run.accountId}' can no longer authorize work, so run '${run.record.runId}' may not spend it`,
+        CREDENTIAL_REVOKED,
+      )
+    }
+    return this.meter(run.record.runId, next())
   }
 
   /**

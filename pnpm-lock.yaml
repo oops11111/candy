@@ -4444,6 +4444,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-provider-accounts':
+        specifier: workspace:^
+        version: link:../provider-accounts
       '@deepseek-ai/dsh-run-admission':
         specifier: workspace:^
         version: link:../run-admission

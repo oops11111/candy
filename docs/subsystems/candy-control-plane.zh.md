@@ -95,6 +95,19 @@ listByUser(userId: UserId): Promise<readonly ProviderAccountEntry[]>
 find(id: ProviderAccountId): Promise<ProviderAccountEntry | undefined>
 
 /**
+ * One account's record, read without awaiting.
+ *
+ * {@link find} is the port `dsh-provider-accounts` consumes and stays async
+ * because another backend need not answer from memory. This runtime decides
+ * whether an in-flight call may still spend, on the synchronous path a
+ * waterfall listener runs on, and it needs the record rather than the sealed
+ * credential beside it.
+ * @param id - the account to read.
+ * @returns its secret-free record, or undefined when none is held.
+ */
+accountOf(id: ProviderAccountId): ProviderAccountRecord | undefined
+
+/**
  * Write one account, replacing any record under the same id.
  * @param entry - the account and its sealed credential.
  * @returns resolution after the write reaches the medium.

@@ -306,6 +306,21 @@ function view(record: ProviderAccountRecord): ProviderAccountView {
   }
 }
 
+/**
+ * Whether one account may still authorize work.
+ *
+ * Revoking and deleting both destroy the credential envelope, so an account
+ * carrying either stamp can never be opened again. A caller that holds an
+ * already-opened credential — a run started before the stamp — has no other
+ * way to learn that, which is why this is exported rather than left inline.
+ *
+ * @param record - the account's secret-free record.
+ * @returns true only for an account that is neither revoked nor deleted.
+ */
+export function isProviderAccountUsable(record: ProviderAccountRecord): boolean {
+  return record.deletedAt === undefined && record.revokedAt === undefined
+}
+
 function cleanLabel(label: string): string {
   const cleaned = label.trim()
   if (cleaned.length === 0 || cleaned.length > 120) throw new ProviderAccountError('invalid-label')
@@ -313,10 +328,7 @@ function cleanLabel(label: string): string {
 }
 
 function hasActiveAccount(entries: readonly ProviderAccountEntry[], provider: ProviderKind): boolean {
-  return entries.some(entry =>
-    entry.record.provider === provider
-    && entry.record.deletedAt === undefined
-    && entry.record.revokedAt === undefined)
+  return entries.some(entry => entry.record.provider === provider && isProviderAccountUsable(entry.record))
 }
 
 async function ownedActiveEntry(

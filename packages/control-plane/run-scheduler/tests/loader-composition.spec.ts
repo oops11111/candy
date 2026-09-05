@@ -33,6 +33,7 @@ import {
 } from '@deepseek-ai/dsh-credential-vault'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import { revokeProviderAccount } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
@@ -638,6 +639,48 @@ describe('a booted Candy scheduler', () => {
     expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
     expect(ctx.runScheduler.ledger.get(RunId('run-root')))
       .toMatchObject({ spent: { tokens: 42, costMicroUsd: 900 } })
+  })
+
+  it('refuses a call whose run authenticated with an account since revoked', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    // Revoking destroys the stored envelope, which stops the next admission
+    // but reaches nothing already holding an opened credential.
+    await revokeProviderAccount(ctx.controlPlaneStore, ALICE, ACCOUNT, now + 1)
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    expect(seen.at(-1)).toMatchObject({
+      type: 'finish',
+      reason: { kind: 'error', failure: { code: 'CREDENTIAL_REVOKED' } },
+    })
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))?.spent).toMatchObject({ tokens: 0, costMicroUsd: 0 })
+  })
+
+  it('keeps metering a call whose run still holds a usable account', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    // Another tenant's revocation says nothing about this run's account.
+    await provisionBobby(ctx, now)
+    await revokeProviderAccount(ctx.controlPlaneStore, BOBBY, ProviderAccountId('account-2'), now + 1)
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
   })
 
   it('leaves a request that belongs to no run of this runtime alone', async () => {

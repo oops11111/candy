@@ -34,6 +34,17 @@ export const RUN_BUDGET_EXHAUSTED = 'RUN_BUDGET_EXHAUSTED'
 /** The failure code for a call metered against a run that is not open. */
 export const RUN_NOT_OPEN = 'RUN_NOT_OPEN'
 
+/**
+ * The failure code for a call whose run authenticated with an account that has
+ * since been revoked or deleted.
+ *
+ * A run opens its credential once, at admission, and holds it for as long as it
+ * lives. Revoking the account destroys the stored envelope, which stops the
+ * next admission but reaches nothing already running, so this is the code an
+ * in-flight call is refused with.
+ */
+export const CREDENTIAL_REVOKED = 'CREDENTIAL_REVOKED'
+
 /** What one metered call needs from the runtime that owns the run. */
 export interface RunMeterPorts {
   /**

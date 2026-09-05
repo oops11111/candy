@@ -227,23 +227,32 @@ export function toStoredEntry(entry: ProviderAccountEntry): z.infer<typeof store
 }
 
 /**
+ * Rebuild one account's record from the medium.
+ * @param stored - the validated stored record.
+ * @returns the runtime account record, with its ids branded.
+ */
+export function fromStoredRecord(stored: z.infer<typeof storedEntry>['record']): ProviderAccountRecord {
+  return {
+    id: ProviderAccountId(stored.id),
+    userId: UserId(stored.userId),
+    provider: stored.provider,
+    label: stored.label,
+    createdAt: stored.createdAt,
+    updatedAt: stored.updatedAt,
+    validatedAt: stored.validatedAt,
+    revokedAt: stored.revokedAt,
+    deletedAt: stored.deletedAt,
+    isDefault: stored.isDefault,
+  }
+}
+
+/**
  * Rebuild one account entry from the medium.
  * @param stored - the validated stored form.
  * @returns the runtime account and its sealed credential.
  */
 export function fromStoredEntry(stored: z.infer<typeof storedEntry>): ProviderAccountEntry {
-  const record: ProviderAccountRecord = {
-    id: ProviderAccountId(stored.record.id),
-    userId: UserId(stored.record.userId),
-    provider: stored.record.provider,
-    label: stored.record.label,
-    createdAt: stored.record.createdAt,
-    updatedAt: stored.record.updatedAt,
-    validatedAt: stored.record.validatedAt,
-    revokedAt: stored.record.revokedAt,
-    deletedAt: stored.record.deletedAt,
-    isDefault: stored.record.isDefault,
-  }
+  const record = fromStoredRecord(stored.record)
   const credential: CredentialEnvelope = {
     envelopeVersion: stored.credential.envelopeVersion,
     userId: UserId(stored.credential.userId),
