@@ -308,7 +308,7 @@ One instance owns one ledger and one replay store, so every run this runtime adm
  * @returns the started run, or the step that refused it, with every audit
  *   record the attempt produced.
  */
-async start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => run.budget, now: number = Date.now(), ): Promise<RunStartOutcome>
+start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => run.budget, now: number = Date.now(), ): Promise<RunStartOutcome>
 
 /**
  * Record what one run consumed since its last charge.
@@ -317,7 +317,7 @@ async start( token: string, share: (run: { budget: RunBudget }) => RunBudget = r
  * @returns the updated record and the dimensions now used up, or why the
  *   charge was refused.
  */
-async charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>
+charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>
 
 /**
  * Meter one provider stream against an open run.

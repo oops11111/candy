@@ -141,14 +141,19 @@ export class RunScheduler extends Service {
   readonly replay: RunReplayStore = new RunReplayStore()
 
   /**
-   * The one chain every write to a run record queues on.
+   * The one chain every decision this runtime acts on queues behind.
    *
-   * A settlement charges its funder and then forgets the run, and the marker
-   * that makes the charge repeatable holds only while no other write to those
-   * two records interleaves. Serializing them is what makes the marker a
-   * guarantee rather than a likelihood.
+   * Two things need it. A settlement charges its funder and then forgets the
+   * run, and the marker that makes the charge repeatable holds only while no
+   * other write to those two records interleaves. And a start reads what a
+   * tenant has left, then opens a run that consumes it — two concurrent starts
+   * that both read before either opened would each be admitted against the
+   * whole remainder, and the tenant would hold twice its grant.
+   *
+   * So the chain orders whole operations, not writes: the state a decision was
+   * made from cannot change before that decision is applied.
    */
-  private writes: Promise<unknown> = Promise.resolve()
+  private serial: Promise<unknown> = Promise.resolve()
 
   /**
    * Sessions whose run this instance settled, most recently ended last.
@@ -221,10 +226,26 @@ export class RunScheduler extends Service {
    * @returns the started run, or the step that refused it, with every audit
    *   record the attempt produced.
    */
-  async start(
+  start(
     token: string,
     share: (run: { budget: RunBudget }) => RunBudget = run => run.budget,
     now: number = Date.now(),
+  ): Promise<RunStartOutcome> {
+    return this.queue(() => this.admitAndOpen(token, share, now))
+  }
+
+  /**
+   * Admit, fund, place and record one run, with nothing else interleaving.
+   *
+   * Every check this performs reads state a later step changes: the tenant's
+   * remainder, the parent's allowance, the session's holder. Running under the
+   * chain is what makes each of them decide about the state its own hold is
+   * then taken from.
+   */
+  private async admitAndOpen(
+    token: string,
+    share: (run: { budget: RunBudget }) => RunBudget,
+    now: number,
   ): Promise<RunStartOutcome> {
     const outcome = await startRun({ token }, this.policy(), {
       ledger: this.ledger,
@@ -240,7 +261,9 @@ export class RunScheduler extends Service {
     // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
     const record = this.ledger.get(claims.runId)!
     try {
-      await this.queue(() => this.ctx.controlPlaneStore.openRun({
+      // Called directly: this already runs under the chain, and queueing
+      // behind itself would never resolve.
+      await this.ctx.controlPlaneStore.openRun({
         record,
         userId: claims.userId,
         sessionId: claims.sessionId,
@@ -248,7 +271,7 @@ export class RunScheduler extends Service {
         runtime: this.config.audience,
         settledSpent: undefined,
         absorbed: undefined,
-      }))
+      })
       this.ended.delete(claims.sessionId)
     } catch (unwritable) {
       // The record was opened a moment ago and has spent nothing, so closing it
@@ -269,11 +292,13 @@ export class RunScheduler extends Service {
    * @returns the updated record and the dimensions now used up, or why the
    *   charge was refused.
    */
-  async charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>> {
-    const charged = this.ledger.charge(runId, spend)
-    if (!charged.ok) return charged
-    await this.queue(() => this.ctx.controlPlaneStore.recordRunSpend(runId, charged.value.record.spent))
-    return charged
+  charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>> {
+    return this.queue(async () => {
+      const charged = this.ledger.charge(runId, spend)
+      if (!charged.ok) return charged
+      await this.ctx.controlPlaneStore.recordRunSpend(runId, charged.value.record.spent)
+      return charged
+    })
   }
 
   /**
@@ -577,10 +602,10 @@ export class RunScheduler extends Service {
     }
   }
 
-  /** Queue one write, or one settlement, on this runtime's single write chain. */
+  /** Queue one whole operation on this runtime's single chain. */
   private queue<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.writes.then(work, work)
-    this.writes = next.then(() => undefined, () => undefined)
+    const next = this.serial.then(work, work)
+    this.serial = next.then(() => undefined, () => undefined)
     return next
   }
 }

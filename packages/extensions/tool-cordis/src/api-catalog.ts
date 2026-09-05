@@ -1416,13 +1416,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'async start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => run.budget, now: number = Date.now(), ): Promise<RunStartOutcome>',
+        signature: 'start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => run.budget, now: number = Date.now(), ): Promise<RunStartOutcome>',
         description: 'Admit one request, fund the run it names, and place it in its pool.',
         parameters: [{ name: 'token', description: 'the execution assertion exactly as received.' }, { name: 'share', description: 'the allowance to open the run with; a root run is normally opened with what admission answered, and a child with the share its parent delegates.' }, { name: 'now', description: 'epoch milliseconds; defaults to this runtime\'s clock.' }],
         returns: 'the started run, or the step that refused it, with every audit record the attempt produced.',
       },
       {
-        signature: 'async charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>',
+        signature: 'charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>',
         description: 'Record what one run consumed since its last charge.',
         parameters: [{ name: 'runId', description: 'the open run.' }, { name: 'spend', description: 'what the invocation consumed.' }],
         returns: 'the updated record and the dimensions now used up, or why the charge was refused.',

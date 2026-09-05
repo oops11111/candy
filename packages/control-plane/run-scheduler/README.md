@@ -143,6 +143,12 @@ A child is admitted against its *parent's* remainder, which this service's ledge
 
 A root is admitted against its tenant's durable allowance *less the reservation of every run of that tenant still open here*. Neither half is the answer alone: a grant with no consumption subtracted funds every run a tenant ever starts, and a grant with no open holds subtracted lets two unrelated trees each hold the whole allowance at once. The two lifetimes — durable per deployment, in-memory per runtime — meet here and nowhere else.
 
+### Why a start runs under the chain too
+
+Every check a start makes reads state a later step of the same start changes: the tenant's remainder, the parent's allowance, the session's holder. Read outside a critical section, two concurrent starts for one tenant both see the whole remainder and both open against it, and the tenant ends up holding twice its grant — measured against a booted runtime before this held.
+
+So the chain orders whole operations rather than writes. The state a decision was made from cannot change before that decision is applied, which is what makes the tenant remainder, the one-session rule and the parent-subset rule bounds rather than likelihoods.
+
 ### Why the settlement writes before it closes
 
 A settlement is two writes the medium cannot make one: charge whoever funded the run, then forget the run. Doing it in memory first and writing after loses the charge whenever the write fails, which is exactly when it matters. So the charge is computed with `RunLedger.settlementOf`, written down as the run's own settled figure, applied to its funder, and only then are the records forgotten and the hold released. A rejected write leaves the run open in both places, and its lease brings the next sweep back to try again.
@@ -193,7 +199,7 @@ These are current package constraints, not a task backlog.
 - **A restart ends every run** — recovery settles what it finds rather than resuming it, because the provider processes died with the runtime. A deployment that restarts a runtime under load ends its live runs and charges their tenants for what they had spent.
 - **One credential key** — the config names one version, so the keyring cannot open an envelope sealed under a retired one. Rotation needs the keyring to carry more than the current key.
 - **A charge is not visible until settlement** — `charge` writes a run's spend to its own record at once, and the tenant's consumption moves only when the tree's root closes. That is correct while the run is open, since its reservation is already held out of the tenant's remainder, and it means a tenant's consumption lags its live spending by one tree.
-- **Every write is serialized** — one chain orders every run-record write in the runtime, which is what makes the exactly-once marker a guarantee. It also means a slow medium serializes charges across unrelated tenants.
+- **Every operation is serialized** — one chain orders every start, charge and settlement in the runtime, which is what makes the exactly-once marker and the allowance checks guarantees. It also means one tenant's start waits behind another's, including the pool directory each start creates.
 - **A rejected sweep is logged, not retried immediately** — the runs it could not settle stay open with expired leases, so the next sweep retries them. A medium that stays unavailable holds those allowances until it comes back.
 - **It does not run the provider** — binding and cancellation stay with the caller; `meter` wraps a stream the caller opened, and this service holds no process.
 - **A trail is a window, not an archive** — `auditRetention` records per tenant, and per runtime for attempts that named none; older records are dropped rather than shipped anywhere. A deployment that needs to keep them reads them from here and sends them on.

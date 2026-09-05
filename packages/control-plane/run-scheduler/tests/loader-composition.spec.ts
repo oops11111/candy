@@ -952,6 +952,54 @@ describe('a booted Candy scheduler', () => {
     expect(ctx.runScheduler.auditsOfTenant(ALICE)).toHaveLength(16)
   })
 
+  it('never lets two concurrent starts hold more than the tenant was granted', async () => {
+    // The allowance a start reads and the hold that consumes it sit on opposite
+    // sides of an await. Both reads seeing the whole grant leaves the tenant
+    // holding twice it.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+
+    const outcomes = await Promise.all([0, 1].map(attempt => ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, {
+          runId: RunId(`run-${String(attempt)}`),
+          nonce: `n${String(attempt)}`,
+          sessionId: brandString<SessionId>(`session-${String(attempt)}`),
+        }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      undefined,
+      now,
+    )))
+
+    expect(outcomes.filter(outcome => outcome.started)).toHaveLength(1)
+    const held = ctx.runScheduler.ledger.open().reduce((sum, record) => sum + record.reserved.tokens, 0)
+    expect(held).toBe(BUDGET.tokens)
+  })
+
+  it('lets only one of two concurrent starts take a session', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+
+    const outcomes = await Promise.all([0, 1].map(attempt => ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, { runId: RunId(`run-${String(attempt)}`), nonce: `n${String(attempt)}` }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )))
+
+    expect(outcomes.filter(outcome => outcome.started)).toHaveLength(1)
+    expect(outcomes.find(outcome => !outcome.started)).toMatchObject({
+      rejection: { stage: 'admission', rejection: { stage: 'session', reason: 'already-driven' } },
+    })
+  })
+
   it('records what a started run did, against the tenant that ran it', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)
