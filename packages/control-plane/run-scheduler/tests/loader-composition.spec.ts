@@ -67,7 +67,7 @@ afterEach(async () => {
   vi.unstubAllEnvs()
 })
 
-async function boot(at: string): Promise<Context> {
+async function boot(at: string, overrides: Readonly<Record<string, number>> = {}): Promise<Context> {
   vi.stubEnv('CANDY_ASSERTION_SECRET', SECRET)
   vi.stubEnv('CANDY_CREDENTIAL_KEY', KEY)
   await mkdir(join(at, 'pools'), { mode: 0o700, recursive: true })
@@ -94,6 +94,7 @@ async function boot(at: string): Promise<Context> {
     `    audience: ${JSON.stringify(AUDIENCE)}`,
     `    credentialKeyVersion: ${JSON.stringify(KEY_VERSION)}`,
     `    poolBase: ${JSON.stringify(join(at, 'pools'))}`,
+    ...Object.entries(overrides).map(([key, value]) => `    ${key}: ${String(value)}`),
     '',
   ].join('\n'))
 
@@ -558,6 +559,95 @@ describe('a booted Candy scheduler', () => {
       type: 'finish',
       reason: { kind: 'error', failure: { message: "run 'run-root' has spent tokens", code: 'RUN_BUDGET_EXHAUSTED' } },
     }])
+  })
+
+  it('records what a started run did, against the tenant that ran it', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toEqual([
+      { at: expect.any(Number) as number, userId: ALICE, accountId: ACCOUNT, event: 'credential', action: 'open', outcome: 'ok' },
+      { at: now, runId: RunId('run-root'), userId: ALICE, accountId: ACCOUNT, event: 'started', action: 'start', outcome: 'ok' },
+    ])
+  })
+
+  it('records a denial against the tenant it refused', async () => {
+    // A denied run is the event an audit trail exists for, and every stage past
+    // the assertion knows whose run it refused.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    const token = mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8'))
+
+    await ctx.runScheduler.start(token, undefined, now)
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toEqual([
+      { at: now, runId: RunId('run-root'), userId: ALICE, accountId: ACCOUNT, event: 'refused', action: 'budget', outcome: 'no-budget' },
+    ])
+  })
+
+  it('files an unverifiable token against the runtime, not a tenant it cannot believe', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from('a-different-secret-of-32-bytes!!!', 'utf8')), undefined, now)
+
+    expect(ctx.runScheduler.auditsOfRuntime())
+      .toEqual([{ at: now, event: 'refused', action: 'assertion', outcome: 'signature' }])
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toEqual([])
+  })
+
+  it('records a run the ledger refused, naming whose it was', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+
+    await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now, { nonce: 'nonce-2' }), Buffer.from(SECRET, 'utf8')),
+      () => SHARE,
+      now,
+    )
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE).at(-1))
+      .toEqual({ at: now, runId: RunId('run-root'), userId: ALICE, accountId: ACCOUNT, event: 'refused', action: 'ledger', outcome: 'duplicate-run' })
+  })
+
+  it('keeps only the most recent records a deployment asked to retain', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root, { auditRetention: 3 })
+    const now = Date.now()
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await ctx.runScheduler.start(
+        mintExecutionAssertion(claims(now, { runId: RunId(`run-${String(attempt)}`), nonce: `nonce-${String(attempt)}` }), Buffer.from(SECRET, 'utf8')),
+        undefined,
+        now,
+      )
+    }
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE).map(record => record.runId))
+      .toEqual([RunId('run-2'), RunId('run-3'), RunId('run-4')])
+  })
+
+  it('keeps a tenant\'s records across a restart', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await first.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    expect(second.runScheduler.auditsOfTenant(ALICE)).toHaveLength(1)
   })
 
   it('refuses a charge for a run that is not open', async () => {

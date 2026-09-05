@@ -236,6 +236,29 @@ async markRunSettled(runId: RunId, spent: RunSpend): Promise<DurableRunRecord>
  * @returns true when a record was removed, false when it was already absent.
  */
 deleteRun(runId: RunId): Promise<boolean>
+
+/**
+ * Append records to one subject's trail, keeping the most recent `retain`.
+ *
+ * The cap is the caller's because it is a deployment's retention choice, not
+ * a property of the medium. It is also the whole of the retention policy:
+ * a trail is a window on recent activity, and the record that falls out of it
+ * is gone.
+ * @param subject - the tenant or runtime the records belong to.
+ * @param records - what happened, oldest first.
+ * @param retain - most records to keep for this subject; at least one.
+ * @returns the trail as stored, after the write reaches the medium.
+ * @throws RangeError when `retain` is not a positive safe integer, which is a
+ *   deployment error rather than a record to drop.
+ */
+async recordAudit( subject: AuditSubject, records: readonly RunAuditRecord[], retain: number, ): Promise<readonly RunAuditRecord[]>
+
+/**
+ * One subject's recorded activity, oldest first.
+ * @param subject - the tenant or runtime to read.
+ * @returns its retained records; empty when nothing is recorded for it.
+ */
+auditsOf(subject: AuditSubject): readonly RunAuditRecord[]
 ```
 
 Source: [`packages/control-plane/control-plane-store/src/index.ts`](../../packages/control-plane/control-plane-store/src/index.ts)
@@ -311,6 +334,23 @@ close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>
  * @returns the runs whose holds were released.
  */
 async sweep(now: number): Promise<readonly RunSettlement[]>
+
+/**
+ * Read back what one tenant's scheduling attempts did here, oldest first.
+ * @param userId - the tenant to read.
+ * @returns its retained records.
+ */
+auditsOfTenant(userId: UserId): readonly RunAuditRecord[]
+
+/**
+ * Read back the attempts this runtime refused before it knew whose they were.
+ *
+ * An assertion that fails to verify names no tenant this runtime may believe,
+ * so its record is filed here rather than dropped — it is the clearest attack
+ * signal admission can observe.
+ * @returns this runtime's retained unattributed records, oldest first.
+ */
+auditsOfRuntime(): readonly RunAuditRecord[]
 ```
 
 Types: [StreamChunk](llm-streaming.zh.md)

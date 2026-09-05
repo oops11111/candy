@@ -26,7 +26,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import { afterEach, describe, expect, it } from 'vitest'
-import ControlPlaneStore from '../src/index.ts'
+import ControlPlaneStore, { runtimeSubject, tenantSubject, type RunAuditRecord } from '../src/index.ts'
 
 const NOW = 1_800_000_000_000
 const ALICE = UserId('user-alice')
@@ -207,6 +207,39 @@ describe('a booted control-plane store', () => {
 
     const [stored] = await ctx.controlPlaneStore.runsOf('runtime-1')
     expect(stored).toMatchObject({ record: { spent: { tokens: 35, wallMs: 1, costMicroUsd: 2 } }, absorbed: RunId('run-child') })
+  })
+
+  it('keeps one subject\'s most recent records and drops the rest', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const subject = tenantSubject(ALICE)
+    const record = (at: number): RunAuditRecord => ({ at, event: 'started', action: 'start', outcome: 'ok' })
+
+    await ctx.controlPlaneStore.recordAudit(subject, [record(1), record(2)], 3)
+    const kept = await ctx.controlPlaneStore.recordAudit(subject, [record(3), record(4)], 3)
+
+    expect(kept.map(entry => entry.at)).toEqual([2, 3, 4])
+    expect(ctx.controlPlaneStore.auditsOf(subject).map(entry => entry.at)).toEqual([2, 3, 4])
+  })
+
+  it('writes nothing when an attempt produced no records', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const subject = runtimeSubject('runtime-1')
+
+    expect(await ctx.controlPlaneStore.recordAudit(subject, [], 3)).toEqual([])
+    expect(ctx.controlPlaneStore.auditsOf(subject)).toEqual([])
+  })
+
+  it('refuses a retention that is not a positive safe integer', async () => {
+    // A deployment error rather than a record to drop: silently keeping one
+    // would be a retention nobody chose.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const record: RunAuditRecord = { at: 1, event: 'started', action: 'start', outcome: 'ok' }
+
+    await expect(ctx.controlPlaneStore.recordAudit(tenantSubject(ALICE), [record], 0))
+      .rejects.toThrow(/audit retention must be a positive safe integer, got 0/)
   })
 
   it('writes nothing about a run it holds no record for', async () => {

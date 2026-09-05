@@ -13,6 +13,7 @@
     { "path": "../control-plane" },
     { "path": "../credential-vault" },
     { "path": "../provider-accounts" },
+    { "path": "../../util/brand" },
     { "path": "../run-budget" },
     { "path": "../run-ledger" },
     { "path": "../tenant-allowance" },

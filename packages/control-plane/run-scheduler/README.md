@@ -15,7 +15,7 @@ Everything this service composes already existed as a library. What did not exis
 
 It also meters the provider streams a run makes, which is where an allowance stops being an accounting figure: a call is refused before the provider is reached when the run has nothing left, and cut when it outruns the wall time the run still had.
 
-Its records are durable and every settlement is exactly-once across a crash. The order queued requests run in is still a decision nothing here makes.
+Its records are durable and every settlement is exactly-once across a crash, and every scheduling attempt it makes leaves a record — a started run, a denial and the tenant it refused, and the vault operations each attempt produced. The order queued requests run in is still a decision nothing here makes.
 
 ## Table of Contents
 
@@ -40,6 +40,7 @@ Its records are durable and every settlement is exactly-once across a crash. The
     audience: candy-runtime-debian-1
     credentialKeyVersion: 2026-09-a
     poolBase: /srv/candy/pools
+    auditRetention: 200
 ```
 
 It requires [`dsh-control-plane-store`](../control-plane-store/README.md) for the accounts and allowances it reads, and the `timer` service for its clock. Both secrets are named as environment variables rather than written into the composition: `assertionSecretEnv` (default `CANDY_ASSERTION_SECRET`) and `credentialKeyEnv` (default `CANDY_CREDENTIAL_KEY`). An unset one fails the boot, and a credential key that is not 32 bytes fails it too — the vault seals with exactly that.
@@ -61,6 +62,22 @@ export const started = outcome.started ? outcome.value.run.poolRoot : outcome.re
 `start` takes the assertion and, optionally, the allowance to open the run with. A root run defaults to what admission answered for it; a child is opened with the share its parent delegates, and the ledger refuses a share exceeding what that parent holds.
 
 What comes back is not running. Binding a provider to it stays with the caller — `charge` and `close` are on this service, and the run's record is open until `close`.
+
+### Reading what a tenant's attempts did
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { UserId } from '@deepseek-ai/dsh-control-plane'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const userId: UserId
+
+export const recent = ctx.runScheduler.auditsOfTenant(userId)
+export const unattributed = ctx.runScheduler.auditsOfRuntime()
+```
+
+Every stage past the assertion works from verified claims, so its record names the tenant, account and run it refused. An assertion that fails to verify names none this runtime may believe, so `auditsOfRuntime` is where that record goes rather than into a tenant's trail — it is the clearest attack signal admission can observe, and dropping it was the alternative. Both trails are capped by `auditRetention`.
 
 ### Metering the calls a run makes
 
@@ -152,6 +169,8 @@ These are current package constraints, not a task backlog.
 - **Every write is serialized** — one chain orders every run-record write in the runtime, which is what makes the exactly-once marker a guarantee. It also means a slow medium serializes charges across unrelated tenants.
 - **A rejected sweep is logged, not retried immediately** — the runs it could not settle stay open with expired leases, so the next sweep retries them. A medium that stays unavailable holds those allowances until it comes back.
 - **It does not run the provider** — binding and cancellation stay with the caller; `meter` wraps a stream the caller opened, and this service holds no process.
+- **A trail is a window, not an archive** — `auditRetention` records per tenant, and per runtime for attempts that named none; older records are dropped rather than shipped anywhere. A deployment that needs to keep them reads them from here and sends them on.
+- **The trail covers scheduling, not the run's work** — starting, denying, and the vault operations an attempt produced. Routing, delegation, tool authorization and terminal state are not recorded, because nothing produces those records yet.
 - **A metered call is bounded, a silent one is not** — `meter` checks wall time as chunks arrive, so a provider that stalls without emitting runs past its deadline until the lease sweep reaches its run.
 
 <a id="dev-note"></a>

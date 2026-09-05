@@ -12,6 +12,7 @@
  */
 
 import { z } from 'zod'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
 import type { UserId as TenantId } from '@deepseek-ai/dsh-control-plane'
 import { CredentialKeyVersion, type CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
@@ -127,6 +128,30 @@ const storedRun = z.object({
   absorbed: z.string().optional(),
 })
 
+/**
+ * One thing that happened to a run, as an operator reads it back.
+ *
+ * The `subject` a record is filed under is the tenant when the attempt named
+ * one, and the runtime when it did not: an assertion that fails to verify
+ * carries no tenant this runtime may believe, and it is also the record an
+ * operator most wants, so it is filed against the runtime rather than dropped.
+ */
+const storedAuditRecord = z.object({
+  at: z.number(),
+  runId: z.string().optional(),
+  userId: z.string().optional(),
+  accountId: z.string().optional(),
+  /** What the record is about: a scheduling attempt, or one vault operation. */
+  event: z.enum(['started', 'refused', 'credential']),
+  /** The step that refused, or the vault action that ran. */
+  action: z.string(),
+  /** `ok`, or the reason the step refused. */
+  outcome: z.string(),
+})
+
+/** One subject's most recent records, oldest first. */
+const storedAuditTrail = z.object({ records: z.array(storedAuditRecord) })
+
 /** The durable declaration the control-plane store opens. */
 export const controlPlaneDomainSpec = defineDomain({
   name: 'candy_control_plane',
@@ -139,12 +164,16 @@ export const controlPlaneDomainSpec = defineDomain({
   // allowance is discarded for the same reason: it cannot say which settlement
   // it already absorbed, so a run record recovered beside it could be charged
   // twice.
-  version: 2,
+  //
+  // 3 added audit trails. Nothing else changed, and a stale trail is discarded
+  // rather than read, which loses history a version 2 store never kept.
+  version: 3,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),
     allowances: domainTable<UserId, z.infer<typeof storedAllowance>>(storedAllowance),
     runs: domainTable<RunId, z.infer<typeof storedRun>>(storedRun),
+    audits: domainTable<AuditSubject, z.infer<typeof storedAuditTrail>>(storedAuditTrail),
   },
 })
 
@@ -358,3 +387,40 @@ export function fromStoredRun(stored: StoredRun): DurableRunRecord {
     },
   }
 }
+
+
+/**
+ * Whom a trail of audit records belongs to.
+ *
+ * `t_` prefixes a tenant and `r_` a runtime, so the two spaces cannot collide
+ * on one key. The record itself carries the real identity; this is only how the
+ * medium partitions them.
+ */
+export type AuditSubject = Branded<'AuditSubject'>
+
+/**
+ * The subject a tenant's records are filed under.
+ * @param userId - the tenant a verified assertion named.
+ * @returns that tenant's subject key.
+ */
+export function tenantSubject(userId: TenantId): AuditSubject {
+  return brandString<AuditSubject>(`t_${userId}`)
+}
+
+/**
+ * The subject records with no tenant are filed under.
+ *
+ * An assertion that fails to verify names no tenant this runtime may believe,
+ * so the runtime that refused it owns the record.
+ * @param runtime - the runtime's own audience identifier.
+ * @returns that runtime's subject key.
+ */
+export function runtimeSubject(runtime: string): AuditSubject {
+  return brandString<AuditSubject>(`r_${runtime}`)
+}
+
+/** One recorded thing that happened to a run. */
+export type RunAuditRecord = z.infer<typeof storedAuditRecord>
+
+/** One subject's trail, oldest first. */
+export type StoredAuditTrail = z.infer<typeof storedAuditTrail>

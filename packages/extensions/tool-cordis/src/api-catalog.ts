@@ -758,6 +758,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'runId', description: 'the run to forget.' }],
         returns: 'true when a record was removed, false when it was already absent.',
       },
+      {
+        signature: 'async recordAudit( subject: AuditSubject, records: readonly RunAuditRecord[], retain: number, ): Promise<readonly RunAuditRecord[]>',
+        description: 'Append records to one subject\'s trail, keeping the most recent `retain`.\n\nThe cap is the caller\'s because it is a deployment\'s retention choice, not a property of the medium. It is also the whole of the retention policy: a trail is a window on recent activity, and the record that falls out of it is gone.',
+        parameters: [{ name: 'subject', description: 'the tenant or runtime the records belong to.' }, { name: 'records', description: 'what happened, oldest first.' }, { name: 'retain', description: 'most records to keep for this subject; at least one.' }],
+        returns: 'the trail as stored, after the write reaches the medium.',
+        throws: ['RangeError when `retain` is not a positive safe integer, which is a deployment error rather than a record to drop.'],
+      },
+      {
+        signature: 'auditsOf(subject: AuditSubject): readonly RunAuditRecord[]',
+        description: 'One subject\'s recorded activity, oldest first.',
+        parameters: [{ name: 'subject', description: 'the tenant or runtime to read.' }],
+        returns: 'its retained records; empty when nothing is recorded for it.',
+      },
     ],
   },
   {
@@ -1419,6 +1432,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Release every hold whose lease has passed and drop nonce records that can no longer deny anything.\n\nThe clock calls this; a caller with its own decision timestamp may call it directly. Eviction changes no decision — `spend` already treats an expired record as absent — so this only bounds what the runtime holds.',
         parameters: [{ name: 'now', description: 'epoch milliseconds.' }],
         returns: 'the runs whose holds were released.',
+      },
+      {
+        signature: 'auditsOfTenant(userId: UserId): readonly RunAuditRecord[]',
+        description: 'Read back what one tenant\'s scheduling attempts did here, oldest first.',
+        parameters: [{ name: 'userId', description: 'the tenant to read.' }],
+        returns: 'its retained records.',
+      },
+      {
+        signature: 'auditsOfRuntime(): readonly RunAuditRecord[]',
+        description: 'Read back the attempts this runtime refused before it knew whose they were.\n\nAn assertion that fails to verify names no tenant this runtime may believe, so its record is filed here rather than dropped — it is the clearest attack signal admission can observe.',
+        parameters: [],
+        returns: 'this runtime\'s retained unattributed records, oldest first.',
       },
     ],
   },
@@ -3640,6 +3665,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AuditSubject',
+    declaration: 'export type AuditSubject = Branded<\'AuditSubject\'>;',
+  },
+  {
     name: 'AuthorizationEntry',
     declaration: 'export interface AuthorizationEntry {\n    key: CredentialKey;\n    label: string;\n    methods: readonly AuthorizationMethod[];\n    inFlight: boolean;\n}',
   },
@@ -4868,6 +4897,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
   {
+    name: 'RunAuditRecord',
+    declaration: 'export type RunAuditRecord = z.infer<typeof storedAuditRecord>;',
+  },
+  {
     name: 'RunBudget',
     declaration: 'export interface RunBudget {\n    readonly tokens: number;\n    readonly wallMs: number;\n    readonly costMicroUsd: number;\n    readonly children: number;\n}',
   },
@@ -4929,7 +4962,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RunStartRejection',
-    declaration: 'export type RunStartRejection = {\n    readonly stage: \'admission\';\n    readonly rejection: RunRejection;\n} | {\n    readonly stage: \'ledger\';\n    readonly rejection: RunLedgerRejection;\n};',
+    declaration: 'export type RunStartRejection = {\n    readonly stage: \'admission\';\n    readonly rejection: RunRejection;\n} | {\n    readonly stage: \'ledger\';\n    readonly rejection: RunLedgerRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
   },
   {
     name: 'RuntimePoolKey',

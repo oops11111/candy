@@ -71,6 +71,10 @@ What comes back is not yet running. Binding a provider, streaming it, charging w
 
 The record is closed on the way out, so the hold comes back at once. The failure keeps travelling: it is a deployment error, not a denied run.
 
+### Why a ledger refusal names whose run it was
+
+Funding happens after admission, so the identity is known by the time the ledger can refuse. A refusal that reported only the reason would say a run was refused without saying whose — the defect [`dsh-run-admission`](../run-admission/README.md) already fixed for every stage of its own, and the one an audit trail is least able to work around. The rejection therefore carries the verified claims.
+
 ### Why binding is not here
 
 Binding a provider allocates nothing, so it needs no rollback, and it is provider-specific where every step here is not. Keeping it out leaves this package one composition for every provider rather than one per provider.
@@ -97,7 +101,7 @@ These are current package constraints, not a task backlog.
 
 - **It starts a run, and does not run it** — binding a provider, streaming it, charging what it spent and closing the record stay with the caller. This package holds no process and no stream.
 - **No scheduling decision** — which run starts, in what order, and whether a tenant may start another at all belong to a scheduler this release has not built. This is the sequence one run goes through once that decision is made.
-- **The ledger is in memory** — a restart loses every open run, as [`dsh-run-ledger`](../run-ledger/README.md) records. Rollback returns a hold within one process; it cannot recover one a crash stranded.
+- **The ledger is in memory here** — this package holds no store, so rollback returns a hold within one process and cannot recover one a crash stranded. [`dsh-run-scheduler`](../run-scheduler/README.md) is what makes the record durable.
 - **No Cordis service** — nothing here registers on a `Context`; it is imported directly.
 
 <a id="dev-note"></a>

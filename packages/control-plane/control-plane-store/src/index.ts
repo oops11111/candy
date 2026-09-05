@@ -31,13 +31,16 @@ import {
   toStoredAllowance,
   toStoredEntry,
   toStoredRun,
+  type AuditSubject,
   type DurableRunRecord,
+  type RunAuditRecord,
+  type StoredAuditTrail,
   type StoredRun,
   type StoredTenantAllowance,
 } from './spec.ts'
 
-export { controlPlaneDomainSpec } from './spec.ts'
-export type { DurableRunRecord, StoredRun, StoredTenantAllowance } from './spec.ts'
+export { controlPlaneDomainSpec, runtimeSubject, tenantSubject } from './spec.ts'
+export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredRun, StoredTenantAllowance } from './spec.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -62,6 +65,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
   private accounts!: KvTable<ProviderAccountId, ReturnType<typeof toStoredEntry>>
   private allowances!: KvTable<UserId, StoredTenantAllowance>
   private runs!: KvTable<RunId, StoredRun>
+  private audits!: KvTable<AuditSubject, StoredAuditTrail>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -74,6 +78,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
     this.accounts = domain.table('accounts')
     this.allowances = domain.table('allowances')
     this.runs = domain.table('runs')
+    this.audits = domain.table('audits')
   }
 
   /**
@@ -301,6 +306,43 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
    */
   deleteRun(runId: RunId): Promise<boolean> {
     return this.runs.delete(runId)
+  }
+
+  /**
+   * Append records to one subject's trail, keeping the most recent `retain`.
+   *
+   * The cap is the caller's because it is a deployment's retention choice, not
+   * a property of the medium. It is also the whole of the retention policy:
+   * a trail is a window on recent activity, and the record that falls out of it
+   * is gone.
+   * @param subject - the tenant or runtime the records belong to.
+   * @param records - what happened, oldest first.
+   * @param retain - most records to keep for this subject; at least one.
+   * @returns the trail as stored, after the write reaches the medium.
+   * @throws RangeError when `retain` is not a positive safe integer, which is a
+   *   deployment error rather than a record to drop.
+   */
+  async recordAudit(
+    subject: AuditSubject,
+    records: readonly RunAuditRecord[],
+    retain: number,
+  ): Promise<readonly RunAuditRecord[]> {
+    if (!Number.isSafeInteger(retain) || retain <= 0) {
+      throw new RangeError(`dsh-control-plane-store: audit retention must be a positive safe integer, got ${String(retain)}`)
+    }
+    if (records.length === 0) return this.auditsOf(subject)
+    const kept = [...this.audits.get(subject)?.records ?? [], ...records].slice(-retain)
+    await this.audits.put(subject, { records: kept })
+    return kept
+  }
+
+  /**
+   * One subject's recorded activity, oldest first.
+   * @param subject - the tenant or runtime to read.
+   * @returns its retained records; empty when nothing is recorded for it.
+   */
+  auditsOf(subject: AuditSubject): readonly RunAuditRecord[] {
+    return this.audits.get(subject)?.records ?? []
   }
 
 }

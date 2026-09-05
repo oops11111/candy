@@ -1744,10 +1744,12 @@ export interface Config {
   leaseMs?: number
   /** How often the clock releases expired holds and drops spent-nonce records. */
   sweepMs?: number
+  /** Most audit records kept per tenant, and per runtime for attempts that named none. */
+  auditRetention?: number
 }
 ```
 
-Source: [`packages/control-plane/run-scheduler/src/index.ts:65`](../packages/control-plane/run-scheduler/src/index.ts)
+Source: [`packages/control-plane/run-scheduler/src/index.ts:71`](../packages/control-plane/run-scheduler/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-local"></a>
 

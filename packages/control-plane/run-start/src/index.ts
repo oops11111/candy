@@ -24,6 +24,7 @@
 
 import type { RunId } from '@deepseek-ai/dsh-control-plane'
 import type { CredentialAuditEvent } from '@deepseek-ai/dsh-credential-vault'
+import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import {
   admitRun,
   type AdmittedRun,
@@ -56,7 +57,19 @@ export interface RunStartOptions {
 /** Why a run did not start, tagged by the step that refused it. */
 export type RunStartRejection =
   | { readonly stage: 'admission'; readonly rejection: RunRejection }
-  | { readonly stage: 'ledger'; readonly rejection: RunLedgerRejection }
+  | {
+    readonly stage: 'ledger'
+    readonly rejection: RunLedgerRejection
+    /**
+     * The verified claims of the run the ledger refused.
+     *
+     * Funding happens after admission, so the identity is known by then; a
+     * refusal that dropped it would report that a run was refused without
+     * saying whose, which is what `dsh-run-admission` already fixed for every
+     * stage of its own.
+     */
+    readonly claims: ExecutionAssertionClaims
+  }
 
 /** One run that is admitted, funded, and placed in its own directory. */
 export interface StartedRun {
@@ -119,7 +132,7 @@ export async function startRun(
 
   const opened = openLedgerRecord(options, run)
   if (!opened.ok) {
-    return { started: false, rejection: { stage: 'ledger', rejection: opened.rejection }, audits }
+    return { started: false, rejection: { stage: 'ledger', rejection: opened.rejection, claims: run.claims }, audits }
   }
 
   try {

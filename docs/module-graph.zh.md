@@ -435,6 +435,7 @@ flowchart TD
   pkg_api_remotes --> pkg_scope
   pkg_attachment_local --> pkg_attachment
   pkg_attachment_local --> pkg_home_paths
+  pkg_control_plane_store --> pkg_brand
   pkg_control_plane_store --> pkg_control_plane
   pkg_control_plane_store --> pkg_credential_vault
   pkg_control_plane_store --> pkg_provider_accounts
@@ -1323,7 +1324,7 @@ flowchart TD
 | [`web-search-perplexity`](../packages/web/web-search-perplexity) | `web` | [`launch-environment`](../packages/util/launch-environment), [`web`](../packages/web/web) |
 | [`api-remotes`](../packages/api/remotes) | `api` | [`scope`](../packages/core/scope) |
 | [`attachment-local`](../packages/attachment/attachment-local) | `attachment` | [`attachment`](../packages/attachment/attachment), [`home-paths`](../packages/util/home-paths) |
-| [`control-plane-store`](../packages/control-plane/control-plane-store) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`provider-accounts`](../packages/control-plane/provider-accounts), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`storage-domain`](../packages/storage/storage-domain), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
+| [`control-plane-store`](../packages/control-plane/control-plane-store) | `control-plane` | [`brand`](../packages/util/brand), [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`provider-accounts`](../packages/control-plane/provider-accounts), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`storage-domain`](../packages/storage/storage-domain), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
 | [`run-metering`](../packages/control-plane/run-metering) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`llm`](../packages/llm/llm), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger) |
 | [`run-start`](../packages/control-plane/run-start) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`runtime-pool`](../packages/control-plane/runtime-pool) |
 | [`authorization`](../packages/credentials/authorization) | `credentials` | [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |

@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 [`dsh-provider-accounts`](../provider-accounts/README.md) defines its account store as a port, and [`dsh-run-admission`](../run-admission/README.md) requires a credential lookup and a budget lookup as ports. Every one of them was a parameter no deployment could fill, because nothing in the repository held the data.
 
-This service holds it: provider accounts with their sealed credentials, each tenant's allowance, and one record per live run, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
+This service holds it: provider accounts with their sealed credentials, each tenant's allowance, one record per live run, and a trail of what each tenant's scheduling attempts did, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
 
 It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once.
 
@@ -106,6 +106,16 @@ Charging whoever funded a run and then forgetting that run are two writes this m
 
 The guarantee needs one settlement at a time per funder: two interleaved settlements leave the id of the later one, and a crash would then charge the earlier one twice. [`dsh-run-scheduler`](../run-scheduler/README.md) queues every write to a run record on one chain, which is where that serialization lives.
 
+### Why a trail is a window, not an archive
+
+The domain keeps every record it holds in memory, so an unbounded log would grow the runtime without bound. A trail is therefore capped: `recordAudit` keeps the most recent `retain` records for one subject and the rest are gone. The cap is the caller's, because how much history a deployment keeps is its choice and not a property of the medium.
+
+That makes this a place to look at recent activity rather than somewhere to keep evidence. A deployment that needs an archive ships the records somewhere that is one, and this is where it reads them from.
+
+### Why some records name a runtime instead of a tenant
+
+Every stage past the assertion works from verified claims, so its record names the tenant, account and run it refused. An assertion that fails to verify names none this runtime may believe — and it is also the record an operator most wants — so it is filed against the runtime that refused it. The `t_` and `r_` prefixes on a subject key keep the two spaces from colliding.
+
 ### Why a run record is stamped with its runtime
 
 `runsOf` answers for one runtime only. Two runtimes sharing this medium would otherwise recover each other's records at boot and settle runs that are still going. The stamp is the reading runtime's own audience identifier, which an execution assertion is already bound to, so two runtimes never share the value.
@@ -136,6 +146,8 @@ These are current package constraints, not a task backlog.
 - **A restart ends every run it recovers** — a record this runtime wrote is a run it was driving, and the process that drove it is gone, so `dsh-run-scheduler` settles what it finds rather than resuming it. Nothing here can tell a crashed run from one whose provider is somehow still alive.
 - **Recovery is all-or-nothing on a corrupt store** — records that do not form complete trees fail the boot rather than being dropped, because a hold against a parent that does not exist is one nothing can settle. There is no repair path.
 - **One runtime per audience** — `runsOf` partitions by the runtime stamp, so two processes sharing an audience recover each other's records. An assertion is audience-bound already, so this is a deployment rule rather than a check made here.
+- **A trail is bounded and rewritten whole** — one subject's records live in one document, so each append rewrites that document, and records past the cap are dropped rather than archived. It suits a window of recent activity at a deployment's scale and not an audit archive at a directory's.
+- **The trail records what the control plane observes** — scheduling attempts and vault operations. Routing, delegation, tool authorization and terminal state are not in it, because nothing in this repository produces those records yet.
 - **No period** — an allowance runs from its grant until an operator changes it, and `setTenantGrant` deliberately keeps what was consumed. Nothing here starts a new billing period, because nothing in the repository decides when one begins.
 - **`listByUser` scans** — the domain keeps every record in memory and this filters them, which is right at one deployment's account count and would not be at a directory's.
 - **No replay store** — the nonce port is [`dsh-run-replay`](../run-replay/README.md), which is in-process by design. A deployment running more than one runtime process needs a durable one, and this domain would be a reasonable home for it.

@@ -51,9 +51,15 @@ import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunRecord, type RunSettlement } from '@deepseek-ai/dsh-run-ledger'
 import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
-import { startRun, type RunStartOutcome } from '@deepseek-ai/dsh-run-start'
+import { startRun, type RunStartOutcome, type RunStartRejection } from '@deepseek-ai/dsh-run-start'
 import { remainingAllowance } from '@deepseek-ai/dsh-tenant-allowance'
-import type { DurableRunRecord } from '@deepseek-ai/dsh-control-plane-store'
+import {
+  runtimeSubject,
+  tenantSubject,
+  type AuditSubject,
+  type DurableRunRecord,
+  type RunAuditRecord,
+} from '@deepseek-ai/dsh-control-plane-store'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -81,6 +87,8 @@ export interface Config {
   leaseMs?: number
   /** How often the clock releases expired holds and drops spent-nonce records. */
   sweepMs?: number
+  /** Most audit records kept per tenant, and per runtime for attempts that named none. */
+  auditRetention?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -93,6 +101,7 @@ export const Config: z<Config> = z.object({
   poolBase: z.string().required(),
   leaseMs: z.number().step(1).min(1).default(300_000),
   sweepMs: z.number().step(1).min(1).default(30_000),
+  auditRetention: z.number().step(1).min(1).default(200),
 })
 
 /** Bytes a credential key must carry, matching what the vault seals with. */
@@ -195,7 +204,10 @@ export class RunScheduler extends Service {
       share,
       leaseExpiresAt: now + (this.config.leaseMs ?? 300_000),
     }, now)
-    if (!outcome.started) return outcome
+    if (!outcome.started) {
+      await this.record(outcome, now)
+      return outcome
+    }
     const { claims } = outcome.value.run
     // `startRun` opened the ledger record, so the ledger has it.
     // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
@@ -216,6 +228,7 @@ export class RunScheduler extends Service {
       this.ledger.close(claims.runId)
       throw unwritable
     }
+    await this.record(outcome, now)
     return outcome
   }
 
@@ -406,12 +419,118 @@ export class RunScheduler extends Service {
     }
   }
 
+  /**
+   * Read back what one tenant's scheduling attempts did here, oldest first.
+   * @param userId - the tenant to read.
+   * @returns its retained records.
+   */
+  auditsOfTenant(userId: UserId): readonly RunAuditRecord[] {
+    return this.ctx.controlPlaneStore.auditsOf(tenantSubject(userId))
+  }
+
+  /**
+   * Read back the attempts this runtime refused before it knew whose they were.
+   *
+   * An assertion that fails to verify names no tenant this runtime may believe,
+   * so its record is filed here rather than dropped — it is the clearest attack
+   * signal admission can observe.
+   * @returns this runtime's retained unattributed records, oldest first.
+   */
+  auditsOfRuntime(): readonly RunAuditRecord[] {
+    return this.ctx.controlPlaneStore.auditsOf(runtimeSubject(this.config.audience))
+  }
+
+  /**
+   * File everything one scheduling attempt produced.
+   *
+   * Records are grouped by subject before they are written, so a run whose
+   * vault records name one tenant is one write rather than one per record.
+   */
+  private async record(outcome: RunStartOutcome, at: number): Promise<void> {
+    const grouped = new Map<AuditSubject, RunAuditRecord[]>()
+    for (const [subject, record] of this.recordsOf(outcome, at)) {
+      const trail = grouped.get(subject) ?? []
+      trail.push(record)
+      grouped.set(subject, trail)
+    }
+    const retain = this.config.auditRetention ?? 200
+    for (const [subject, records] of grouped) {
+      await this.ctx.controlPlaneStore.recordAudit(subject, records, retain)
+    }
+  }
+
+  /** Every record one attempt produced, each with the subject it belongs to. */
+  private *recordsOf(outcome: RunStartOutcome, at: number): Generator<[AuditSubject, RunAuditRecord]> {
+    for (const audit of outcome.audits) {
+      yield [tenantSubject(audit.userId), {
+        at: audit.at,
+        userId: audit.userId,
+        accountId: audit.accountId,
+        event: 'credential',
+        action: audit.action,
+        outcome: audit.outcome,
+      }]
+    }
+    if (outcome.started) {
+      const { claims } = outcome.value.run
+      yield [tenantSubject(claims.userId), {
+        at,
+        runId: claims.runId,
+        userId: claims.userId,
+        accountId: claims.accountId,
+        event: 'started',
+        action: 'start',
+        outcome: 'ok',
+      }]
+      return
+    }
+    yield refusalOf(outcome.rejection, at, this.config.audience)
+  }
+
   /** Queue one write, or one settlement, on this runtime's single write chain. */
   private queue<T>(work: () => Promise<T>): Promise<T> {
     const next = this.writes.then(work, work)
     this.writes = next.then(() => undefined, () => undefined)
     return next
   }
+}
+
+/**
+ * The record one refused attempt leaves, and whom it belongs to.
+ *
+ * Every stage past the assertion carries verified claims, so its record names
+ * the tenant, account and run it refused. The assertion stage carries none —
+ * nothing about an unverified token may be believed — so its record is filed
+ * against the runtime that refused it.
+ */
+function refusalOf(rejection: RunStartRejection, at: number, runtime: string): [AuditSubject, RunAuditRecord] {
+  if (rejection.stage === 'ledger') {
+    return refusedByTenant(rejection.claims, at, 'ledger', rejection.rejection.reason)
+  }
+  const refused = rejection.rejection
+  if (refused.stage === 'assertion') {
+    // Nothing about an unverified token may be believed, its tenant included.
+    return [runtimeSubject(runtime), { at, event: 'refused', action: 'assertion', outcome: refused.reason }]
+  }
+  return refusedByTenant(refused.claims, at, refused.stage, refused.reason)
+}
+
+/** One refusal of a run whose identity was already verified. */
+function refusedByTenant(
+  claims: ExecutionAssertionClaims,
+  at: number,
+  action: string,
+  outcome: string,
+): [AuditSubject, RunAuditRecord] {
+  return [tenantSubject(claims.userId), {
+    at,
+    runId: claims.runId,
+    userId: claims.userId,
+    accountId: claims.accountId,
+    event: 'refused',
+    action,
+    outcome,
+  }]
 }
 
 /** Every record descended from one run, deepest first. */

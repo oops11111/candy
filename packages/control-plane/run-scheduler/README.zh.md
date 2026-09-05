@@ -15,7 +15,7 @@ kind: "package-reference"
 
 它还会计量一次运行发起的那些提供方流,而那正是额度不再只是一个记账数字的地方:在运行已经什么都不剩时,调用在抵达提供方之前就被拒绝;在调用跑过运行尚存的挂钟时间时,它被切断。
 
-它的记录是持久的,而且每一次结算跨越崩溃都恰好发生一次。排队的请求以什么顺序运行,这个决定这里仍然不做。
+它的记录是持久的,而且每一次结算跨越崩溃都恰好发生一次;它做出的每一次调度尝试都会留下一条记录 —— 一次启动、一次拒绝及它所拒绝的租户,以及每次尝试产出的那些保险库操作。排队的请求以什么顺序运行,这个决定这里仍然不做。
 
 ## 目录
 
@@ -40,6 +40,7 @@ kind: "package-reference"
     audience: candy-runtime-debian-1
     credentialKeyVersion: 2026-09-a
     poolBase: /srv/candy/pools
+    auditRetention: 200
 ```
 
 它需要 [`dsh-control-plane-store`](../control-plane-store/README.zh.md) 来读取账户与额度,以及 `timer` 服务来提供时钟。两个秘密都以环境变量名的形式指名,而不是写进组合里:`assertionSecretEnv`(默认 `CANDY_ASSERTION_SECRET`)与 `credentialKeyEnv`(默认 `CANDY_CREDENTIAL_KEY`)。其中任何一个未设置都会让启动失败,而一个不是 32 字节的凭据密钥同样会 —— 保险库正是以那个长度密封的。
@@ -61,6 +62,22 @@ export const started = outcome.started ? outcome.value.run.poolRoot : outcome.re
 `start` 接收那份断言,以及可选的、这次运行据以开启的额度。根运行默认用准入为它给出的那一份;子运行则用它父运行所委派的份额开启,而账本会拒绝超出该父运行所持有量的份额。
 
 返回的东西不在运行。把提供方绑定到它上面仍归调用方 —— `charge` 与 `close` 在本服务上,而这次运行的记录在 `close` 之前一直开着。
+
+### 读出一个租户的尝试做了什么
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { UserId } from '@deepseek-ai/dsh-control-plane'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const userId: UserId
+
+export const recent = ctx.runScheduler.auditsOfTenant(userId)
+export const unattributed = ctx.runScheduler.auditsOfRuntime()
+```
+
+断言之后的每一个步骤都基于已验证的声明,因此它的记录会指名它所拒绝的租户、账户与运行。一份验证不通过的断言指名不出任何这个运行时可以相信的租户,因此那条记录去到 `auditsOfRuntime`,而不是进入某个租户的踪迹 —— 它是准入所能观察到的最清晰的攻击信号,而另一个选择是把它丢掉。两条踪迹都由 `auditRetention` 设上限。
 
 ### 计量一次运行发起的那些调用
 
@@ -152,6 +169,8 @@ export const stream = ctx.runScheduler.meter(runId, adapter.stream(request))
 - **每一次写入都是串行的** —— 一条链为运行时内每一次运行记录写入定序,而这正是让那个「恰好一次」标记成为保证的东西。它同时也意味着,一个缓慢的介质会把不相关租户之间的计费也串起来。
 - **被拒绝的清扫只记日志,不立刻重试** —— 它未能结算的那些运行会带着已过期的租约保持开启,因此下一次清扫会重试它们。持续不可用的介质会把那些额度一直占到它恢复为止。
 - **它不运行提供方** —— 绑定与取消都仍归调用方;`meter` 包裹的是调用方打开的一条流,而本服务不持有任何进程。
+- **踪迹是一扇窗,不是一个档案库** —— 每个租户 `auditRetention` 条记录,对于没有指名租户的尝试则按运行时计;更老的记录被丢弃,而不是被送往任何地方。需要保留它们的部署从这里读取并把它们送出去。
+- **踪迹覆盖的是调度,不是运行的工作** —— 启动、拒绝,以及一次尝试产出的那些保险库操作。路由、委派、工具授权与终止状态没有被记录,因为还没有任何东西产出那些记录。
 - **被计量的调用有界,沉默的调用没有** —— `meter` 在块抵达时检查挂钟时间,因此一个不发出任何东西就卡住的提供方会一直跑过它的截止时刻,直到租约清扫触及它的运行。
 
 <a id="dev-note"></a>
