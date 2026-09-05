@@ -63,6 +63,8 @@ export function endedByBudget(chunk: StreamChunk): boolean {
 
 两种结束都是一个终止的 `error` finish，而不是抛出的异常，因为 [`dsh-llm`](../../llm/llm/README.zh.md) 缝隙向消费方承诺的是恰好一个终止块，而异常不是其中之一。
 
+`refusedCall` 为这样一种调用方构造同样的结局：它在 `meterRun` 之前就判定这次调用无法被计量 —— 因为它说不出该记到哪次运行头上。[`dsh-run-scheduler`](../run-scheduler/README.zh.md) 把它用在一个被两次开启中运行同时认领的会话上。
+
 -----
 
 <a id="understand-the-implementation"></a>

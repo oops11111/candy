@@ -3,7 +3,7 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger } from '@deepseek-ai/dsh-run-ledger'
 import { describe, expect, it } from 'vitest'
-import { meterRun, RUN_BUDGET_EXHAUSTED, RUN_NOT_OPEN, type RunMeterPorts } from '../src/index.ts'
+import { meterRun, refusedCall, RUN_BUDGET_EXHAUSTED, RUN_NOT_OPEN, type RunMeterPorts } from '../src/index.ts'
 
 const RUN = RunId('run-1')
 const NOW = 1_800_000_000_000
@@ -255,5 +255,16 @@ describe('meterRun', () => {
     }
 
     expect(remainingAtFinish).toBe(600)
+  })
+})
+
+describe('refusedCall', () => {
+  it('is a stream of exactly one terminal chunk', async () => {
+    const seen = await collect(refusedCall('nothing can charge this', RUN_NOT_OPEN))
+
+    expect(seen).toEqual([{
+      type: 'finish',
+      reason: { kind: 'error', failure: { message: 'nothing can charge this', code: RUN_NOT_OPEN } },
+    }])
   })
 })

@@ -71,6 +71,32 @@ function failed(message: string, code: string): StreamChunk {
 }
 
 /**
+ * A stream that is only a refusal.
+ *
+ * A caller that decides a call cannot be metered before {@link meterRun} could
+ * — because it cannot tell which run to charge — owes its consumer the same
+ * one terminal chunk this module produces, in the same vocabulary.
+ * @param message - what an operator needs to know about the refusal.
+ * @param code - the machine-routing code; one of this module's two.
+ * @returns a stream of exactly that terminal chunk.
+ */
+export function refusedCall(message: string, code: string): AsyncIterable<StreamChunk> {
+  const chunk = failed(message, code)
+  return {
+    [Symbol.asyncIterator]: () => {
+      let sent = false
+      return {
+        next: (): Promise<IteratorResult<StreamChunk>> => {
+          if (sent) return Promise.resolve({ done: true, value: undefined })
+          sent = true
+          return Promise.resolve({ done: false, value: chunk })
+        },
+      }
+    },
+  }
+}
+
+/**
  * Meter one provider stream against one open run.
  *
  * The stream is passed through unchanged while the run can afford it. Three

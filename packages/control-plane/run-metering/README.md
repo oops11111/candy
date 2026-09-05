@@ -63,6 +63,8 @@ export function endedByBudget(chunk: StreamChunk): boolean {
 
 Both endings are a terminal `error` finish rather than a thrown exception, because a consumer of the [`dsh-llm`](../../llm/llm/README.md) seam is promised exactly one terminal chunk and an exception is not one.
 
+`refusedCall` builds the same ending for a caller that decides a call cannot be metered before `meterRun` could — because it cannot tell which run to charge. [`dsh-run-scheduler`](../run-scheduler/README.md) uses it for a session two open runs both claim.
+
 -----
 
 <a id="understand-the-implementation"></a>

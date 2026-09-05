@@ -46,7 +46,7 @@ import {
 } from '@deepseek-ai/dsh-credential-vault'
 import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { meterRun, RUN_NOT_OPEN } from '@deepseek-ai/dsh-run-metering'
+import { meterRun, refusedCall, RUN_NOT_OPEN } from '@deepseek-ai/dsh-run-metering'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunRecord, type RunSettlement } from '@deepseek-ai/dsh-run-ledger'
@@ -270,7 +270,13 @@ export class RunScheduler extends Service {
     if (options.sessionId === undefined) return next()
     const open = this.ctx.controlPlaneStore.runsOfSession(this.config.audience, options.sessionId)
     if (open.length === 0) return next()
-    if (open.length > 1) return ambiguous(options.sessionId, open.map(run => run.record.runId))
+    if (open.length > 1) {
+      const runIds = open.map(run => run.record.runId).join(', ')
+      return refusedCall(
+        `session '${options.sessionId}' is claimed by ${String(open.length)} open runs (${runIds}), so this call cannot be charged to one`,
+        RUN_NOT_OPEN,
+      )
+    }
     // The length check above establishes the entry.
     // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
     return this.meter(open[0]!.record.runId, next())
@@ -561,21 +567,6 @@ function refusedByTenant(
     action,
     outcome,
   }]
-}
-
-/** The stream a request gets when its session cannot say which run to charge. */
-// oxlint-disable-next-line typescript/require-await -- the seam's stream type is an async iterable
-async function* ambiguous(sessionId: string, runIds: readonly RunId[]): AsyncIterable<StreamChunk> {
-  yield {
-    type: 'finish',
-    reason: {
-      kind: 'error',
-      failure: {
-        message: `session '${sessionId}' is claimed by ${String(runIds.length)} open runs (${runIds.join(', ')}), so this call cannot be charged to one`,
-        code: RUN_NOT_OPEN,
-      },
-    },
-  }
 }
 
 /** Every record descended from one run, deepest first. */
