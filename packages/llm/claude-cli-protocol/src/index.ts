@@ -29,6 +29,7 @@ export {
   initApiKeySource,
   isCredentialIsolated,
   SCRUBBED_ROUTING_VARIABLES,
+  SCRUBBED_STATE_VARIABLES,
 } from './launch.ts'
 export type { ClaudeCliEffort, ClaudeCliIsolation, ClaudeCliRun } from './launch.ts'
 export type { WireFrame, WireResult, WireStreamEvent, WireUsage } from './types.ts'

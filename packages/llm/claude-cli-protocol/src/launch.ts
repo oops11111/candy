@@ -68,7 +68,6 @@ export const SCRUBBED_ROUTING_VARIABLES: readonly string[] = [
   'ANTHROPIC_AWS_BASE_URL',
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_BEDROCK_BASE_URL',
-  'ANTHROPIC_CONFIG_DIR',
   'ANTHROPIC_CUSTOM_HEADERS',
   'ANTHROPIC_FOUNDRY_API_KEY',
   'ANTHROPIC_FOUNDRY_AUTH_TOKEN',
@@ -81,6 +80,35 @@ export const SCRUBBED_ROUTING_VARIABLES: readonly string[] = [
   'CLAUDE_CODE_USE_GATEWAY',
   'CLAUDE_CODE_USE_MANTLE',
   'CLAUDE_CODE_USE_VERTEX',
+]
+
+/**
+ * Variables naming a state directory the child would use instead of one under
+ * its home.
+ *
+ * {@link claudeCliEnvironment} isolates a tenant by pinning `HOME` to that
+ * tenant's pool root, which holds only as long as the child's state locations
+ * are derived from `HOME`. Each name here defeats that derivation: an ambient
+ * `CLAUDE_CONFIG_DIR` relocates the CLI's own configuration and account state
+ * out of the pool, and the XDG base directories name cache, config, data, and
+ * state roots that no `HOME` override reaches. A deployment that exports one —
+ * a server started from an operator's own shell, or from another agent — would
+ * give every tenant one directory to read and write, while `HOME` still read as
+ * isolated.
+ *
+ * A name the CLI ignores costs nothing: with the variable absent the child
+ * falls back to the location under `HOME` this module pins, which is the
+ * intended one. A name missing from this list costs a shared directory, so the
+ * list covers the standard state-directory variables rather than only those a
+ * particular CLI version is known to read.
+ */
+export const SCRUBBED_STATE_VARIABLES: readonly string[] = [
+  'ANTHROPIC_CONFIG_DIR',
+  'CLAUDE_CONFIG_DIR',
+  'XDG_CACHE_HOME',
+  'XDG_CONFIG_HOME',
+  'XDG_DATA_HOME',
+  'XDG_STATE_HOME',
 ]
 
 /**
@@ -134,7 +162,7 @@ export function claudeCliArguments(run: ClaudeCliRun): string[] {
  * seam's parent scrub, and `undefined` removes an ambient entry.
  * @param isolation - the tenant's home directory and API key.
  * @returns the overlay pinning the child to this tenant, with every
- *   provider-routing variable tombstoned.
+ *   provider-routing and state-directory variable tombstoned.
  * @throws RangeError when the home directory or API key is empty, since
  * neither can be defaulted without falling back to host identity.
  */
@@ -145,7 +173,7 @@ export function claudeCliEnvironment(isolation: ClaudeCliIsolation): NodeJS.Proc
     HOME: isolation.home,
     ANTHROPIC_API_KEY: isolation.apiKey,
   }
-  for (const name of SCRUBBED_ROUTING_VARIABLES) overlay[name] = undefined
+  for (const name of [...SCRUBBED_ROUTING_VARIABLES, ...SCRUBBED_STATE_VARIABLES]) overlay[name] = undefined
   return overlay
 }
 

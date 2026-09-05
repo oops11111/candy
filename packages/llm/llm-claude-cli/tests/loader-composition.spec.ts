@@ -164,6 +164,10 @@ describe('a booted claude-cli composition', () => {
     const spec = RecordedSubprocess.spawns[0]
     expect(spec?.argv[0]).toBe('claude')
     expect(spec?.env).toMatchObject({ HOME: join(root!, 'pool'), ANTHROPIC_API_KEY: 'sk-ant-tenant' })
+    // The pinned home is only isolation while nothing names a state directory
+    // outside it. The seam removes an ambient entry an overlay tombstones.
+    expect(spec?.env).toHaveProperty('CLAUDE_CONFIG_DIR', undefined)
+    expect(spec?.env).toHaveProperty('XDG_CONFIG_HOME', undefined)
   })
 
   it('refuses a run the CLI did not authenticate with the injected key, by default', async () => {

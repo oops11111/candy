@@ -87,7 +87,7 @@ CLI 会在其 `system`/`init` 帧中声明自己用哪一个凭据完成了认�
 |---|---|
 | [`src/lines.ts`](src/lines.ts) | `ClaudeCliLineDecoder` 与 `ClaudeCliProtocolError`:从 stdout 文本到帧 |
 | [`src/frames.ts`](src/frames.ts) | `ClaudeCliFrameTranslator`、`mapUsage`、`mapFinish`:从帧到 `StreamChunk` |
-| [`src/launch.ts`](src/launch.ts) | `claudeCliArguments`、`claudeCliEnvironment`、`isCredentialIsolated`、`SCRUBBED_ROUTING_VARIABLES` |
+| [`src/launch.ts`](src/launch.ts) | `claudeCliArguments`、`claudeCliEnvironment`、`isCredentialIsolated`、`SCRUBBED_ROUTING_VARIABLES`、`SCRUBBED_STATE_VARIABLES` |
 | [`src/types.ts`](src/types.ts) | CLI 帧联合体中本包实际处理的那个子集 |
 | — | 不发布运行时不变量伴生模块;本纯模块不拥有事件流或可变运行时数据,其翻译由针对已录制运行的单元测试保障。 |
 
@@ -104,6 +104,12 @@ CLI 会在其 `system`/`init` 帧中声明自己用哪一个凭据完成了认�
 没有它,CLI 会回退到宿主机上任何现成的登录态。一次在开发机上录制的运行正是如此:它通过宿主的 OAuth 会话完成认证,并报告 `apiKeySource: "none"` —— 在多租户运行时里,这就是一个租户的请求记在了宿主账上。`--bare` 把 Anthropic 认证限制为 `ANTHROPIC_API_KEY`,这就是它在这里并非可选项的原因。
 
 `--bare` 并不管 CLI 与*哪个提供方*通信,因此单靠它并不够。环境中现成的 `CLAUDE_CODE_USE_BEDROCK`、`CLAUDE_CODE_USE_VERTEX` 或 `ANTHROPIC_BASE_URL` 会把运行重定向到一个用宿主自己的云凭据认证的端点,完全绕开租户密钥。`SCRUBBED_ROUTING_VARIABLES` 为每一项设置墓碑;与 `--bare` 合在一起,注入的密钥才成为该运行唯一能触及的凭据。
+
+### 固定的 `HOME` 只有在没有任何变量指向其外部目录时才是隔离
+
+`claudeCliEnvironment` 靠给每个子进程各自的 `HOME` 来区分两个租户,调用方把它设为该租户的运行时池根目录。这种区分是间接的:它成立,是因为子进程的配置、缓存和账户状态都是*相对于* `HOME` 定位的。一个直接指名其中某个目录的变量会在不碰 `HOME` 的情况下破坏这种推导,于是环境看上去仍然是隔离的。`CLAUDE_CONFIG_DIR` 会把 CLI 自己的配置和账户状态迁走,而 XDG 基础目录则指名缓存、配置、数据和状态的根目录。从运维人员的 shell 启动的服务器——或从另一个导出了这类变量的智能体启动的服务器——会把同一个目录交给每个租户读写。
+
+`SCRUBBED_STATE_VARIABLES` 为它们设置墓碑。这份清单覆盖标准的状态目录变量,而不只是已知某个 CLI 版本会读取的那些,因为两种错误并不对称:被设置墓碑而 CLI 又忽略的名字不会改变任何事,因为回退位置正是本就想要的、固定 `HOME` 之下的位置;而漏掉的名字则是两个租户共享的一个目录。
 
 ### 帧处理默认是开放的
 

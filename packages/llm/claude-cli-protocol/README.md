@@ -87,7 +87,7 @@ The CLI announces which credential it authenticated with in its `system`/`init` 
 |---|---|
 | [`src/lines.ts`](src/lines.ts) | `ClaudeCliLineDecoder` and `ClaudeCliProtocolError`: stdout text to frames |
 | [`src/frames.ts`](src/frames.ts) | `ClaudeCliFrameTranslator`, `mapUsage`, `mapFinish`: frames to `StreamChunk`s |
-| [`src/launch.ts`](src/launch.ts) | `claudeCliArguments`, `claudeCliEnvironment`, `isCredentialIsolated`, `SCRUBBED_ROUTING_VARIABLES` |
+| [`src/launch.ts`](src/launch.ts) | `claudeCliArguments`, `claudeCliEnvironment`, `isCredentialIsolated`, `SCRUBBED_ROUTING_VARIABLES`, `SCRUBBED_STATE_VARIABLES` |
 | [`src/types.ts`](src/types.ts) | The subset of the CLI's frame union this package acts on |
 | — | No runtime invariant companion is published; this pure module owns no event stream or mutable runtime data, and its translation is enforced by unit tests over recorded runs. |
 
@@ -104,6 +104,12 @@ They arrive alongside the `stream_event` deltas that already delivered the same 
 Without it the CLI falls back to whatever ambient login the host has. A recorded run on a developer machine did exactly that, authenticating through the host's OAuth session and reporting `apiKeySource: "none"` — in a multi-tenant runtime, one tenant's request billed to the host. `--bare` restricts Anthropic authentication to `ANTHROPIC_API_KEY`, which is why it is not optional here.
 
 `--bare` does not govern *which provider* the CLI talks to, so it is not sufficient alone. An ambient `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, or `ANTHROPIC_BASE_URL` redirects the run to an endpoint authenticated with the host's own cloud credentials, ignoring the tenant key entirely. `SCRUBBED_ROUTING_VARIABLES` tombstones each one; together with `--bare` the injected key becomes the only credential the run can reach.
+
+### A pinned `HOME` is isolation only while nothing names a directory outside it
+
+`claudeCliEnvironment` separates two tenants by giving each child its own `HOME`, which the caller sets to that tenant's runtime pool root. That separation is indirect: it holds because the child's configuration, caches, and account state are located *relative to* `HOME`. A variable that names one of those directories outright breaks the derivation without touching `HOME`, so the environment still reads as isolated. `CLAUDE_CONFIG_DIR` relocates the CLI's own configuration and account state, and the XDG base directories name cache, config, data, and state roots. A server started from an operator's shell — or from another agent that exports one — would hand every tenant the same directory to read and write.
+
+`SCRUBBED_STATE_VARIABLES` tombstones them. The list covers the standard state-directory variables rather than only the ones a particular CLI version is known to read, because the two mistakes are not symmetric: a tombstoned name the CLI ignores changes nothing, since the fallback is the location under the pinned `HOME` that was wanted anyway, while a name left off the list is a directory two tenants share.
 
 ### Frame handling is open by default
 
