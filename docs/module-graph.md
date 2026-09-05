@@ -380,6 +380,7 @@ flowchart TD
   pkg_scope --> pkg_invariants
   pkg_web --> pkg_llm
   pkg_attachment --> pkg_brand
+  pkg_run_admission --> pkg_control_plane
   pkg_run_admission --> pkg_run_budget
   pkg_run_ledger --> pkg_control_plane
   pkg_run_ledger --> pkg_run_budget
@@ -1297,7 +1298,7 @@ flowchart TD
 | [`scope`](../packages/core/scope) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`web`](../packages/web/web) | `web` | [`llm`](../packages/llm/llm) |
 | [`attachment`](../packages/attachment/attachment) | `attachment` | [`brand`](../packages/util/brand) |
-| [`run-admission`](../packages/control-plane/run-admission) | `control-plane` | [`run-budget`](../packages/control-plane/run-budget) |
+| [`run-admission`](../packages/control-plane/run-admission) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`run-budget`](../packages/control-plane/run-budget) |
 | [`run-ledger`](../packages/control-plane/run-ledger) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`run-budget`](../packages/control-plane/run-budget) |
 | [`tenant-allowance`](../packages/control-plane/tenant-allowance) | `control-plane` | [`run-budget`](../packages/control-plane/run-budget) |
 | [`credentials`](../packages/credentials/credentials) | `credentials` | [`invariants`](../packages/runtime-diagnostics/invariants) |

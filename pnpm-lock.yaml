@@ -4344,6 +4344,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
       '@deepseek-ai/dsh-run-budget':
         specifier: workspace:^
         version: link:../run-budget

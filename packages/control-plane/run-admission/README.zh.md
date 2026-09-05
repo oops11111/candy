@@ -39,21 +39,22 @@ export const outcome = admission.admitted
   : admission.rejection
 ```
 
-被准入的运行携带已校验的声明、已打开的凭据、池键、池的目录,以及它可以花费的额度。拒绝会指明产生它的阶段——`assertion`、`budget`、`replay` 或 `credential`——因此运维人员可以区分伪造令牌与已吊销账户,而调用方不会因此得到任何可用于重试的信息。`assertion` 之后的每一个阶段还会携带已校验的声明,因此调用方能说出被拒绝的是哪个租户、哪个账户、哪一次运行;被重放的 nonce 是本调用最清晰的攻击信号,而一个不带租户的重放报告记下的是「发生了某件事」,而不是发生了什么。`assertion` 阶段不携带任何身份,因为它在任何声明被校验之前就拒绝了该令牌,而未经校验的载荷正是本控制平面拒绝复述的、由调用方提供的身份。两种结果都携带 `audits`:没有任何路径会丢弃保险库产生的记录。
+被准入的运行携带已校验的声明、已打开的凭据、池键、池的目录,以及它可以花费的额度。拒绝会指明产生它的阶段——`assertion`、`budget`、`session`、`replay` 或 `credential`——因此运维人员可以区分伪造令牌与已吊销账户,而调用方不会因此得到任何可用于重试的信息。`assertion` 之后的每一个阶段还会携带已校验的声明,因此调用方能说出被拒绝的是哪个租户、哪个账户、哪一次运行;被重放的 nonce 是本调用最清晰的攻击信号,而一个不带租户的重放报告记下的是「发生了某件事」,而不是发生了什么。`assertion` 阶段不携带任何身份,因为它在任何声明被校验之前就拒绝了该令牌,而未经校验的载荷正是本控制平面拒绝复述的、由调用方提供的身份。两种结果都携带 `audits`:没有任何路径会丢弃保险库产生的记录。
 
 ### 提供 policy
 
-`RunAdmissionPolicy` 持有本运行时的期望、断言密钥、保险库密钥环、池基准目录,以及三个由部署方满足的端口:
+`RunAdmissionPolicy` 持有本运行时的期望、断言密钥、保险库密钥环、池基准目录,以及四个由部署方满足的端口:
 
 ```ts
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 
-declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'spendNonce' | 'findCredential'>
+declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'findSessionRun' | 'spendNonce' | 'findCredential'>
 declare const store: {
   budgetFor: (userId: string) => Promise<undefined>
   parentRemaining: (parentRunId: string) => Promise<undefined>
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
+  runDriving: (sessionId: string) => Promise<undefined>
 }
 
 const replay = new RunReplayStore()
@@ -63,6 +64,7 @@ export const policy: RunAdmissionPolicy = {
   findBudget: claims => claims.parentRunId === undefined
     ? store.budgetFor(claims.userId)
     : store.parentRemaining(claims.parentRunId),
+  findSessionRun: claims => store.runDriving(claims.sessionId),
   spendNonce: claims => Promise.resolve(replay.spend(claims, Date.now())),
   findCredential: claims => store.envelopeFor(claims.userId, claims.accountId),
 }
@@ -70,13 +72,15 @@ export const policy: RunAdmissionPolicy = {
 
 `spendNonce` 只在首次见到某个 nonce 时返回 true,而本调用从不重试一个被报告为已消费的 nonce,因此那个端口就是重放防护的全部。[`dsh-run-replay`](../run-replay/README.zh.md) 为单个进程满足它;运行多于一个运行时进程的部署,需要一个仍然守住同样三项义务的持久化存储 —— 一个不可分割的决定、由断言界定的保留期,以及一条既以租户也以 nonce 为键的记录。
 
-`findBudget` 返回 `undefined` 表示拒绝该运行:存储不认识的租户并不等于额度无限的租户,而意在「不计量」的部署应当用一个显式的大额度来表达。它与 `findCredential` 在本仓库中都没有实现,这正是三者都仍作为参数的原因:在部署方回答了额度、重放与凭据查找之前,运行无法开始。
+`findBudget` 返回 `undefined` 表示拒绝该运行:存储不认识的租户并不等于额度无限的租户,而意在「不计量」的部署应当用一个显式的大额度来表达。它与 `findCredential` 在本仓库中都没有实现,这正是它们都仍作为参数的原因:在部署方回答了额度、会话、重放与凭据查找之前,运行无法开始。
+
+`findSessionRun` 返回已经在驱动这些声明所指名会话的那次运行,会话空闲时返回 `undefined`。模型请求携带的是它所面向的那个会话,而不携带任何别的能标识运行的东西,因此同一个会话上的两次运行就是没有人能归属的花费;在这里拒绝第二次运行,把冲突止在它被制造出来的地方。
 
 `findBudget` 回答的是这次运行将据以启动的那份额度，而这对每一种运行并不是同一次查询。子运行 —— claims 携带 `parentRunId` 的那种 —— 据以启动的是它**父运行**的剩余额度，从 [`dsh-run-ledger`](../run-ledger/README.zh.md) 里读出。给子运行回答租户预算会让这项检查失去意义：一个额度充裕的租户完全可能有一个已耗尽的父运行，而子运行要到自己的份额被预留时才会被拒绝 —— 那已经是在它的一次性 nonce 被消费、凭据被打开之后一步了。
 
 这项检查问的是「这次运行还有没有东西可花」，而不是承诺某个具体的子运行请求装得下。只剩一个 token 的父运行仍会让一个子运行通过准入，而 `RunLedger.openChild` 随后会拒绝它 —— 这是在额度的大小尚未可知之前就检查它所留下的残余。
 
-额度在消费 nonce 之前读取。额度耗尽是这里唯一一种调用方能够修复并重试的拒绝——充值后再出示同一个仍然有效的断言——因此烧掉它的一次性令牌,会把一次可恢复的拒绝变成一次回到控制面的往返。nonce 仍然在凭据之前被消费,因为它会把并发的重复请求串行化,使同一个令牌的两份副本不可能都抵达密钥。
+额度与会话都在消费 nonce 之前读取。两者都是调用方能够修复并重试的拒绝 —— 充值,或者等那个会话的运行结算完 —— 之后再出示同一个仍然有效的断言,因此为其中任何一个烧掉一次性令牌,都会把一次可恢复的拒绝变成一次回到控制面的往返。nonce 仍然在凭据之前被消费,因为它会把并发的重复请求串行化,使同一个令牌的两份副本不可能都抵达密钥。
 
 -----
 
@@ -95,7 +99,13 @@ export const policy: RunAdmissionPolicy = {
 
 ### 顺序就是约定
 
-断言最先被校验,因此下游永远不会看到未经认证的声明——本运行时不接受的令牌,会在任何一个端口被调用之前就被拒绝。额度第二个被读取:它是调用方唯一能够修复并重试的拒绝,因此绝不能烧掉 nonce,而且它不触碰任何密钥。nonce 第三个被消费,把并发的重复请求串行化,使同一个令牌的两份副本不可能都抵达凭据。凭据第四个被打开,使用声明所携带的绑定。池最后被解析,因为它不需要任何密钥。
+断言最先被校验,因此下游永远不会看到未经认证的声明——本运行时不接受的令牌,会在任何一个端口被调用之前就被拒绝。额度第二个、会话第三个被读取:两者都是调用方能够修复并重试的拒绝,因此都绝不能烧掉 nonce,而且都不触碰任何密钥。nonce 第四个被消费,把并发的重复请求串行化,使同一个令牌的两份副本不可能都抵达凭据。凭据第五个被打开,使用声明所携带的绑定。池最后被解析,因为它不需要任何密钥。
+
+### 为什么一个会话只能被一次运行驱动
+
+模型请求携带的是它所面向的那个会话,而不携带任何别的能标识运行的东西,因此同一个会话上的两次运行就是没有人能归属的花费。`findSessionRun` 把第二次运行拒绝在冲突被制造出来的地方。把它留给之后读取这份映射的东西,意味着两次运行都会开启并占住各自的额度,而那个会话里的每一次模型调用都会被一次次地拒绝 —— 而一个被铸到另一个租户会话上的租户,会拦住那个租户的工作,而不是自己被拦住。
+
+子运行也不例外。它需要属于自己的会话,理由与它的父运行相同,这让「一次运行一个会话」成为对签发断言的控制平面的一项要求,而不是一种惯例。
 
 ### 为什么身份无法在组合过程中被替换
 
@@ -128,6 +138,7 @@ export const policy: RunAdmissionPolicy = {
 - **审计记录只被返回,不被持久化**——每一种结果都携带该次尝试产生的保险库记录,而边界页面所要求的按租户分区存储由调用方拥有。这里不写入、不保留、也不排序它们。
 - **只有保险库操作会被审计**——从未抵达保险库的拒绝(未被准入的令牌、已用掉的 nonce、没有存储凭据的账户)携带空轨迹,因为没有任何凭据被触碰。需要记录这些拒绝的调用方,应自行记录该 rejection,而它在 `assertion` 之后的每一个阶段都会指明租户。
 - **nonce 的消费与运行不构成同一事务**——nonce 在读取凭据之前就被消费,因此在凭据一步被拒绝的运行,其断言已经被消耗掉。这是安全的方向,同时也意味着客户端必须重新签发断言,而不能在修好账户后重试同一个。
+- **会话检查只和它的端口一样宽** —— `findSessionRun` 依据部署方给它的东西作答,因此两个对开启中运行没有共同视图的运行时,无法拒绝对方的冲突。`dsh-run-scheduler` 依据它自己那个运行时的记录作答,并且把这一点说了出来。
 - **不检查配额、并发与父级子集授权**——这些属于调度器与 R3 的编排;本调用只准入一次运行的身份与资源,而不是它的预算。
 - **没有 Cordis 服务**——本包中没有任何东西注册到 `Context` 上;它被直接导入。
 

@@ -28,6 +28,7 @@
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-control-plane": "workspace:^",
     "@deepseek-ai/dsh-run-budget": "workspace:^"
   },
   "dependencies": {
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-control-plane": "workspace:^",
     "@deepseek-ai/dsh-run-budget": "workspace:^",
     "@deepseek-ai/dsh-run-replay": "workspace:^"
   }

@@ -74,6 +74,7 @@ function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy
     poolBase: join(base, 'pools'),
     findBudget: () => Promise.resolve(BUDGET),
     spendNonce: subject => Promise.resolve(replay.spend(subject, NOW)),
+    findSessionRun: () => Promise.resolve(undefined),
     findCredential: subject => Promise.resolve(sealCredential(
       Buffer.from('sk-ant-alice', 'utf8'),
       { userId: subject.userId, accountId: subject.accountId },

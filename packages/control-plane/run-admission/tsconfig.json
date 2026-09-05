@@ -5,6 +5,7 @@
     "outDir": "lib/types"
   },
   "references": [
+    { "path": "../control-plane" },
     { "path": "../credential-vault" },
     { "path": "../execution-assertion" },
     { "path": "../run-budget" },

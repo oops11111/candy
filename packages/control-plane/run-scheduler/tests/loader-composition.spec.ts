@@ -67,6 +67,9 @@ const AUDIENCE = 'candy-runtime-debian-1'
 const LIFETIME = 60_000
 const ALICE = UserId('user-alice')
 const SESSION = brandString<SessionId>('session-1')
+const SECOND_SESSION = brandString<SessionId>('session-2')
+const CHILD_SESSION = brandString<SessionId>('session-child')
+const BOBBY = UserId('user-bobby')
 const ACCOUNT = ProviderAccountId('account-1')
 const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 2_500_000, children: 4 }
 /** A share small enough that the tenant's grant still funds another run beside it. */
@@ -225,9 +228,10 @@ describe('a booted Candy scheduler', () => {
     await provision(ctx, now)
     const token = mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8'))
 
-    // A share rather than the whole remainder, so the tenant's allowance is not
-    // what denies the second attempt.
+    // The run is closed first so neither the tenant's allowance nor its session
+    // is what denies the second attempt: the nonce is.
     await ctx.runScheduler.start(token, () => SHARE, now)
+    await ctx.runScheduler.close(RunId('run-root'))
     const replayed = await ctx.runScheduler.start(token, () => SHARE, now)
 
     expect(replayed).toMatchObject({
@@ -275,7 +279,7 @@ describe('a booted Candy scheduler', () => {
 
     const child = await ctx.runScheduler.start(
       mintExecutionAssertion(
-        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2' }),
+        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2', sessionId: CHILD_SESSION }),
         Buffer.from(SECRET, 'utf8'),
       ),
       () => share,
@@ -300,7 +304,7 @@ describe('a booted Candy scheduler', () => {
     await ctx.runScheduler.close(RunId('run-root'))
 
     const second = await ctx.runScheduler.start(
-      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'nonce-2' }), Buffer.from(SECRET, 'utf8')),
+      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'nonce-2', sessionId: SECOND_SESSION }), Buffer.from(SECRET, 'utf8')),
       undefined,
       now,
     )
@@ -323,7 +327,7 @@ describe('a booted Candy scheduler', () => {
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
 
     const second = await ctx.runScheduler.start(
-      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'nonce-2' }), Buffer.from(SECRET, 'utf8')),
+      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'nonce-2', sessionId: SECOND_SESSION }), Buffer.from(SECRET, 'utf8')),
       undefined,
       now,
     )
@@ -342,7 +346,7 @@ describe('a booted Candy scheduler', () => {
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
     await ctx.runScheduler.start(
       mintExecutionAssertion(
-        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2' }),
+        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2', sessionId: CHILD_SESSION }),
         Buffer.from(SECRET, 'utf8'),
       ),
       () => SHARE,
@@ -444,7 +448,7 @@ describe('a booted Candy scheduler', () => {
     await first.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
     await first.runScheduler.start(
       mintExecutionAssertion(
-        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2' }),
+        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2', sessionId: CHILD_SESSION }),
         Buffer.from(SECRET, 'utf8'),
       ),
       () => SHARE,
@@ -634,19 +638,22 @@ describe('a booted Candy scheduler', () => {
     expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toMatchObject({ spent: { tokens: 0 } })
   })
 
-  it('refuses a request whose session two open runs both claim', async () => {
-    // Charging either tree would be a misbilling the caller cannot detect, so
-    // the bookkeeping error stops the call instead.
+  it('refuses a request whose session two run records both claim', async () => {
+    // `start` refuses the second run, so this state arrives only from outside
+    // it: another runtime sharing this audience, or a direct record write.
+    // Charging either tree would be a misbilling the caller cannot detect.
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)
     const now = Date.now()
     await provision(ctx, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
-    await ctx.runScheduler.start(
-      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'nonce-2' }), Buffer.from(SECRET, 'utf8')),
-      () => SHARE,
-      now,
-    )
+    await ctx.controlPlaneStore.openRun({
+      record: {
+        runId: RunId('run-elsewhere'), parentRunId: undefined,
+        reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
+      },
+      userId: ALICE, sessionId: SESSION, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+    })
     await ctx.plugin(Llm)
     ctx.llm.registerAdapter(['fake'], new FakeAdapter())
 
@@ -658,39 +665,75 @@ describe('a booted Candy scheduler', () => {
       reason: {
         kind: 'error',
         failure: {
-          message: "session 'session-1' is claimed by 2 open runs (run-root, run-2), so this call cannot be charged to one",
+          message: "session 'session-1' is claimed by 2 open runs (run-root, run-elsewhere), so this call cannot be charged to one",
           code: 'RUN_NOT_OPEN',
         },
       },
     }])
   })
 
-  it('stops metering when its own fiber is disposed', async () => {
-    // A listener that outlived its service would meter against a ledger nobody
-    // owns, which is what the disposal contract exists to prevent.
+  it('refuses a second run on a session another run already drives', async () => {
+    // The conflict is refused where it is created. Left to the metering
+    // lookup, both runs open, hold their allowances, and every model call in
+    // that session is refused one at a time — a tenant able to stop another
+    // tenant's work by being minted onto its session.
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
-    const ctx = await boot(root, {}, false)
+    const ctx = await boot(root)
     const now = Date.now()
-    const fiber = ctx.plugin(RunScheduler, {
-      issuer: ISSUER,
-      audience: AUDIENCE,
-      credentialKeyVersion: KEY_VERSION,
-      poolBase: join(root, 'pools'),
-    })
-    await ctx.loader.await()
     await provision(ctx, now)
-    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.controlPlaneStore.setTenantGrant(BOBBY, BUDGET)
+    await ctx.controlPlaneStore.save({
+      record: {
+        id: ProviderAccountId('account-2'), userId: BOBBY, provider: 'claude-cli', label: 'work',
+        createdAt: now, updatedAt: now, validatedAt: undefined, revokedAt: undefined, deletedAt: undefined, isDefault: true,
+      },
+      credential: sealCredential(
+        Buffer.from('sk-ant-bobby', 'utf8'),
+        { userId: BOBBY, accountId: ProviderAccountId('account-2') },
+        KEYRING,
+        now,
+      ).envelope,
+    })
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+
+    const second = await ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, { userId: BOBBY, accountId: ProviderAccountId('account-2'), runId: RunId('run-bobby'), nonce: 'n2' }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )
+
+    expect(second).toMatchObject({
+      started: false,
+      rejection: {
+        stage: 'admission',
+        rejection: { stage: 'session', reason: 'already-driven', holder: RunId('run-root') },
+      },
+    })
+    expect(ctx.runScheduler.ledger.open().map(record => record.runId)).toEqual([RunId('run-root')])
+  })
+
+  it('leaves the run that holds a session metering its own calls', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+    await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now, { runId: RunId('run-2'), nonce: 'n2' }), Buffer.from(SECRET, 'utf8')),
+      () => SHARE,
+      now,
+    )
     await ctx.plugin(Llm)
     ctx.llm.registerAdapter(['fake'], new FakeAdapter())
-    const scheduler = ctx.runScheduler
-
-    await fiber.dispose()
 
     const seen: StreamChunk[] = []
     for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
 
     expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
-    expect(scheduler.ledger.get(RunId('run-root'))).toMatchObject({ spent: { tokens: 0 } })
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toMatchObject({ spent: { tokens: 42 } })
   })
 
   it('records what a started run did, against the tenant that ran it', async () => {
@@ -742,8 +785,10 @@ describe('a booted Candy scheduler', () => {
     await provision(ctx, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
 
+    // The same run id on a session of its own: the session check passes and the
+    // ledger is what refuses.
     await ctx.runScheduler.start(
-      mintExecutionAssertion(claims(now, { nonce: 'nonce-2' }), Buffer.from(SECRET, 'utf8')),
+      mintExecutionAssertion(claims(now, { nonce: 'nonce-2', sessionId: SECOND_SESSION }), Buffer.from(SECRET, 'utf8')),
       () => SHARE,
       now,
     )
@@ -759,7 +804,7 @@ describe('a booted Candy scheduler', () => {
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await ctx.runScheduler.start(
-        mintExecutionAssertion(claims(now, { runId: RunId(`run-${String(attempt)}`), nonce: `nonce-${String(attempt)}` }), Buffer.from(SECRET, 'utf8')),
+        mintExecutionAssertion(claims(now, { runId: RunId(`run-${String(attempt)}`), nonce: `nonce-${String(attempt)}`, sessionId: brandString<SessionId>(`session-${String(attempt)}`) }), Buffer.from(SECRET, 'utf8')),
         undefined,
         now,
       )
@@ -800,7 +845,7 @@ describe('a booted Candy scheduler', () => {
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
     await ctx.runScheduler.start(
       mintExecutionAssertion(
-        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2' }),
+        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2', sessionId: CHILD_SESSION }),
         Buffer.from(SECRET, 'utf8'),
       ),
       () => SHARE,

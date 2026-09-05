@@ -95,7 +95,9 @@ declare const request: GenerateOptions
 export const stream = ctx.llm.stream(request)
 ```
 
-A request naming no session, or one naming no run this runtime has open, passes through untouched — it is not this runtime's to charge. A session two open runs both claim is refused with a terminal `error` finish: charging either tree would be a misbilling the caller cannot detect.
+A request naming no session, or one naming no run this runtime has open, passes through untouched — it is not this runtime's to charge.
+
+The mapping is kept unambiguous where it is created: a run whose session another run already drives is refused at `start`, before its nonce is spent, so it can be retried once that session settles. A request whose session two records still claim is refused with a terminal `error` finish — that state arrives only from outside `start`, and charging either tree would be a misbilling the caller cannot detect.
 
 ### Metering one stream by hand
 
@@ -194,6 +196,7 @@ These are current package constraints, not a task backlog.
 - **A rejected sweep is logged, not retried immediately** — the runs it could not settle stay open with expired leases, so the next sweep retries them. A medium that stays unavailable holds those allowances until it comes back.
 - **It does not run the provider** — binding and cancellation stay with the caller; `meter` wraps a stream the caller opened, and this service holds no process.
 - **A trail is a window, not an archive** — `auditRetention` records per tenant, and per runtime for attempts that named none; older records are dropped rather than shipped anywhere. A deployment that needs to keep them reads them from here and sends them on.
+- **One session, one run** — a second run naming a session this runtime already has open is refused. A control plane that mints one session for a parent and its child gets the child refused, which makes a session per run a requirement on the control plane rather than a convention.
 - **Metering follows the session, not the process** — a request assembled for a run's session is metered wherever it is made, and a request made outside that session is not metered at all, even if the same run caused it. A deployment that runs work for a tenant without a session of its own is unmetered.
 - **The trail covers scheduling, not the run's work** — starting, denying, and the vault operations an attempt produced. Routing, delegation, tool authorization and terminal state are not recorded, because nothing produces those records yet.
 - **A metered call is bounded, a silent one is not** — `meter` checks wall time as chunks arrive, so a provider that stalls without emitting runs past its deadline until the lease sweep reaches its run.

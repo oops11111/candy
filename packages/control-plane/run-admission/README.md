@@ -39,21 +39,22 @@ export const outcome = admission.admitted
   : admission.rejection
 ```
 
-An admitted run carries the verified claims, the opened credential, the pool key, the pool's directory, and the allowance it may spend. A denial names the stage that produced it — `assertion`, `budget`, `replay`, or `credential` — so an operator can tell a forged token from a revoked account without the caller learning anything it could retry against. Every stage past `assertion` also carries the verified claims, so a caller can say which tenant, account, and run was refused; a replayed nonce is this call's clearest attack signal, and one reported without a tenant records that something happened rather than what. The `assertion` stage carries none, because it denied the token before any claim was verified and the unverified payload is the caller-supplied identity this control plane refuses to repeat. Both outcomes carry `audits`: no path discards a record the vault produced.
+An admitted run carries the verified claims, the opened credential, the pool key, the pool's directory, and the allowance it may spend. A denial names the stage that produced it — `assertion`, `budget`, `session`, `replay`, or `credential` — so an operator can tell a forged token from a revoked account without the caller learning anything it could retry against. Every stage past `assertion` also carries the verified claims, so a caller can say which tenant, account, and run was refused; a replayed nonce is this call's clearest attack signal, and one reported without a tenant records that something happened rather than what. The `assertion` stage carries none, because it denied the token before any claim was verified and the unverified payload is the caller-supplied identity this control plane refuses to repeat. Both outcomes carry `audits`: no path discards a record the vault produced.
 
 ### Supplying the policy
 
-`RunAdmissionPolicy` holds this runtime's expectation, its assertion secret, the vault keyring, the pool base directory, and three ports the deployment satisfies:
+`RunAdmissionPolicy` holds this runtime's expectation, its assertion secret, the vault keyring, the pool base directory, and four ports the deployment satisfies:
 
 ```ts
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 
-declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'spendNonce' | 'findCredential'>
+declare const partial: Omit<RunAdmissionPolicy, 'findBudget' | 'findSessionRun' | 'spendNonce' | 'findCredential'>
 declare const store: {
   budgetFor: (userId: string) => Promise<undefined>
   parentRemaining: (parentRunId: string) => Promise<undefined>
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
+  runDriving: (sessionId: string) => Promise<undefined>
 }
 
 const replay = new RunReplayStore()
@@ -63,6 +64,7 @@ export const policy: RunAdmissionPolicy = {
   findBudget: claims => claims.parentRunId === undefined
     ? store.budgetFor(claims.userId)
     : store.parentRemaining(claims.parentRunId),
+  findSessionRun: claims => store.runDriving(claims.sessionId),
   spendNonce: claims => Promise.resolve(replay.spend(claims, Date.now())),
   findCredential: claims => store.envelopeFor(claims.userId, claims.accountId),
 }
@@ -70,13 +72,15 @@ export const policy: RunAdmissionPolicy = {
 
 `spendNonce` returns true only the first time it sees a nonce, and this call never retries one reported as spent, so that port is the whole of replay protection. [`dsh-run-replay`](../run-replay/README.md) satisfies it for one process; a deployment running more than one runtime process needs a durable store that keeps the same three obligations — one indivisible decision, retention bounded by the assertion, and a record keyed by tenant as well as nonce.
 
-`findBudget` returning `undefined` denies the run: a tenant the store does not know is not a tenant with unlimited budget, and a deployment that means unmetered says so with an explicit large allowance. Neither it nor `findCredential` has an implementation in this repository, which is why all three stay parameters: a run cannot start until the deployment has answered budget, replay, and credential lookup.
+`findBudget` returning `undefined` denies the run: a tenant the store does not know is not a tenant with unlimited budget, and a deployment that means unmetered says so with an explicit large allowance. Neither it nor `findCredential` has an implementation in this repository, which is why they stay parameters: a run cannot start until the deployment has answered budget, session, replay, and credential lookup.
+
+`findSessionRun` returns the run already driving the session the claims name, or `undefined` when the session is free. A model request carries the session it was assembled for and nothing else that could identify a run, so two runs on one session is spend nobody can attribute; refusing the second here stops the conflict where it is created.
 
 `findBudget` answers the allowance the run is started against, which is not the same lookup for every run. A child run — one whose claims carry a `parentRunId` — is started against its PARENT's remaining allowance, read from a [`dsh-run-ledger`](../run-ledger/README.md). Answering the tenant's budget for a child makes this check meaningless: a tenant with plenty left can have an exhausted parent, and the child is then refused only when its share is reserved, one step after its single-use nonce was spent and its credential opened.
 
 The check is "has this run anything at all to spend", not a promise a particular child request will fit. A parent with one token left admits a child that `RunLedger.openChild` then refuses, which is what remains of checking an allowance before its size is known.
 
-The budget is read before the nonce is spent. An exhausted budget is the one denial here a caller can fix and retry — top up, present the same still-valid assertion — so burning its single-use token would turn a recoverable refusal into a round trip to the control plane. The nonce is still spent before the credential, because it serializes concurrent duplicates so two copies of one token cannot both reach a secret.
+The budget and the session are read before the nonce is spent. Both are denials a caller can fix and retry — top up, or wait for the session's run to settle, then present the same still-valid assertion — so burning a single-use token on either would turn a recoverable refusal into a round trip to the control plane. The nonce is still spent before the credential, because it serializes concurrent duplicates so two copies of one token cannot both reach a secret.
 
 -----
 
@@ -95,7 +99,13 @@ The budget is read before the nonce is spent. An exhausted budget is the one den
 
 ### The order is the contract
 
-The assertion is verified first, so nothing downstream ever sees an unauthenticated claim — a token this runtime does not admit is denied before any port is called. The budget is read second: it is the one denial a caller can fix and retry, so it must not burn the nonce, and it touches no secret. The nonce is spent third, serializing concurrent duplicates so two copies of one token cannot both reach the credential. The credential is opened fourth, under the binding the claims carry. The pool is resolved last, because it needs no secret.
+The assertion is verified first, so nothing downstream ever sees an unauthenticated claim — a token this runtime does not admit is denied before any port is called. The budget is read second and the session third: both are denials a caller can fix and retry, so neither may burn the nonce, and neither touches a secret. The nonce is spent fourth, serializing concurrent duplicates so two copies of one token cannot both reach the credential. The credential is opened fifth, under the binding the claims carry. The pool is resolved last, because it needs no secret.
+
+### Why one session may be driven by only one run
+
+A model request carries the session it was assembled for and nothing else that could identify a run, so a session driven by two runs at once is spend nobody can attribute. `findSessionRun` refuses the second run where the conflict is created. Leaving it to whatever reads the mapping later means both runs open and hold their allowances, and every model call in that session is refused one at a time — and a tenant minted onto another tenant's session would stop that tenant's work rather than being stopped itself.
+
+A child run is not exempt. It needs a session of its own for the same reason its parent does, which makes one-session-per-run a requirement on the control plane that mints the assertions rather than a convention.
 
 ### Why identity cannot be substituted across the composition
 
@@ -128,6 +138,7 @@ These are current package constraints, not a task backlog.
 - **Audit records are returned, not persisted** — every outcome carries the vault records the attempt produced, and the caller owns the tenant-partitioned store the boundaries page requires. Nothing here writes, retains, or orders them.
 - **Only vault operations are audited** — a refusal that never reached the vault (an unadmitted token, a spent nonce, an account with no stored credential) carries an empty trail, because no credential was touched. A caller that must record those refusals logs the rejection itself, which names the tenant for every stage past `assertion`.
 - **Nonce spending is not transactional with the run** — a nonce is spent before the credential is read, so a run denied at the credential step has already consumed its assertion. That is the safe direction, and it means a client must mint a new assertion rather than retry the same one after fixing an account.
+- **The session check is only as wide as its port** — `findSessionRun` answers from whatever the deployment gives it, so two runtimes that do not share a view of open runs cannot refuse each other's conflicts. `dsh-run-scheduler` answers from its own runtime's records and says so.
 - **Quotas, concurrency, and parent-subset grants are not checked** — those belong to the scheduler and to R3's orchestration; this call admits one run's identity and resources, not its budget.
 - **No Cordis service** — nothing here registers on a `Context`; it is imported directly.
 

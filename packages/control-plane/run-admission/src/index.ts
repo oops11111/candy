@@ -35,6 +35,7 @@ import {
   hasRemainingBudget,
   type RunBudget,
 } from '@deepseek-ai/dsh-run-budget'
+import type { RunId } from '@deepseek-ai/dsh-control-plane'
 import {
   runtimePoolKey,
   runtimePoolRoot,
@@ -97,6 +98,25 @@ export interface RunAdmissionPolicy {
    * deployment running more than one needs a durable store that still does.
    */
   readonly spendNonce: (claims: ExecutionAssertionClaims) => Promise<boolean>
+  /**
+   * Report the run already driving the session these claims name.
+   *
+   * A model request carries the session it was assembled for and nothing else
+   * that could identify a run, so a session driven by two runs at once is
+   * spend nobody can attribute. This refuses the second run where the conflict
+   * is created, rather than leaving every later call in that session to be
+   * refused one at a time.
+   *
+   * It runs before the nonce is spent, so a run refused here can be retried
+   * with the same assertion once the session is free — a nonce burned on a
+   * conflict the caller did not cause would make the refusal permanent.
+   *
+   * A deployment whose control plane mints one session per run answers
+   * `undefined` always; `dsh-run-scheduler` answers from its own runtime's run
+   * records. A child run is not exempt: it needs a session of its own for the
+   * same reason its parent does.
+   */
+  readonly findSessionRun: (claims: ExecutionAssertionClaims) => Promise<RunId | undefined>
   /** Look up the sealed credential for the tenant and account the assertion names. */
   readonly findCredential: (claims: ExecutionAssertionClaims) => Promise<CredentialEnvelope | undefined>
 }
@@ -146,6 +166,13 @@ export type RunRejection =
   | {
     readonly stage: 'budget'
     readonly reason: 'no-budget' | 'exhausted'
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'session'
+    readonly reason: 'already-driven'
+    /** The run already driving the session these claims name. */
+    readonly holder: RunId
     readonly claims: ExecutionAssertionClaims
   }
   | {
@@ -229,6 +256,11 @@ export async function admitRun(
 
   // The nonce is spent next rather than last: it serializes concurrent
   // duplicates, so two copies of one token cannot both reach the credential.
+  const holder = await policy.findSessionRun(claims)
+  if (holder !== undefined) {
+    return { admitted: false, rejection: { stage: 'session', reason: 'already-driven', holder, claims }, audits: [] }
+  }
+
   if (!await policy.spendNonce(claims)) {
     return { admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent', claims }, audits: [] }
   }

@@ -76,6 +76,7 @@ function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy
     poolBase: POOL_BASE,
     findBudget: () => Promise.resolve(BUDGET),
     spendNonce: subject => Promise.resolve(replay.spend(subject, NOW)),
+    findSessionRun: () => Promise.resolve(undefined),
     findCredential: subject => Promise.resolve(
       subject.userId === UserId('user-alice') ? sealedFor(subject) : undefined,
     ),
@@ -425,15 +426,36 @@ describe('the budget a run is admitted against', () => {
     expect(looked).toBe(false)
   })
 
-  it('checks the budget before spending the nonce, and the credential after', async () => {
+  it('checks the budget and the session before spending the nonce, and the credential after', async () => {
+    // Both refusals must precede the nonce: a run denied for a conflict it did
+    // not cause can be retried with the same assertion, and a burned nonce
+    // would make that refusal permanent.
     const order: string[] = []
 
     await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
       findBudget: () => { order.push('budget'); return Promise.resolve(BUDGET) },
+      findSessionRun: () => { order.push('session'); return Promise.resolve(undefined) },
       spendNonce: () => { order.push('nonce'); return Promise.resolve(true) },
       findCredential: (subject) => { order.push('credential'); return Promise.resolve(sealedFor(subject)) },
     }), NOW)
 
-    expect(order).toEqual(['budget', 'nonce', 'credential'])
+    expect(order).toEqual(['budget', 'session', 'nonce', 'credential'])
+  })
+
+  it('refuses a run whose session another run already drives, and keeps its nonce', async () => {
+    const held = RunId('run-already-driving')
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    let spent = false
+
+    const refused = await admitRun({ token }, policy({
+      findSessionRun: () => Promise.resolve(held),
+      spendNonce: () => { spent = true; return Promise.resolve(true) },
+    }), NOW)
+
+    expect(refused).toMatchObject({
+      admitted: false,
+      rejection: { stage: 'session', reason: 'already-driven', holder: held, claims: { userId: UserId('user-alice'), sessionId: brandString<SessionId>('session-1') } },
+    })
+    expect(spent).toBe(false)
   })
 })

@@ -114,6 +114,7 @@ export async function admissionFor(
     poolBase,
     findBudget,
     spendNonce,
+    findSessionRun: () => Promise.resolve(undefined),
     findCredential: () => Promise.resolve(
       sealCredential(secret, { userId: subject.userId, accountId: subject.accountId }, KEYRING, NOW).envelope,
     ),

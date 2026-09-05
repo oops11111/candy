@@ -354,6 +354,11 @@ export class RunScheduler extends Service {
       keyring: this.keyring,
       poolBase: this.config.poolBase,
       spendNonce: (claims: ExecutionAssertionClaims) => Promise.resolve(this.replay.spend(claims, Date.now())),
+      // A session driven by two runs at once is spend nobody can attribute, so
+      // the second run is refused where the conflict is created.
+      findSessionRun: (claims: ExecutionAssertionClaims) => Promise.resolve(
+        store.runsOfSession(this.config.audience, claims.sessionId)[0]?.record.runId,
+      ),
       findCredential: (claims: ExecutionAssertionClaims) => store.findCredential(claims),
       // A child is admitted against its parent's remainder, not the tenant's
       // own allowance: a tenant with plenty left can have an exhausted parent.

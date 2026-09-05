@@ -4944,7 +4944,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RunRejection',
-    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
+    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'session\';\n    readonly reason: \'already-driven\';\n    readonly holder: RunId;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
   },
   {
     name: 'RunReplayStore',
