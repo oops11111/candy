@@ -100,6 +100,12 @@ export const policy: RunAdmissionPolicy = {
 
 JSON drops an `undefined` property, so a field the runtime types as `number | undefined` — a never-validated account, a never-rewrapped envelope — comes back as an absent key. The schemas declare those `optional` and the converters beside them put the field back. Reading the runtime type straight from `z.infer` would compile and then disagree with itself the first time such an account round-tripped.
 
+### Why a read-modify-write queues here
+
+The domain serializes each write but not the read that decides what to write. Two callers that read one record before either writes both compute from the same value, and the second write drops the first — a lost charge, or a lost audit record. Reading and writing on one chain is what makes appending to a trail and charging an allowance safe to call concurrently.
+
+The chain is store-wide rather than per record. These are settlements, audit appends and grant changes, not a hot path, and one chain is correct without bookkeeping that could itself be wrong.
+
 ### Why a charge carries the id of the run it absorbed
 
 Charging whoever funded a run and then forgetting that run are two writes this medium cannot make one, so a crash between them leaves a settled record a recovering runtime would charge a second time. Both funders — a tenant's allowance and a parent's run record — therefore carry the id of the settlement they last absorbed, written by the same atomic update as the charge itself. A repeat of that id is a no-op, so recovery re-drives an interrupted settlement without knowing how far it got.
@@ -156,6 +162,7 @@ These are current package constraints, not a task backlog.
 - **One runtime per audience** — `runsOf` partitions by the runtime stamp, so two processes sharing an audience recover each other's records. An assertion is audience-bound already, so this is a deployment rule rather than a check made here.
 - **A run's grants are its tenant and account** — the record carries what a child can be checked against. A workspace grant is not among them: narrowing one is legitimate and nothing here models containment.
 - **`runsOfSession` scans** — the domain keeps every run record in memory and this filters them, which is right at a runtime's live-run count and would not be at a fleet's.
+- **Read-modify-writes are serialized store-wide** — a slow medium therefore orders a charge for one tenant behind an audit append for another. The alternative is per-record chains, which nothing yet needs.
 - **A trail is bounded and rewritten whole** — one subject's records live in one document, so each append rewrites that document, and records past the cap are dropped rather than archived. It suits a window of recent activity at a deployment's scale and not an audit archive at a directory's.
 - **The trail records what the control plane observes** — scheduling attempts and vault operations. Routing, delegation, tool authorization and terminal state are not in it, because nothing in this repository produces those records yet.
 - **No period** — an allowance runs from its grant until an operator changes it, and `setTenantGrant` deliberately keeps what was consumed. Nothing here starts a new billing period, because nothing in the repository decides when one begins.

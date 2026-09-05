@@ -252,6 +252,65 @@ describe('a booted control-plane store', () => {
     expect(ctx.controlPlaneStore.findRun(RunId('run-absent'))).toBeUndefined()
   })
 
+  it('keeps every record when appends arrive at once', async () => {
+    // The domain serializes each write but not the read that decides what to
+    // write. Reading a trail before another append lands drops that append.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const subject = tenantSubject(ALICE)
+
+    await Promise.all(Array.from({ length: 32 }, (_unused, index) => ctx.controlPlaneStore.recordAudit(
+      subject,
+      [{ at: index, event: 'started', action: 'start', outcome: 'ok' }],
+      1_000,
+    )))
+
+    expect(ctx.controlPlaneStore.auditsOf(subject)).toHaveLength(32)
+  })
+
+  it('charges every settlement when they arrive at once', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+
+    await Promise.all(Array.from({ length: 32 }, (_unused, index) => ctx.controlPlaneStore.consumeTenantAllowance(
+      ALICE,
+      RunId(`run-${String(index)}`),
+      { tokens: 1, wallMs: 0, costMicroUsd: 0 },
+    )))
+
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 32 } })
+  })
+
+  it('keeps writing after a queued write fails', async () => {
+    // One rejected read-modify-write must not poison the chain the rest queue on.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+
+    const [refused] = await Promise.allSettled([
+      ctx.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-bad'), { tokens: -1, wallMs: 0, costMicroUsd: 0 }),
+      ctx.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-good'), { tokens: 5, wallMs: 0, costMicroUsd: 0 }),
+    ])
+
+    expect(refused).toMatchObject({ status: 'rejected' })
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 5 } })
+  })
+
+  it('keeps a tenant\'s consumption when its grant changes at the same time', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+
+    await Promise.all([
+      ctx.controlPlaneStore.consumeTenantAllowance(ALICE, RunId('run-1'), { tokens: 7, wallMs: 0, costMicroUsd: 0 }),
+      ctx.controlPlaneStore.setTenantGrant(ALICE, { ...BUDGET, tokens: BUDGET.tokens * 2 }),
+    ])
+
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE))
+      .toEqual({ grant: { ...BUDGET, tokens: BUDGET.tokens * 2 }, consumed: { tokens: 7, wallMs: 0, costMicroUsd: 0 } })
+  })
+
   it('writes nothing about a run it holds no record for', async () => {
     // Only a live ledger can say a run exists; the medium answers for records.
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))

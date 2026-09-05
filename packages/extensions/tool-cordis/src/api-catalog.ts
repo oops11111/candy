@@ -715,7 +715,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RangeError when the grant is not made of non-negative safe integers.'],
       },
       {
-        signature: 'async consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined>',
+        signature: 'consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined>',
         description: 'Add one settled run\'s spending to what its tenant has consumed, at most once.\n\nThe settlement `dsh-run-ledger` reports for a root run already covers its whole subtree, so one call per tree is the whole of a tenant\'s charge.\n\nCharging the tenant and deleting the settled run record are two writes this medium cannot make one, so a crash between them leaves a settled record a recovering runtime finds and charges again. The run\'s id is written into the same record as the charge, by the same atomic update, and a repeat of the same id is a no-op — so recovery may re-drive an interrupted settlement without knowing how far it got.\n\nThat guarantee needs one settlement at a time per tenant: two interleaved settlements leave the id of the later one, and a crash would then charge the earlier one twice. `dsh-run-scheduler` serializes them.',
         parameters: [{ name: 'userId', description: 'the tenant that ran it.' }, { name: 'runId', description: 'the settled root run, which this charge is recorded under.' }, { name: 'spent', description: 'what that run and its descendants consumed.' }],
         returns: 'the tenant\'s allowance after the charge — unchanged when this run was already charged — or undefined when no allowance is recorded for that tenant and the charge therefore landed nowhere.',

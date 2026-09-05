@@ -63,6 +63,17 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
   // Assigned by `Service.init`, which Cordis awaits before the service is
   // reachable, so a guard for the unopened state would be untestable rather
   // than defensive.
+  /**
+   * The one chain every read-modify-write here queues on.
+   *
+   * The domain serializes each `put` but not the read that decides what to
+   * put: two callers that read one record before either writes both compute
+   * from the same value, and the second write drops the first. That is a lost
+   * charge or a lost audit record, so the read and the write it feeds happen
+   * together here.
+   */
+  private mutations: Promise<unknown> = Promise.resolve()
+
   private accounts!: KvTable<ProviderAccountId, ReturnType<typeof toStoredEntry>>
   private allowances!: KvTable<UserId, StoredTenantAllowance>
   private runs!: KvTable<RunId, StoredRun>
@@ -165,14 +176,18 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
    * @returns the stored allowance, after the write reaches the medium.
    * @throws RangeError when the grant is not made of non-negative safe integers.
    */
+  // `async` so the argument checks above the chain reject the returned promise
+  // rather than throwing synchronously at a caller that only awaits.
   async setTenantGrant(userId: UserId, grant: RunBudget): Promise<TenantAllowance> {
-    const current = this.allowances.get(userId)
     const opened = openAllowance(grant)
-    const allowance: TenantAllowance = current === undefined
-      ? opened
-      : { grant: opened.grant, consumed: fromStoredAllowance(current).consumed }
-    await this.allowances.put(userId, toStoredAllowance(allowance))
-    return allowance
+    return this.mutate(async () => {
+      const current = this.allowances.get(userId)
+      const allowance: TenantAllowance = current === undefined
+        ? opened
+        : { grant: opened.grant, consumed: fromStoredAllowance(current).consumed }
+      await this.allowances.put(userId, toStoredAllowance(allowance))
+      return allowance
+    })
   }
 
   /**
@@ -199,13 +214,15 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
    *   tenant and the charge therefore landed nowhere.
    * @throws RangeError when the spend is not made of non-negative safe integers.
    */
-  async consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined> {
-    const stored = this.allowances.get(userId)
-    if (stored === undefined) return undefined
-    if (stored.lastSettledRunId === runId) return fromStoredAllowance(stored)
-    const charged = consumeAllowance(fromStoredAllowance(stored), spent)
-    await this.allowances.put(userId, { ...toStoredAllowance(charged), lastSettledRunId: runId })
-    return charged
+  consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined> {
+    return this.mutate(async () => {
+      const stored = this.allowances.get(userId)
+      if (stored === undefined) return undefined
+      if (stored.lastSettledRunId === runId) return fromStoredAllowance(stored)
+      const charged = consumeAllowance(fromStoredAllowance(stored), spent)
+      await this.allowances.put(userId, { ...toStoredAllowance(charged), lastSettledRunId: runId })
+      return charged
+    })
   }
 
   /**
@@ -355,6 +372,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
    * @throws RangeError when `retain` is not a positive safe integer, which is a
    *   deployment error rather than a record to drop.
    */
+  // `async` for the reason `setTenantGrant` is.
   async recordAudit(
     subject: AuditSubject,
     records: readonly RunAuditRecord[],
@@ -363,10 +381,19 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
     if (!Number.isSafeInteger(retain) || retain <= 0) {
       throw new RangeError(`dsh-control-plane-store: audit retention must be a positive safe integer, got ${String(retain)}`)
     }
-    if (records.length === 0) return this.auditsOf(subject)
-    const kept = [...this.audits.get(subject)?.records ?? [], ...records].slice(-retain)
-    await this.audits.put(subject, { records: kept })
-    return kept
+    return this.mutate(async () => {
+      if (records.length === 0) return this.auditsOf(subject)
+      const kept = [...this.audits.get(subject)?.records ?? [], ...records].slice(-retain)
+      await this.audits.put(subject, { records: kept })
+      return kept
+    })
+  }
+
+  /** Queue one read-modify-write, so no other reads the record it is about to replace. */
+  private mutate<T>(work: () => Promise<T>): Promise<T> {
+    const next = this.mutations.then(work, work)
+    this.mutations = next.then(() => undefined, () => undefined)
+    return next
   }
 
   /**

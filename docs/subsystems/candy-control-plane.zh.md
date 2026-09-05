@@ -168,7 +168,7 @@ async setTenantGrant(userId: UserId, grant: RunBudget): Promise<TenantAllowance>
  *   tenant and the charge therefore landed nowhere.
  * @throws RangeError when the spend is not made of non-negative safe integers.
  */
-async consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined>
+consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined>
 
 /**
  * Every run one runtime has open or part-way through settling.

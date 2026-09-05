@@ -928,6 +928,30 @@ describe('a booted Candy scheduler', () => {
     expect(remembered.at(-1)).toMatchObject({ reason: { kind: 'error', failure: { code: 'RUN_NOT_OPEN' } } })
   })
 
+  it('records every attempt when a tenant starts several runs at once', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+
+    await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map(attempt => ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, {
+          runId: RunId(`run-${String(attempt)}`),
+          nonce: `n${String(attempt)}`,
+          sessionId: brandString<SessionId>(`session-${String(attempt)}`),
+        }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )))
+
+    // Two records per attempt: the vault opening the credential, and the run
+    // starting.
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toHaveLength(16)
+  })
+
   it('records what a started run did, against the tenant that ran it', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)
