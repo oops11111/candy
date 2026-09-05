@@ -55,6 +55,7 @@ function adapterOver(handle: SubprocessHandle): ClaudeCliAdapter {
     isolation: { home: '/srv/candy/pools/abc', apiKey: SECRET },
     graceMs: 5_000,
     maxOutputBytes: 1_000_000,
+    maxStderrBytes: 8_192,
     spawn: () => handle,
     requireCredentialIsolation: false,
   })

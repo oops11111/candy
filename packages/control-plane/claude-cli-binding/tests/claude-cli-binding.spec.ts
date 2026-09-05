@@ -2,12 +2,13 @@ import { UserId } from '@deepseek-ai/dsh-control-plane'
 import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
 import { describe, expect, it } from 'vitest'
 import { bindClaudeCliRun, type ClaudeCliDeployment } from '../src/index.ts'
-import { admitFor, MAX_OUTPUT_BYTES } from './admit.ts'
+import { admitFor, MAX_OUTPUT_BYTES, MAX_STDERR_BYTES } from './admit.ts'
 const POOL_BASE = '/srv/candy/pools'
 const DEPLOYMENT: ClaudeCliDeployment = {
   executable: '/opt/candy/bin/claude',
   graceMs: 5_000,
   maxOutputBytes: MAX_OUTPUT_BYTES,
+  maxStderrBytes: MAX_STDERR_BYTES,
 }
 
 /** Admit one run against a fixed pool base; no case here touches the filesystem. */
@@ -32,6 +33,7 @@ describe('binding an admitted run to a Claude CLI launch', () => {
         isolation: { home: run.poolRoot, apiKey: 'sk-ant-alice' },
         graceMs: 5_000,
         maxOutputBytes: MAX_OUTPUT_BYTES,
+        maxStderrBytes: MAX_STDERR_BYTES,
         maxBudgetUsd: 2.5,
         requireCredentialIsolation: true,
       },
@@ -101,7 +103,7 @@ describe('binding an admitted run to a Claude CLI launch', () => {
 
     const result = bindClaudeCliRun(
       run,
-      { executable: '/usr/local/bin/claude', graceMs: 250, maxOutputBytes: 4_096 },
+      { executable: '/usr/local/bin/claude', graceMs: 250, maxOutputBytes: 4_096, maxStderrBytes: 256 },
       run.budget,
     )
 

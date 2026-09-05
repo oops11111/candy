@@ -26,6 +26,9 @@ export const LIFETIME = 60_000
 /** Stdout ceiling every fixture deployment applies; large enough that no case here reaches it. */
 export const MAX_OUTPUT_BYTES = 1_000_000
 
+/** Stderr tail these tests bind with. */
+export const MAX_STDERR_BYTES = 8_192
+
 /** The allowance the fixture budget store answers with. */
 export const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 2_500_000, children: 4 }
 

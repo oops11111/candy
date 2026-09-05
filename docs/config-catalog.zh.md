@@ -962,6 +962,8 @@ export interface Config {
   requireCredentialIsolation?: boolean
   /** Most stdout bytes one run may write before it is failed; defaults to 16 MiB. */
   maxOutputBytes?: number
+  /** Most stderr bytes to keep from one run, as that stream's tail; defaults to 8 KiB. */
+  maxStderrBytes?: number
 }
 ```
 

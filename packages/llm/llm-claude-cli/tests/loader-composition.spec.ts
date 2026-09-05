@@ -120,6 +120,7 @@ async function loadComposition(config: readonly string[] = [], apiKey = 'sk-ant-
     // reports an ambient credential. The default refuses exactly that; the
     // test below asserts the refusal, so the runs that need output opt out.
     '    requireCredentialIsolation: false',
+    '    maxStderrBytes: 4096',
     ...config,
     '',
   ].join('\n'))
@@ -168,6 +169,10 @@ describe('a booted claude-cli composition', () => {
     // outside it. The seam removes an ambient entry an overlay tombstones.
     expect(spec?.env).toHaveProperty('CLAUDE_CONFIG_DIR', undefined)
     expect(spec?.env).toHaveProperty('XDG_CONFIG_HOME', undefined)
+    // Collected under the configured ceiling, never inherited: an inherited
+    // stderr writes the CLI's diagnostics — which quote the tenant's key — to
+    // the host's own descriptor, past the adapter that could redact them.
+    expect(spec?.stdio.stderr).toEqual({ maxBytes: 4_096 })
   })
 
   it('refuses a run the CLI did not authenticate with the injected key, by default', async () => {

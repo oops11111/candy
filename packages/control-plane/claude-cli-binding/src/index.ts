@@ -43,6 +43,14 @@ export interface ClaudeCliDeployment {
    * not read from the admission.
    */
   readonly maxOutputBytes: number
+  /**
+   * Most stderr bytes to keep from one run, as that stream's tail.
+   *
+   * A host fact for the same reason as the stdout ceiling: it bounds the
+   * diagnostics one tenant's process makes a shared runtime hold, and it is
+   * the same for every tenant on this host.
+   */
+  readonly maxStderrBytes: number
 }
 
 /**
@@ -139,6 +147,7 @@ export function bindClaudeCliRun(
       isolation: { home: run.poolRoot, apiKey: decoded.key },
       graceMs: deployment.graceMs,
       maxOutputBytes: deployment.maxOutputBytes,
+      maxStderrBytes: deployment.maxStderrBytes,
       maxBudgetUsd: allowance.costMicroUsd / MICRO_USD_PER_USD,
       // Not a deployment choice. A run that authenticated with anything but the
       // injected key is spending a tenant that did not authorize it, and every

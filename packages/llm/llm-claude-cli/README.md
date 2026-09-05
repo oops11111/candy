@@ -73,6 +73,7 @@ export const adapter = new ClaudeCliAdapter({
   isolation: { home: run.poolRoot, apiKey: Buffer.from(run.secret).toString('utf8') },
   graceMs: 5_000,
   maxOutputBytes: 16 * 1024 * 1024,
+  maxStderrBytes: 8 * 1024,
   spawn: spec => subprocess.spawn(spec),
   requireCredentialIsolation: true,
 })
@@ -112,6 +113,14 @@ A run cut short still reports the counts it did send — the translator keeps th
 A `result` frame's text becomes the failure message verbatim, so a CLI that quotes its credential back — in an authentication error, or any diagnostic that echoes its environment — would put the tenant's key in the session log and in front of the model. This package holds the injected key, and [`dsh-claude-cli-protocol`](../claude-cli-protocol/README.md) translates frames without knowing it, so the substitution happens here or nowhere.
 
 Only diagnostic text is rewritten. Model output is the tenant's own content, and silently editing it would corrupt a legitimate answer about, say, the shape of a key. The substitution itself is [`dsh-llm`](../llm/README.md)'s `redactChunkApiKey`, so every adapter on the seam removes a credential the same way.
+
+### Why stderr is collected rather than inherited
+
+Redaction can only reach text this adapter carries. `stderr: 'inherit'` hands the child the parent's own descriptor, so the CLI writes straight to the host's stream and this adapter never sees a byte of it — and what the CLI writes there is diagnostics that quote the request that failed, which carried the tenant's key. A run failing authentication put the injected key on the operator's console, in the clear, while the identical text arriving on stdout was redacted.
+
+The stream is collected instead, under `maxStderrBytes`, and no spill file is configured: one tenant's diagnostics stay in that run's own memory rather than in a shared temp directory. Overflow keeps the tail, which is the opposite of the stdout ceiling and right for the same reason — a diagnostic ends with what failed, while a protocol stream cannot survive a gap at all.
+
+The tail is not discarded. A run whose process dies without a terminal frame has no other account of itself, so the tail joins that failure's message and leaves through the same redaction as every other chunk. A run that ends normally, is cancelled, or trips the stdout ceiling already says why, and its stderr is dropped.
 
 ### Why the run carries a stdout ceiling
 
@@ -177,6 +186,7 @@ These are current package constraints, not a task backlog.
 - **Cost arrives only at the end, and only as one number** — the usage chunk carries the CLI's `total_cost_usd` as `costMicroUsd`, so a run that dies before its terminal frame reports no cost however much it spent, and the per-model breakdown is dropped. `maxBudgetUsd` still caps a run independently of what is reported.
 - **No retry classification** — every failure maps to `CLI_EXIT` or the protocol package's `terminal_reason`, and no route-owned retry policy is declared, so `dsh-llm-retry` treats these failures with its defaults. The CLI also retries internally before reporting, which is invisible to that policy.
 - **`resolveModel` validates nothing** — the CLI publishes no catalogue and accepts both aliases and exact ids, so any model id is reported as resolvable and a wrong one surfaces as a CLI failure rather than a routing error.
+- **A successful run's diagnostics are dropped** — stderr is collected so the credential in it can be redacted, and the tail is surfaced only in the failure of a run that died without a terminal frame. An operator who watched the CLI's warnings scroll past on the host's own stream no longer sees them for a run that finished. Routing them to a logger, rather than only to a failure, waits for a consumer that reads one.
 - **One tenant per instance, by construction** — this is the isolation property, but it means a deployment serving many tenants owns constructing and disposing one adapter per pool; nothing here manages that lifecycle.
 
 <a id="dev-note"></a>

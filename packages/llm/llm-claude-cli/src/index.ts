@@ -44,6 +44,8 @@ export interface Config {
   requireCredentialIsolation?: boolean
   /** Most stdout bytes one run may write before it is failed; defaults to 16 MiB. */
   maxOutputBytes?: number
+  /** Most stderr bytes to keep from one run, as that stream's tail; defaults to 8 KiB. */
+  maxStderrBytes?: number
 }
 
 export const Config: z<Config> = z.object({
@@ -55,6 +57,7 @@ export const Config: z<Config> = z.object({
   maxBudgetUsd: z.number().min(Number.MIN_VALUE),
   requireCredentialIsolation: z.boolean().default(true),
   maxOutputBytes: z.number().step(1).min(1).default(16 * 1024 * 1024),
+  maxStderrBytes: z.number().step(1).min(1).default(8 * 1024),
 })
 
 /** Defaults a composition may omit, named once here rather than inside `apply`. */
@@ -74,6 +77,15 @@ export const DEFAULT_API_KEY_ENV = 'ANTHROPIC_API_KEY'
  * one.
  */
 export const DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+/**
+ * Stderr tail a composition gets when it names none: 8 KiB.
+ *
+ * This stream carries the CLI's diagnostics, not its protocol output, and the
+ * part that says what went wrong is at its end. Eight kilobytes holds a usage
+ * message, a rejected-flag complaint, or a stack trace with room to spare,
+ * while bounding what one tenant's run keeps in a runtime others share.
+ */
+export const DEFAULT_MAX_STDERR_BYTES = 8 * 1024
 /** Process-tree termination grace a composition gets when it names none. */
 export const DEFAULT_GRACE_MS = 5_000
 
@@ -107,6 +119,7 @@ export function resolveAdapterOptions(
     maxBudgetUsd: config.maxBudgetUsd,
     requireCredentialIsolation: config.requireCredentialIsolation ?? true,
     maxOutputBytes: config.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
+    maxStderrBytes: config.maxStderrBytes ?? DEFAULT_MAX_STDERR_BYTES,
   }
 }
 

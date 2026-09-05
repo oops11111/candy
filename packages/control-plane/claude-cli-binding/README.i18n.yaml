@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/control-plane/claude-cli-binding/README.md
-README.md: 23f47b5ea12e2e4e7bcfd9d378c4f6bdb51ae2ed
-README.zh.md: 82f66fef6b04ef2b0ea5373bb55055c35ec4311a
+README.md: f4d986a28d6289e9f3a781a9323112e4b67f65f2
+README.zh.md: f3ae3441762ed6b3c8c84bff0b80a867a4f904a9

@@ -35,6 +35,7 @@ describe('resolveAdapterOptions', () => {
       maxBudgetUsd: undefined,
       requireCredentialIsolation: true,
       maxOutputBytes: LlmClaudeCli.DEFAULT_MAX_OUTPUT_BYTES,
+      maxStderrBytes: LlmClaudeCli.DEFAULT_MAX_STDERR_BYTES,
     })
   })
 
@@ -47,6 +48,7 @@ describe('resolveAdapterOptions', () => {
       maxBudgetUsd: 0.5,
       requireCredentialIsolation: false,
       maxOutputBytes: 2_048,
+      maxStderrBytes: 512,
     }, { CANDY_TENANT_KEY: 'sk-ant-other' })).toEqual({
       executable: '/opt/claude',
       cwd: '/workspace',
@@ -55,6 +57,7 @@ describe('resolveAdapterOptions', () => {
       maxBudgetUsd: 0.5,
       requireCredentialIsolation: false,
       maxOutputBytes: 2_048,
+      maxStderrBytes: 512,
     })
   })
 

@@ -22,6 +22,8 @@ interface FakeProcess {
   readonly outcome?: SubprocessOutcome
   /** Never resolve `done`, standing in for a process still running. */
   readonly hang?: boolean
+  /** Diagnostics the process wrote to its collected stderr. */
+  readonly stderr?: string
 }
 
 /** A spawn capability that records its spec and replays a scripted process. */
@@ -37,7 +39,9 @@ function fakeSpawn(script: FakeProcess = {}) {
       stdin: undefined,
       stdout,
       stderr: undefined,
-      collected: {},
+      collected: script.stderr === undefined
+        ? {}
+        : { stderr: { readFrom: () => ({ text: script.stderr!, nextOffset: script.stderr!.length, lossy: false }) } },
       done: script.hang === true
         ? new Promise<SubprocessOutcome>(() => {})
         : Promise.resolve(script.outcome ?? { exitCode: 0, signal: null }),
@@ -58,6 +62,7 @@ function adapter(script?: FakeProcess, overrides: Partial<ClaudeCliAdapterOption
       isolation: ISOLATION,
       graceMs: 5_000,
       maxOutputBytes: 1_000_000,
+      maxStderrBytes: 8_192,
       spawn,
       requireCredentialIsolation: false,
       ...overrides,
@@ -181,6 +186,51 @@ describe('a process that ends without finishing its run', () => {
     }])
   })
 
+  it('names what the CLI said on its way out', async () => {
+    const { instance } = adapter({
+      stdout: '',
+      stderr: '  claude: unknown option --effort\n',
+      outcome: { exitCode: 2, signal: null },
+    })
+
+    const chunks = await collect(instance.stream(request()))
+
+    expect(chunks).toMatchObject([{
+      reason: {
+        failure: {
+          message: 'claude CLI ended without finishing its run (exit code 2): claude: unknown option --effort',
+        },
+      },
+    }])
+  })
+
+  it('never quotes the injected key back in what the CLI said', async () => {
+    // The CLI quotes the request it failed on, and that request carried the
+    // key. Collected stderr reaches the caller through the same redaction as
+    // every other chunk this adapter emits.
+    const { instance } = adapter({
+      stdout: '',
+      stderr: `invalid x-api-key: ${ISOLATION.apiKey}`,
+      outcome: { exitCode: 1, signal: null },
+    })
+
+    const chunks = await collect(instance.stream(request()))
+
+    const message = (chunks[0] as { reason: { failure: { message: string } } }).reason.failure.message
+    expect(message).not.toContain(ISOLATION.apiKey)
+    expect(message).toContain('invalid x-api-key: [redacted]')
+  })
+
+  it('collects the CLI diagnostics rather than letting them reach the host stream', async () => {
+    // 'inherit' would send the tenant's stderr straight to the parent's
+    // descriptor, where this adapter can no longer redact it.
+    const { instance, specs } = adapter({ stdout: '' })
+
+    await collect(instance.stream(request()))
+
+    expect(specs[0]?.stdio.stderr).toEqual({ maxBytes: 8_192 })
+  })
+
   it('reports the counts a truncated run did send before dying', async () => {
     const partial = recorded('text-turn.jsonl').split('\n').slice(0, 12).join('\n') + '\n'
     const { instance } = adapter({ stdout: partial, outcome: { exitCode: 1, signal: null } })
@@ -261,6 +311,7 @@ describe('credential isolation', () => {
       isolation: ISOLATION,
       graceMs: 5_000,
       maxOutputBytes: 100,
+      maxStderrBytes: 8_192,
       spawn: spec => ({ ...spawn(spec), terminate: () => { terminated = true } }),
       requireCredentialIsolation: false,
     })
@@ -284,6 +335,7 @@ describe('credential isolation', () => {
       isolation: ISOLATION,
       graceMs: 5_000,
       maxOutputBytes: 12,
+      maxStderrBytes: 8_192,
       spawn,
       requireCredentialIsolation: false,
     })
@@ -348,6 +400,7 @@ describe('a process the seam gave no stdout pipe', () => {
       isolation: ISOLATION,
       graceMs: 5_000,
       maxOutputBytes: 1_000_000,
+      maxStderrBytes: 8_192,
       spawn: spec => ({ ...spawn(spec), stdout: undefined, terminate: () => { terminated = true } }),
       requireCredentialIsolation: false,
     })
