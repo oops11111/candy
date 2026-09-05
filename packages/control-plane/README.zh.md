@@ -30,6 +30,7 @@ control-plane 组为每个未来的 Candy 租户感知包提供一套共享且�
 | [`run-ledger`](run-ledger/README.zh.md) | 记录每次开启中的运行持有什么、花掉了什么，并精确而非估算地结算被遗弃的占用 |
 | [`run-replay`](run-replay/README.zh.md) | 以一个不可分割的步骤把断言的 nonce 记为已消费，并恰好在该断言仍可被准入期间保留它 |
 | [`tenant-allowance`](tenant-allowance/README.zh.md) | 把租户的授予额度与其已结算运行的消耗并排持有，使一份授予额度只为一个租户拨款，而不是为它启动的每一次运行拨款 |
+| [`run-metering`](run-metering/README.zh.md) | 把一次提供方流按一次开启中的运行来计量，拒绝它负担不起的调用，并切断跑过其挂钟时间的调用 |
 | [`run-start`](run-start/README.zh.md) | 按既定顺序准入、拨款并放置一次运行，并在放置被拒时把父运行的占用还回去 |
 | [`control-plane-store`](control-plane-store/README.zh.md) | 持久保存提供方账户与租户额度，回答准入所要求的凭据与预算查找 |
 | [`run-scheduler`](run-scheduler/README.zh.md) | 拥有一个运行时的账本与重放存储，从断言启动一次运行，并驱动释放被遗弃占用的那个时钟 |

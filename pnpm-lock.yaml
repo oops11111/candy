@@ -4363,6 +4363,24 @@ importers:
         specifier: workspace:^
         version: link:../run-budget
 
+  packages/control-plane/run-metering:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-run-budget':
+        specifier: workspace:^
+        version: link:../run-budget
+      '@deepseek-ai/dsh-run-ledger':
+        specifier: workspace:^
+        version: link:../run-ledger
+
   packages/control-plane/run-replay:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -4414,6 +4432,9 @@ importers:
       '@deepseek-ai/dsh-execution-assertion':
         specifier: workspace:^
         version: link:../execution-assertion
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
       '@deepseek-ai/dsh-run-admission':
         specifier: workspace:^
         version: link:../run-admission
@@ -4423,6 +4444,9 @@ importers:
       '@deepseek-ai/dsh-run-ledger':
         specifier: workspace:^
         version: link:../run-ledger
+      '@deepseek-ai/dsh-run-metering':
+        specifier: workspace:^
+        version: link:../run-metering
       '@deepseek-ai/dsh-run-replay':
         specifier: workspace:^
         version: link:../run-replay

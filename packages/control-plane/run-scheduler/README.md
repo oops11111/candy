@@ -13,6 +13,8 @@ Everything this service composes already existed as a library. What did not exis
 
 `ctx.runScheduler` holds that state, starts a run from an execution assertion, drives the clock, and charges a settled tree to whoever funded it. It is where a tenant's durable allowance and its live runs meet, and that meeting is the whole of Candy's tenant-level bound: read on its own, either half admits a run it should refuse.
 
+It also meters the provider streams a run makes, which is where an allowance stops being an accounting figure: a call is refused before the provider is reached when the run has nothing left, and cut when it outruns the wall time the run still had.
+
 Its records are durable and every settlement is exactly-once across a crash. The order queued requests run in is still a decision nothing here makes.
 
 ## Table of Contents
@@ -58,7 +60,25 @@ export const started = outcome.started ? outcome.value.run.poolRoot : outcome.re
 
 `start` takes the assertion and, optionally, the allowance to open the run with. A root run defaults to what admission answered for it; a child is opened with the share its parent delegates, and the ledger refuses a share exceeding what that parent holds.
 
-What comes back is not running. Binding a provider to it, streaming that provider, and charging what it spent stay with the caller — `charge` and `close` are on this service, and the run's record is open until `close`.
+What comes back is not running. Binding a provider to it stays with the caller — `charge` and `close` are on this service, and the run's record is open until `close`.
+
+### Metering the calls a run makes
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { RunId } from '@deepseek-ai/dsh-control-plane'
+import type { LlmAdapter, GenerateOptions } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const runId: RunId
+declare const adapter: LlmAdapter
+declare const request: GenerateOptions
+
+export const stream = ctx.runScheduler.meter(runId, adapter.stream(request))
+```
+
+`meter` charges the call — durably — before its terminal chunk reaches the consumer, so the next call is admitted against a ledger that already knows about this one. A run with nothing left never reaches the provider, and a call that outruns the wall time its run had is cut with a terminal `error` finish. A cut ends the call, not the run: the record stays open with what the call consumed.
 
 -----
 
@@ -72,7 +92,7 @@ What comes back is not running. Binding a provider to it, streaming that provide
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `Config`, the `RunScheduler` service, its admission policy, and the sweep |
+| [`src/index.ts`](src/index.ts) | `Config`, the `RunScheduler` service, its admission policy, the settlement, the recovery, and the meter |
 | — | No runtime invariant companion is published; the relations here belong to the ledger and the store, and the composition test checks them end to end. |
 
 ### Why one instance owns one ledger
@@ -115,7 +135,8 @@ A `RunRecord` names a run and its parent, not an identity, so the tenant a tree 
 - [Candy control plane](../../../docs/subsystems/candy-control-plane.md) — the composition order this service performs.
 - [`dsh-run-start`](../run-start/README.md) — Admit, Open and Place, with the rollback between them.
 - [`dsh-run-ledger`](../run-ledger/README.md) — the record this service opens, charges, closes and expires.
-- [`dsh-control-plane-store`](../control-plane-store/README.md) — the durable accounts and allowances it reads.
+- [`dsh-control-plane-store`](../control-plane-store/README.md) — the durable accounts, allowances and run records it reads.
+- [`dsh-run-metering`](../run-metering/README.md) — the stream wrapper `meter` binds to this runtime's ledger.
 
 -----
 
@@ -130,7 +151,8 @@ These are current package constraints, not a task backlog.
 - **A charge is not visible until settlement** — `charge` writes a run's spend to its own record at once, and the tenant's consumption moves only when the tree's root closes. That is correct while the run is open, since its reservation is already held out of the tenant's remainder, and it means a tenant's consumption lags its live spending by one tree.
 - **Every write is serialized** — one chain orders every run-record write in the runtime, which is what makes the exactly-once marker a guarantee. It also means a slow medium serializes charges across unrelated tenants.
 - **A rejected sweep is logged, not retried immediately** — the runs it could not settle stay open with expired leases, so the next sweep retries them. A medium that stays unavailable holds those allowances until it comes back.
-- **It does not run the provider** — binding, streaming and cancellation stay with the caller; this service holds no process and no stream.
+- **It does not run the provider** — binding and cancellation stay with the caller; `meter` wraps a stream the caller opened, and this service holds no process.
+- **A metered call is bounded, a silent one is not** — `meter` checks wall time as chunks arrive, so a provider that stalls without emitting runs past its deadline until the lease sweep reaches its run.
 
 <a id="dev-note"></a>
 ## Dev Note

@@ -31,6 +31,7 @@ import {
   type CredentialKeyring,
 } from '@deepseek-ai/dsh-credential-vault'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
@@ -507,6 +508,56 @@ describe('a booted Candy scheduler', () => {
 
     expect(await second.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 0 } })
     expect(await second.controlPlaneStore.runsOf('candy-runtime-debian-2')).toEqual([foreign])
+  })
+
+  it('charges a metered provider stream, durably, before its finish is delivered', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    async function* provider(): AsyncIterable<StreamChunk> {
+      yield { type: 'usage', usage: { inputTokens: 800, outputTokens: 200, costMicroUsd: 1_234 } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.runScheduler.meter(RunId('run-root'), provider())) seen.push(chunk)
+
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(ctx.runScheduler.ledger.get(RunId('run-root')))
+      .toMatchObject({ spent: { tokens: 1_000, costMicroUsd: 1_234 } })
+    const [stored] = await ctx.controlPlaneStore.runsOf(AUDIENCE)
+    expect(stored).toMatchObject({ record: { spent: { tokens: 1_000, costMicroUsd: 1_234 } } })
+  })
+
+  it('refuses the next call once a run has spent its allowance', async () => {
+    // The enforcement the budget existed for: admission bounded the first call,
+    // and nothing bounded the second until the stream was metered.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    async function* spender(): AsyncIterable<StreamChunk> {
+      yield { type: 'usage', usage: { inputTokens: BUDGET.tokens, outputTokens: 0 } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+    let reached = false
+    async function* second(): AsyncIterable<StreamChunk> {
+      reached = true
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+
+    for await (const _ of ctx.runScheduler.meter(RunId('run-root'), spender())) { /* drain */ }
+    const refused: StreamChunk[] = []
+    for await (const chunk of ctx.runScheduler.meter(RunId('run-root'), second())) refused.push(chunk)
+
+    expect(reached).toBe(false)
+    expect(refused).toEqual([{
+      type: 'finish',
+      reason: { kind: 'error', failure: { message: "run 'run-root' has spent tokens", code: 'RUN_BUDGET_EXHAUSTED' } },
+    }])
   })
 
   it('refuses a charge for a run that is not open', async () => {

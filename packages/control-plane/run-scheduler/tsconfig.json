@@ -19,6 +19,8 @@
     { "path": "../run-admission" },
     { "path": "../run-budget" },
     { "path": "../run-ledger" },
+    { "path": "../run-metering" },
+    { "path": "../../llm/llm" },
     { "path": "../run-replay" },
     { "path": "../run-start" },
     { "path": "../tenant-allowance" }

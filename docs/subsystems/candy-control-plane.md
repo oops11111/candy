@@ -272,6 +272,23 @@ async start( token: string, share: (run: { budget: RunBudget }) => RunBudget = r
 async charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>
 
 /**
+ * Meter one provider stream against an open run.
+ *
+ * This is where an allowance stops being an accounting figure. The call is
+ * refused before the provider is reached when the run has nothing left, cut
+ * when it outruns the wall time the run still had, and charged — durably —
+ * before its terminal chunk reaches the consumer, so the next call is
+ * admitted against a ledger that already knows about this one.
+ *
+ * A cut ends the call, not the run: the record stays open with what the call
+ * consumed, and whoever started the run decides what happens next.
+ * @param runId - the open run this call belongs to.
+ * @param source - the provider's stream for one call.
+ * @returns the same chunks, ending early when the run cannot afford the rest.
+ */
+meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>
+
+/**
  * Close one run and its descendants, and charge its tenant for what the tree
  * consumed.
  *
@@ -295,6 +312,8 @@ close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>
  */
 async sweep(now: number): Promise<readonly RunSettlement[]>
 ```
+
+Types: [StreamChunk](llm-streaming.md)
 
 Source: [`packages/control-plane/run-scheduler/src/index.ts`](../../packages/control-plane/run-scheduler/src/index.ts)
 <!-- END GENERATED cordis-surface -->

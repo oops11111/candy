@@ -13,6 +13,8 @@ kind: "package-reference"
 
 `ctx.runScheduler` 持有那份状态,从一份执行断言启动一次运行,驱动那个时钟,并把一棵已结算的树记到它的出资方头上。它是租户的持久额度与其存活运行相遇之处,而这次相遇就是 Candy 租户级界限的全部:单独去读,任何一半都会准入一次它本该拒绝的运行。
 
+它还会计量一次运行发起的那些提供方流,而那正是额度不再只是一个记账数字的地方:在运行已经什么都不剩时,调用在抵达提供方之前就被拒绝;在调用跑过运行尚存的挂钟时间时,它被切断。
+
 它的记录是持久的,而且每一次结算跨越崩溃都恰好发生一次。排队的请求以什么顺序运行,这个决定这里仍然不做。
 
 ## 目录
@@ -58,7 +60,25 @@ export const started = outcome.started ? outcome.value.run.poolRoot : outcome.re
 
 `start` 接收那份断言,以及可选的、这次运行据以开启的额度。根运行默认用准入为它给出的那一份;子运行则用它父运行所委派的份额开启,而账本会拒绝超出该父运行所持有量的份额。
 
-返回的东西不在运行。把提供方绑定到它上面、流式读取那个提供方、以及为它花掉的东西计费,都仍归调用方 —— `charge` 与 `close` 在本服务上,而这次运行的记录在 `close` 之前一直开着。
+返回的东西不在运行。把提供方绑定到它上面仍归调用方 —— `charge` 与 `close` 在本服务上,而这次运行的记录在 `close` 之前一直开着。
+
+### 计量一次运行发起的那些调用
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { RunId } from '@deepseek-ai/dsh-control-plane'
+import type { LlmAdapter, GenerateOptions } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const runId: RunId
+declare const adapter: LlmAdapter
+declare const request: GenerateOptions
+
+export const stream = ctx.runScheduler.meter(runId, adapter.stream(request))
+```
+
+`meter` 在这次调用的终止块抵达消费方之前,就把它记上账 —— 而且是持久地 —— 因此下一次调用是针对一份已经知道这一次的账本被准入的。一次什么都不剩的运行根本到不了提供方,而一次跑过其运行所剩挂钟时间的调用会被一个终止的 `error` finish 切断。一次切断结束的是这次调用,不是那次运行:记录仍然开着,带着这次调用消耗掉的东西。
 
 -----
 
@@ -72,7 +92,7 @@ export const started = outcome.started ? outcome.value.run.poolRoot : outcome.re
 
 | 文件 | 角色 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `Config`、`RunScheduler` 服务、它的准入策略,以及那次清扫 |
+| [`src/index.ts`](src/index.ts) | `Config`、`RunScheduler` 服务、它的准入策略、结算、恢复,以及计量 |
 | — | 不发布运行时不变量伴随模块;这里的关系属于账本与存储,而组合测试端到端地检查它们。 |
 
 ### 为什么一个实例拥有一个账本
@@ -115,7 +135,8 @@ export const started = outcome.started ? outcome.value.run.poolRoot : outcome.re
 - [Candy 控制平面](../../../docs/subsystems/candy-control-plane.zh.md) —— 本服务所执行的组合顺序。
 - [`dsh-run-start`](../run-start/README.zh.md) —— 准入、开启与放置,以及它们之间的回滚。
 - [`dsh-run-ledger`](../run-ledger/README.zh.md) —— 本服务开启、计费、关闭并令其到期的那条记录。
-- [`dsh-control-plane-store`](../control-plane-store/README.zh.md) —— 它所读取的持久账户与额度。
+- [`dsh-control-plane-store`](../control-plane-store/README.zh.md) —— 它所读取的持久账户、额度与运行记录。
+- [`dsh-run-metering`](../run-metering/README.zh.md) —— `meter` 绑定到本运行时账本上的那个流包装器。
 
 -----
 
@@ -130,7 +151,8 @@ export const started = outcome.started ? outcome.value.run.poolRoot : outcome.re
 - **一次计费在结算之前不可见** —— `charge` 会立刻把一次运行的花费写进它自己的记录,而租户的消耗只在这棵树的根关闭时才移动。在运行开启期间这是对的,因为它的预留已经被从租户的剩余里扣住了;这意味着租户的消耗比它的实时花费滞后一棵树。
 - **每一次写入都是串行的** —— 一条链为运行时内每一次运行记录写入定序,而这正是让那个「恰好一次」标记成为保证的东西。它同时也意味着,一个缓慢的介质会把不相关租户之间的计费也串起来。
 - **被拒绝的清扫只记日志,不立刻重试** —— 它未能结算的那些运行会带着已过期的租约保持开启,因此下一次清扫会重试它们。持续不可用的介质会把那些额度一直占到它恢复为止。
-- **它不运行提供方** —— 绑定、流式读取与取消都仍归调用方;本服务不持有任何进程,也不持有任何流。
+- **它不运行提供方** —— 绑定与取消都仍归调用方;`meter` 包裹的是调用方打开的一条流,而本服务不持有任何进程。
+- **被计量的调用有界,沉默的调用没有** —— `meter` 在块抵达时检查挂钟时间,因此一个不发出任何东西就卡住的提供方会一直跑过它的截止时刻,直到租约清扫触及它的运行。
 
 <a id="dev-note"></a>
 ## 开发备注

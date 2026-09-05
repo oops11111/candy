@@ -30,6 +30,7 @@ The control-plane group gives every future Candy tenant-aware package one shared
 | [`run-ledger`](run-ledger/README.md) | Records what each open run holds and has spent, and settles an abandoned hold exactly rather than by estimate |
 | [`run-replay`](run-replay/README.md) | Records an assertion's nonce as spent in one indivisible step, retained exactly while that assertion stays admissible |
 | [`tenant-allowance`](tenant-allowance/README.md) | Holds a tenant's grant beside what its settled runs consumed, so one grant funds one tenant rather than every run it starts |
+| [`run-metering`](run-metering/README.md) | Meters one provider stream against an open run, refusing a call it cannot afford and cutting one that outruns its wall time |
 | [`run-start`](run-start/README.md) | Admits, funds and places one run in the documented order, returning a parent's hold when the placement refuses |
 | [`control-plane-store`](control-plane-store/README.md) | Holds provider accounts and tenant allowances durably, answering the credential and budget lookups admission requires |
 | [`run-scheduler`](run-scheduler/README.md) | Owns one runtime's ledger and replay store, starts a run from an assertion, and drives the clock that releases an abandoned hold |

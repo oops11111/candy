@@ -205,6 +205,7 @@ flowchart TD
     pkg_run_admission["run-admission"]
     pkg_run_budget["run-budget"]
     pkg_run_ledger["run-ledger"]
+    pkg_run_metering["run-metering"]
     pkg_run_replay["run-replay"]
     pkg_run_scheduler["run-scheduler"]
     pkg_run_start["run-start"]
@@ -439,6 +440,10 @@ flowchart TD
   pkg_control_plane_store --> pkg_run_ledger
   pkg_control_plane_store --> pkg_storage_domain
   pkg_control_plane_store --> pkg_tenant_allowance
+  pkg_run_metering --> pkg_control_plane
+  pkg_run_metering --> pkg_llm
+  pkg_run_metering --> pkg_run_budget
+  pkg_run_metering --> pkg_run_ledger
   pkg_run_start --> pkg_control_plane
   pkg_run_start --> pkg_credential_vault
   pkg_run_start --> pkg_run_admission
@@ -598,9 +603,11 @@ flowchart TD
   pkg_run_scheduler --> pkg_control_plane_store
   pkg_run_scheduler --> pkg_credential_vault
   pkg_run_scheduler --> pkg_execution_assertion
+  pkg_run_scheduler --> pkg_llm
   pkg_run_scheduler --> pkg_run_admission
   pkg_run_scheduler --> pkg_run_budget
   pkg_run_scheduler --> pkg_run_ledger
+  pkg_run_scheduler --> pkg_run_metering
   pkg_run_scheduler --> pkg_run_replay
   pkg_run_scheduler --> pkg_run_start
   pkg_run_scheduler --> pkg_tenant_allowance
@@ -1315,6 +1322,7 @@ flowchart TD
 | [`api-remotes`](../packages/api/remotes) | `api` | [`scope`](../packages/core/scope) |
 | [`attachment-local`](../packages/attachment/attachment-local) | `attachment` | [`attachment`](../packages/attachment/attachment), [`home-paths`](../packages/util/home-paths) |
 | [`control-plane-store`](../packages/control-plane/control-plane-store) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`provider-accounts`](../packages/control-plane/provider-accounts), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`storage-domain`](../packages/storage/storage-domain), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
+| [`run-metering`](../packages/control-plane/run-metering) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`llm`](../packages/llm/llm), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger) |
 | [`run-start`](../packages/control-plane/run-start) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`credential-vault`](../packages/control-plane/credential-vault), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`runtime-pool`](../packages/control-plane/runtime-pool) |
 | [`authorization`](../packages/credentials/authorization) | `credentials` | [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
 | [`credentials-local`](../packages/credentials/credentials-local) | `credentials` | [`atomic-write`](../packages/util/atomic-write), [`credentials`](../packages/credentials/credentials), [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment) |
@@ -1359,7 +1367,7 @@ flowchart TD
 | [`file-reference`](../packages/context/file-reference) | `context` | [`agent`](../packages/core/agent) |
 | [`time-context`](../packages/context/time-context) | `context` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection) |
 | [`tmux-context`](../packages/context/tmux-context) | `context` | [`agent`](../packages/core/agent), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`shell`](../packages/shell/shell) |
-| [`run-scheduler`](../packages/control-plane/run-scheduler) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`control-plane-store`](../packages/control-plane/control-plane-store), [`credential-vault`](../packages/control-plane/credential-vault), [`execution-assertion`](../packages/control-plane/execution-assertion), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`run-replay`](../packages/control-plane/run-replay), [`run-start`](../packages/control-plane/run-start), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
+| [`run-scheduler`](../packages/control-plane/run-scheduler) | `control-plane` | [`control-plane`](../packages/control-plane/control-plane), [`control-plane-store`](../packages/control-plane/control-plane-store), [`credential-vault`](../packages/control-plane/credential-vault), [`execution-assertion`](../packages/control-plane/execution-assertion), [`llm`](../packages/llm/llm), [`run-admission`](../packages/control-plane/run-admission), [`run-budget`](../packages/control-plane/run-budget), [`run-ledger`](../packages/control-plane/run-ledger), [`run-metering`](../packages/control-plane/run-metering), [`run-replay`](../packages/control-plane/run-replay), [`run-start`](../packages/control-plane/run-start), [`tenant-allowance`](../packages/control-plane/tenant-allowance) |
 | [`fs-e2b`](../packages/e2b/fs-e2b) | `e2b` | [`e2b`](../packages/e2b/e2b), [`fs`](../packages/fs/fs) |
 | [`commands`](../packages/interaction/commands) | `interaction` | [`agent`](../packages/core/agent), [`attachment`](../packages/attachment/attachment), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol) |
 | [`user-approval`](../packages/interaction/user-approval) | `interaction` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt) |

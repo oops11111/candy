@@ -17,6 +17,11 @@
  * ledger with no tenant above it lets unrelated trees each hold the whole
  * allowance at once.
  *
+ * It also meters the provider streams a run makes, which is where an allowance
+ * stops being an accounting figure: a call is refused before the provider is
+ * reached when the run has nothing left, and cut when it outruns the wall time
+ * the run still had.
+ *
  * Its records are durable, and every settlement is exactly-once across a crash.
  * A settlement is two writes the medium cannot make one — charge whoever funded
  * the run, then forget the run — so each charge is written into the funder's own
@@ -40,6 +45,8 @@ import {
   type CredentialKeyring,
 } from '@deepseek-ai/dsh-credential-vault'
 import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm'
+import { meterRun } from '@deepseek-ai/dsh-run-metering'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunRecord, type RunSettlement } from '@deepseek-ai/dsh-run-ledger'
@@ -224,6 +231,28 @@ export class RunScheduler extends Service {
     if (!charged.ok) return charged
     await this.queue(() => this.ctx.controlPlaneStore.recordRunSpend(runId, charged.value.record.spent))
     return charged
+  }
+
+  /**
+   * Meter one provider stream against an open run.
+   *
+   * This is where an allowance stops being an accounting figure. The call is
+   * refused before the provider is reached when the run has nothing left, cut
+   * when it outruns the wall time the run still had, and charged — durably —
+   * before its terminal chunk reaches the consumer, so the next call is
+   * admitted against a ledger that already knows about this one.
+   *
+   * A cut ends the call, not the run: the record stays open with what the call
+   * consumed, and whoever started the run decides what happens next.
+   * @param runId - the open run this call belongs to.
+   * @param source - the provider's stream for one call.
+   * @returns the same chunks, ending early when the run cannot afford the rest.
+   */
+  meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
+    return meterRun(source, runId, {
+      remaining: id => this.ledger.remaining(id),
+      charge: (id, spend) => this.charge(id, spend),
+    })
   }
 
   /**

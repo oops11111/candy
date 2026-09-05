@@ -1403,6 +1403,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the updated record and the dimensions now used up, or why the charge was refused.',
       },
       {
+        signature: 'meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>',
+        description: 'Meter one provider stream against an open run.\n\nThis is where an allowance stops being an accounting figure. The call is refused before the provider is reached when the run has nothing left, cut when it outruns the wall time the run still had, and charged — durably — before its terminal chunk reaches the consumer, so the next call is admitted against a ledger that already knows about this one.\n\nA cut ends the call, not the run: the record stays open with what the call consumed, and whoever started the run decides what happens next.',
+        parameters: [{ name: 'runId', description: 'the open run this call belongs to.' }, { name: 'source', description: 'the provider\'s stream for one call.' }],
+        returns: 'the same chunks, ending early when the run cannot afford the rest.',
+      },
+      {
         signature: 'close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>',
         description: 'Close one run and its descendants, and charge its tenant for what the tree consumed.\n\nClosing a root is the one point a tenant\'s durable allowance moves. A child settles into its parent\'s record instead, and reaches the tenant when that parent\'s root closes, so a tree is charged once rather than once per run.',
         parameters: [{ name: 'runId', description: 'the run to settle.' }],

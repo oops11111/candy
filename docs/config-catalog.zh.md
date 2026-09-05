@@ -1749,7 +1749,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/control-plane/run-scheduler/src/index.ts:58`](../packages/control-plane/run-scheduler/src/index.ts)
+来源：[`packages/control-plane/run-scheduler/src/index.ts:65`](../packages/control-plane/run-scheduler/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-local"></a>
 
@@ -3533,6 +3533,7 @@ export interface Config {
 - `@deepseek-ai/dsh-run-admission`（[`packages/control-plane/run-admission/src/index.ts`](../packages/control-plane/run-admission/src/index.ts)）
 - `@deepseek-ai/dsh-run-budget`（[`packages/control-plane/run-budget/src/index.ts`](../packages/control-plane/run-budget/src/index.ts)）
 - `@deepseek-ai/dsh-run-ledger`（[`packages/control-plane/run-ledger/src/index.ts`](../packages/control-plane/run-ledger/src/index.ts)）
+- `@deepseek-ai/dsh-run-metering`（[`packages/control-plane/run-metering/src/index.ts`](../packages/control-plane/run-metering/src/index.ts)）
 - `@deepseek-ai/dsh-run-replay`（[`packages/control-plane/run-replay/src/index.ts`](../packages/control-plane/run-replay/src/index.ts)）
 - `@deepseek-ai/dsh-run-start`（[`packages/control-plane/run-start/src/index.ts`](../packages/control-plane/run-start/src/index.ts)）
 - `@deepseek-ai/dsh-runtime-pool`（[`packages/control-plane/runtime-pool/src/index.ts`](../packages/control-plane/runtime-pool/src/index.ts)）
