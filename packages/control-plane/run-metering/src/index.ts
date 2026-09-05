@@ -63,6 +63,20 @@ export interface RunMeterPorts {
   readonly charge: (runId: RunId, spend: RunSpend) => Promise<RunLedgerResult<RunChargeResult>>
   /** Epoch milliseconds; a caller with its own clock passes it for the wall dimension. */
   readonly now?: () => number
+  /**
+   * Report one call this meter refused or cut short.
+   *
+   * The refusal is the whole of what a consumer sees — a terminal `error`
+   * finish — and it says nothing to anyone watching the deployment. A caller
+   * that keeps an audit trail records the call here; one metering by hand
+   * passes nothing and the refusals go unrecorded, as they did before.
+   *
+   * Awaited before the terminal chunk is yielded, so a consumer cannot act on
+   * a refusal the trail does not yet have. An implementation whose recording
+   * can fail settles that itself: a rejection here would leave the stream
+   * without the one terminal chunk this seam promises.
+   */
+  readonly refused?: (runId: RunId, code: string, message: string) => void | Promise<void>
 }
 
 /**
@@ -108,6 +122,23 @@ export function refusedCall(message: string, code: string): AsyncIterable<Stream
 }
 
 /**
+ * Report one refusal, then build the terminal chunk that carries it.
+ *
+ * Reporting happens here rather than at each site so a refusal cannot reach a
+ * consumer without having reached the trail first.
+ *
+ * @param ports - the meter's ports, whose `refused` observer is optional.
+ * @param runId - the run whose call was refused.
+ * @param message - what the consumer is told.
+ * @param code - the failure code the consumer matches on.
+ * @returns the terminal `error` finish for this refusal.
+ */
+async function refuse(ports: RunMeterPorts, runId: RunId, message: string, code: string): Promise<StreamChunk> {
+  await ports.refused?.(runId, code, message)
+  return failed(message, code)
+}
+
+/**
  * Meter one provider stream against one open run.
  *
  * The stream is passed through unchanged while the run can afford it. Three
@@ -138,13 +169,13 @@ export async function* meterRun(
   const now = ports.now ?? Date.now
   const available = ports.remaining(runId)
   if (available === undefined) {
-    yield failed(`run '${runId}' is not open, so this call cannot be charged to it`, RUN_NOT_OPEN)
+    yield await refuse(ports, runId, `run '${runId}' is not open, so this call cannot be charged to it`, RUN_NOT_OPEN)
     return
   }
   if (!hasRemainingBudget(available)) {
     // `hasRemainingBudget` is false exactly when a consumable dimension reached
     // zero, so the list is never empty.
-    yield failed(`run '${runId}' has spent ${exhaustedIn(available).join(', ')}`, RUN_BUDGET_EXHAUSTED)
+    yield await refuse(ports, runId, `run '${runId}' has spent ${exhaustedIn(available).join(', ')}`, RUN_BUDGET_EXHAUSTED)
     return
   }
 
@@ -165,7 +196,7 @@ export async function* meterRun(
       if (now() <= deadline) continue
       charged = true
       await ports.charge(runId, spendOf(usage, now() - startedAt))
-      yield failed(`run '${runId}' ran past the wall time it had left`, RUN_BUDGET_EXHAUSTED)
+      yield await refuse(ports, runId, `run '${runId}' ran past the wall time it had left`, RUN_BUDGET_EXHAUSTED)
       return
     }
   } finally {

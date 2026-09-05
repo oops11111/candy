@@ -664,6 +664,98 @@ describe('a booted Candy scheduler', () => {
     expect(ctx.runScheduler.ledger.get(RunId('run-root'))?.spent).toMatchObject({ tokens: 0, costMicroUsd: 0 })
   })
 
+  it('records a refused call against the tenant whose run it was', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    await revokeProviderAccount(ctx.controlPlaneStore, ALICE, ACCOUNT, now + 1)
+    for await (const _chunk of ctx.llm.stream(request(SESSION))) { /* drained */ }
+
+    // A revoked credential still being used is the clearest signal admission
+    // never sees, because the run that holds it never returns to the vault.
+    expect(ctx.runScheduler.auditsOfTenant(ALICE).at(-1)).toMatchObject({
+      runId: RunId('run-root'),
+      userId: ALICE,
+      accountId: ACCOUNT,
+      event: 'refused',
+      action: 'meter',
+      outcome: 'CREDENTIAL_REVOKED',
+    })
+  })
+
+  it('records a run that spent its allowance, so a quota violation has a reader', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    // A run funded with nothing is exhausted before its first call.
+    await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')),
+      () => ({ tokens: 0, wallMs: 0, costMicroUsd: 0, children: 0 }),
+      now,
+    )
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    for await (const _chunk of ctx.llm.stream(request(SESSION))) { /* drained */ }
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE).at(-1)).toMatchObject({
+      runId: RunId('run-root'),
+      event: 'refused',
+      action: 'meter',
+      outcome: 'RUN_BUDGET_EXHAUSTED',
+    })
+  })
+
+  it('files a refusal with no run of its own against the runtime', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    for await (const _chunk of ctx.llm.stream(request(SESSION))) { /* drained */ }
+
+    // The run is gone, so there is no tenant this runtime may believe the
+    // session still belongs to.
+    expect(ctx.runScheduler.auditsOfRuntime().at(-1)).toMatchObject({
+      event: 'refused',
+      action: 'meter',
+      outcome: 'RUN_NOT_OPEN',
+    })
+    expect(ctx.runScheduler.auditsOfRuntime().at(-1)).not.toHaveProperty('userId')
+  })
+
+  it('still refuses the call when the trail cannot take the record', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+    await revokeProviderAccount(ctx.controlPlaneStore, ALICE, ACCOUNT, now + 1)
+    vi.spyOn(ctx.controlPlaneStore, 'recordAudit').mockRejectedValue(new Error('medium is gone'))
+
+    const seen: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
+
+    // A store that cannot take the record must not turn one refused call into
+    // a failure of its own: the caller still gets its one terminal chunk.
+    expect(seen.at(-1)).toMatchObject({
+      type: 'finish',
+      reason: { kind: 'error', failure: { code: 'CREDENTIAL_REVOKED' } },
+    })
+  })
+
   it('keeps metering a call whose run still holds a usable account', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)

@@ -80,6 +80,8 @@ export const unattributed = ctx.runScheduler.auditsOfRuntime()
 
 Every stage past the assertion works from verified claims, so its record names the tenant, account and run it refused. An assertion that fails to verify names none this runtime may believe, so `auditsOfRuntime` is where that record goes rather than into a tenant's trail — it is the clearest attack signal admission can observe, and dropping it was the alternative. Both trails are capped by `auditRetention`.
 
+A refused *call* is filed the same way, under `event: 'refused'` and `action: 'meter'`, with the failure code as its outcome. Admission never sees these: a run opens its credential once and then keeps calling, so a revoked account still spending, a run that has used up its allowance, and a session no open run claims are all visible here and nowhere else. The record is durable before the caller is told, so an operator reading the trail cannot be behind a consumer acting on the refusal. A refusal whose session names no run this runtime still holds is filed against the runtime, for the same reason an unverifiable assertion is: there is no tenant to believe.
+
 ### Metering the calls a run makes
 
 Nothing has to ask. Every model request the harness assembles carries the session it was assembled for, and an execution assertion names the session its run drives — so a request whose session belongs to an open run of this runtime is metered against it automatically:

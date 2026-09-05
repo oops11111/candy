@@ -324,14 +324,16 @@ export class RunScheduler extends Service {
     const open = this.ctx.controlPlaneStore.runsOfSession(this.config.audience, options.sessionId)
     if (open.length === 0) {
       if (!this.ended.has(options.sessionId)) return next()
-      return refusedCall(
+      return this.refuse(
+        undefined,
         `session '${options.sessionId}' has no open run: the run driving it has ended`,
         RUN_NOT_OPEN,
       )
     }
     if (open.length > 1) {
       const runIds = open.map(run => run.record.runId).join(', ')
-      return refusedCall(
+      return this.refuse(
+        undefined,
         `session '${options.sessionId}' is claimed by ${String(open.length)} open runs (${runIds}), so this call cannot be charged to one`,
         RUN_NOT_OPEN,
       )
@@ -341,7 +343,8 @@ export class RunScheduler extends Service {
     const run = open[0]!
     const account = this.ctx.controlPlaneStore.accountOf(run.accountId)
     if (account === undefined || !isProviderAccountUsable(account)) {
-      return refusedCall(
+      return this.refuse(
+        run.record.runId,
         `account '${run.accountId}' can no longer authorize work, so run '${run.record.runId}' may not spend it`,
         CREDENTIAL_REVOKED,
       )
@@ -368,6 +371,7 @@ export class RunScheduler extends Service {
     return meterRun(source, runId, {
       remaining: id => this.ledger.remaining(id),
       charge: (id, spend) => this.charge(id, spend),
+      refused: (id, code, message) => this.fileRefusal(id, code, message),
     })
   }
 
@@ -550,6 +554,57 @@ export class RunScheduler extends Service {
    */
   auditsOfRuntime(): readonly RunAuditRecord[] {
     return this.ctx.controlPlaneStore.auditsOf(runtimeSubject(this.config.audience))
+  }
+
+  /**
+   * Refuse one call and record that it happened.
+   *
+   * @param runId - the run the call belonged to, or undefined when the session
+   *   named none this runtime still holds; a refusal with no run is filed
+   *   against the runtime, because there is no tenant this runtime may believe.
+   * @param message - what the caller is told.
+   * @param code - the failure code the caller matches on.
+   * @returns the one-chunk stream carrying the refusal.
+   */
+  private refuse(runId: RunId | undefined, message: string, code: string): AsyncIterable<StreamChunk> {
+    const recorded = this.fileRefusal(runId, code, message)
+    return {
+      [Symbol.asyncIterator]: () => {
+        const chunks = refusedCall(message, code)[Symbol.asyncIterator]()
+        // The record lands before the caller is told, the same ordering the
+        // meter's own refusals keep.
+        return { next: async () => { await recorded; return chunks.next() } }
+      },
+    }
+  }
+
+  /**
+   * Record one refused call against the tenant whose run it was.
+   *
+   * The returned promise settles when the record is durable, and never
+   * rejects: a caller awaits it before handing the refusal on, and a store
+   * that cannot take the record must not turn one refused call into a failure
+   * of its own.
+   *
+   * @param runId - the refused call's run, or undefined when it had none.
+   * @param code - the failure code, filed as the record's outcome.
+   * @param message - the refusal text, for the log if the write fails.
+   * @returns resolution once the record is written, or logged as unwritable.
+   */
+  private fileRefusal(runId: RunId | undefined, code: string, message: string): Promise<void> {
+    const run = runId === undefined ? undefined : this.ctx.controlPlaneStore.findRun(runId)
+    const subject = run === undefined ? runtimeSubject(this.config.audience) : tenantSubject(run.userId)
+    const record: RunAuditRecord = {
+      at: Date.now(),
+      ...run === undefined ? {} : { runId, userId: run.userId, accountId: run.accountId },
+      event: 'refused',
+      action: 'meter',
+      outcome: code,
+    }
+    const retain = this.config.auditRetention ?? 200
+    return this.ctx.controlPlaneStore.recordAudit(subject, [record], retain).then(() => undefined, (error: unknown) => {
+      this.ctx.logger.warn(`run-scheduler: could not record a refused call (${message}): ${String(error)}`)
+    })
   }
 
   /**

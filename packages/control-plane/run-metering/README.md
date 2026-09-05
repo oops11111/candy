@@ -86,6 +86,12 @@ A stream carries usage at most once, usually near its end, so a run that is alre
 
 That check is also why the charge lands before the terminal chunk reaches the consumer: an agent loop asks for the next call the moment it sees a finish, and a charge applied after would let it make one call too many.
 
+### Why a refusal is reported before it is yielded
+
+A refusal is the whole of what a consumer sees — one terminal `error` finish — and it says nothing to anyone watching the deployment. The optional `refused` port is where a caller that keeps an audit trail records the call, and it is awaited before the chunk is yielded, so an operator reading the trail is never behind a consumer already acting on the refusal.
+
+The port's implementation settles its own failures. A rejection here would leave the stream without the one terminal chunk this seam promises, which is a worse outcome than an unrecorded refusal. A caller metering by hand passes nothing and the refusals go unrecorded.
+
 ### Why a cut is one call, not the run
 
 The stream ends; the run stays open with what the call consumed on its record. Ending the run here would take a decision that belongs to whoever started it — a caller may report the exhaustion, ask for more allowance, or settle. What this guarantees is that the work stops.
