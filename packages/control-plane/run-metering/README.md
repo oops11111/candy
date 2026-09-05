@@ -80,6 +80,12 @@ Both endings are a terminal `error` finish rather than a thrown exception, becau
 | [`src/index.ts`](src/index.ts) | `meterRun`, its ports, and the two failure codes |
 | — | No runtime invariant companion is published; the stream grammar this produces is already enforced by [`dsh-llm`](../../llm/llm/README.md)'s own invariant. |
 
+### Why the deadline is waited for, not checked between chunks
+
+A provider that accepts a request and then goes quiet produces no chunk, so a between-chunks test has nothing to run against: a run allowed 50 ms of wall time was measured still waiting after a full second, bounded by nothing but its lease. Each read races the time the run has left, so the silent failure and the talkative one end on the same dimension.
+
+The clock is read before each read as well as raced against it. A caller's clock that has already passed the deadline gets no timer at all, because `setTimeout` treats a non-positive delay as one tick — which would read one more chunk from a source whose time is gone.
+
 ### Why the refusal comes before the provider is called
 
 A stream carries usage at most once, usually near its end, so a run that is already spent would otherwise make the whole call and learn it could not afford it from the very chunk that spent the money. Reading the remainder first is what makes an exhausted run stop making calls rather than stop being surprised by them.
@@ -143,7 +149,7 @@ None. The request is untouched, so a metered call has exactly the prefix and cac
 
 These are current package constraints, not a task backlog.
 
-- **A silent stream is not cut** — wall time is checked as chunks arrive, so a provider that stalls without emitting anything runs past its deadline unnoticed. `dsh-run-ledger`'s lease is what bounds an abandoned run; this bounds a talkative one.
+- **A cut source is told to close, not watched closing** — on the deadline path the close is started and not awaited, because a source blocked on the same silence would not answer it either. A provider process is therefore reaped by whoever owns it, not by the time this returns.
 - **Tokens are charged once per call** — a stream reports usage at most once, so an over-long single response is measured only when it ends. The wall-time cut is what bounds one call; the token cut bounds the next.
 - **Concurrent calls each read the same remainder** — two streams metered against one run both start against the allowance neither has charged yet. A run whose calls overlap can overshoot by one call's worth per stream.
 - **A charge that cannot be written is thrown, not finished** — the two budget endings are terminal chunks, but a rejected charge leaves the stream by throwing. That is what the [`dsh-llm`](../../llm/llm/README.md) seam says of middleware failures, and it means a consumer that only handles a failed call also needs to handle a failed medium.

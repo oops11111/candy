@@ -141,6 +141,99 @@ describe('meterRun', () => {
     }])
   })
 
+  it('cuts a provider that accepts the call and then says nothing', async () => {
+    // The failure a between-chunks check cannot see: no chunk ever arrives, so
+    // there is nothing to check the clock against.
+    const { ports, charges } = metered({ wallMs: 20 }, Date.now)
+    let closed = false
+    const silent: AsyncIterable<StreamChunk> = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<StreamChunk>>(() => { /* never answers */ }),
+        return: () => { closed = true; return Promise.resolve({ done: true, value: undefined }) },
+      }),
+    }
+
+    const seen = await collect(meterRun(silent, RUN, ports))
+
+    expect(seen).toEqual([{
+      type: 'finish',
+      reason: { kind: 'error', failure: { message: "run 'run-1' ran past the wall time it had left", code: RUN_BUDGET_EXHAUSTED } },
+    }])
+    expect(charges).toHaveLength(1)
+    // The close is started even though it is not waited for, so a source
+    // holding a provider process still hears it.
+    expect(closed).toBe(true)
+  })
+
+  it('does not wait on a source that stopped answering, even to close it', async () => {
+    const { ports } = metered({ wallMs: 20 }, Date.now)
+    // A source whose close is as unresponsive as its reads. Awaiting it would
+    // hang exactly the call the deadline just bounded.
+    const stuck: AsyncIterable<StreamChunk> = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<StreamChunk>>(() => { /* never answers */ }),
+        return: () => new Promise<IteratorResult<StreamChunk>>(() => { /* never answers */ }),
+      }),
+    }
+
+    const seen = await collect(meterRun(stuck, RUN, ports))
+
+    expect(seen).toHaveLength(1)
+  })
+
+  it('meters a source that has no close of its own', async () => {
+    const { ports, charges } = metered({ wallMs: 20 }, Date.now)
+    // A hand-written iterable may omit `return` entirely; there is then
+    // nothing to close and nothing to wait for.
+    const bare: AsyncIterable<StreamChunk> = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<StreamChunk>>(() => { /* never answers */ }),
+      }),
+    }
+
+    const seen = await collect(meterRun(bare, RUN, ports))
+
+    expect(seen).toHaveLength(1)
+    expect(charges).toHaveLength(1)
+  })
+
+  it('survives a source whose close rejects after the deadline', async () => {
+    const { ports } = metered({ wallMs: 20 }, Date.now)
+    // The close is not awaited on this path, so its rejection must not become
+    // an unhandled one.
+    const failing: AsyncIterable<StreamChunk> = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise<IteratorResult<StreamChunk>>(() => { /* never answers */ }),
+        return: () => Promise.reject(new Error('the provider process is gone')),
+      }),
+    }
+
+    const seen = await collect(meterRun(failing, RUN, ports))
+
+    expect(seen).toMatchObject([{ reason: { failure: { code: RUN_BUDGET_EXHAUSTED } } }])
+  })
+
+  it('reads nothing more from a source whose deadline already passed', async () => {
+    let clock = NOW
+    const { ports, charges } = metered({ wallMs: 10 }, () => clock)
+    let reads = 0
+    async function* counted(): AsyncIterable<StreamChunk> {
+      // The clock jumps past the deadline before the first read completes.
+      clock += 11
+      reads += 1
+      yield TEXT
+    }
+
+    const seen = await collect(meterRun(counted(), RUN, ports))
+
+    expect(seen).toEqual([TEXT, {
+      type: 'finish',
+      reason: { kind: 'error', failure: { message: "run 'run-1' ran past the wall time it had left", code: RUN_BUDGET_EXHAUSTED } },
+    }])
+    expect(reads).toBe(1)
+    expect(charges).toHaveLength(1)
+  })
+
   it('cuts a call that outruns the wall time its run had left', async () => {
     let clock = NOW
     const { ports, charges } = metered({ wallMs: 50 }, () => clock)

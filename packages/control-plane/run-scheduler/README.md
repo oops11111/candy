@@ -211,7 +211,7 @@ These are current package constraints, not a task backlog.
 - **One session, one run** — a second run naming a session this runtime already has open is refused. A control plane that mints one session for a parent and its child gets the child refused, which makes a session per run a requirement on the control plane rather than a convention.
 - **Metering follows the session, not the process** — a request assembled for a run's session is metered wherever it is made, and a request made outside that session is not metered at all, even if the same run caused it. A deployment that runs work for a tenant without a session of its own is unmetered.
 - **The trail covers scheduling, not the run's work** — starting, denying, and the vault operations an attempt produced. Routing, delegation, tool authorization and terminal state are not recorded, because nothing produces those records yet.
-- **A metered call is bounded, a silent one is not** — `meter` checks wall time as chunks arrive, so a provider that stalls without emitting runs past its deadline until the lease sweep reaches its run.
+- **A cut call does not reap the provider** — `meter` ends the stream on the run's wall time, including for a provider that goes silent, but closing that provider's process stays with whoever launched it; this package does not run the provider.
 
 <a id="dev-note"></a>
 ## Dev Note
