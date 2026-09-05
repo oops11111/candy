@@ -106,6 +106,8 @@ The token is `v1.<base64url payload>.<base64url HMAC-SHA256>`, the format `dsh-c
 
 The HMAC is computed over the received payload text, so admission never re-serializes a decoded object: JSON key order, whitespace, and duplicate-key handling cannot change what was verified. Payload and signature must both be canonical base64url — text that re-encodes to something else carried padding, an alphabet, or trailing bits a minted token never has, and is rejected as malformed. Signature comparison is length-checked and then constant-time.
 
+The version prefix is inside the MAC alongside the payload. It decides how the payload is read, and a signature over the payload alone verifies under any prefix — so once a `v2` claim set exists, a `v2` token relabelled `v1` would still verify and then be decoded by the `v1` reader. That is exactly the reinterpretation the version prefix exists to prevent, and only signing the version makes the prefix mean anything. The separator is the one the token already uses and cannot appear inside either segment, since both are base64url.
+
 ### Why identity cannot be supplied by a caller
 
 `ExecutionAssertionExpectation` names only `issuer`, `audience`, and `maxLifetimeMs`. It has no user, device, account, workspace-grant, conversation, session, or run field, so there is no parameter through which a request could assert whose run this is; the admitted claims are the only source. A future field on that type that named a tenant would reopen the confused-deputy path this package closes.

@@ -49,8 +49,9 @@ function claims(overrides: Partial<ExecutionAssertionClaims> = {}): ExecutionAss
 }
 
 /** Sign payload text the way a control plane holding `secret` would. */
-function sign(payload: string, secret: Buffer): string {
-  return createHmac('sha256', secret).update(payload, 'utf8').digest().toString('base64url')
+/** Sign as the module does: over the version and the payload together. */
+function sign(payload: string, secret: Buffer, version = 'v1'): string {
+  return createHmac('sha256', secret).update(`${version}.${payload}`, 'utf8').digest().toString('base64url')
 }
 
 /** Build a correctly signed token carrying an arbitrary payload object. */
@@ -187,6 +188,27 @@ describe('admitExecutionAssertion', () => {
     expect(admitExecutionAssertion(
       `${String(version)}.${forged}.${String(signature)}`, SECRET, EXPECTATION, ISSUED_AT,
     )).toEqual({ admitted: false, rejection: 'signature' })
+  })
+
+  it('rejects a signature that covers the payload without its version', () => {
+    // The version decides how the payload is read, so it is inside the MAC. A
+    // signature over the payload alone would verify under any prefix, and a
+    // later claim set's token relabelled `v1` would then be decoded by the
+    // `v1` reader — the reinterpretation the version exists to prevent.
+    const [, payload] = mintExecutionAssertion(claims(), SECRET).split('.')
+    const overPayloadOnly = createHmac('sha256', SECRET).update(payload!, 'utf8').digest().toString('base64url')
+
+    expect(admitExecutionAssertion(
+      `v1.${String(payload)}.${overPayloadOnly}`, SECRET, EXPECTATION, ISSUED_AT,
+    )).toEqual({ admitted: false, rejection: 'signature' })
+  })
+
+  it('rejects a token whose version segment was swapped after signing', () => {
+    const [, payload, signature] = mintExecutionAssertion(claims(), SECRET).split('.')
+
+    expect(admitExecutionAssertion(
+      `v2.${String(payload)}.${String(signature)}`, SECRET, EXPECTATION, ISSUED_AT,
+    )).toEqual({ admitted: false, rejection: 'unsupported-version' })
   })
 
   it('rejects a payload that is not canonical base64url', () => {

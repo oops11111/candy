@@ -37,6 +37,20 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 /** Token prefix; a future claim-set change mints `v2` rather than reinterpreting `v1`. */
 const TOKEN_VERSION = 'v1'
 
+/**
+ * The exact bytes one token's signature covers: its version and its payload.
+ *
+ * The version is inside the MAC because it decides how the payload is read. A
+ * signature over the payload alone verifies under any prefix, so once a `v2`
+ * claim set exists, a `v2` token relabelled `v1` would still verify and then
+ * be decoded by the `v1` reader — which is the reinterpretation the version
+ * exists to prevent. The separator is the one the token already uses and
+ * cannot appear inside either segment, since both are base64url.
+ */
+function signedForm(version: string, payload: string): string {
+  return `${version}.${payload}`
+}
+
 /** Shortest HMAC key this module accepts, matching the 32 random bytes `dsh-client-connection` stores. */
 const MINIMUM_SECRET_BYTES = 32
 
@@ -266,7 +280,8 @@ function decodeClaims(payload: string): ExecutionAssertionClaims | undefined {
 export function mintExecutionAssertion(claims: ExecutionAssertionClaims, secret: Uint8Array): string {
   const key = admitSecret(secret)
   const payload = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url')
-  return `${TOKEN_VERSION}.${payload}.${sign(key, payload).toString('base64url')}`
+  const signature = sign(key, signedForm(TOKEN_VERSION, payload)).toString('base64url')
+  return `${TOKEN_VERSION}.${payload}.${signature}`
 }
 
 /**
@@ -308,7 +323,7 @@ export function admitExecutionAssertion(
 
   const actual = decodeCanonicalBase64Url(encodedSignature)
   if (actual === undefined) return { admitted: false, rejection: 'malformed' }
-  const expected = sign(key, payload)
+  const expected = sign(key, signedForm(version, payload))
   if (actual.byteLength !== expected.byteLength || !timingSafeEqual(actual, expected)) {
     return { admitted: false, rejection: 'signature' }
   }
