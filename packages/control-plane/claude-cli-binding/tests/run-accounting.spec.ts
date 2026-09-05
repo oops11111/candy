@@ -12,7 +12,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { billedTokens, BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import { ClaudeCliAdapter } from '@deepseek-ai/dsh-llm-claude-cli'
 import type { AdmittedRun } from '@deepseek-ai/dsh-run-admission'
@@ -64,17 +64,11 @@ afterEach(async () => {
 /**
  * What a run consumed, in the ledger's terms.
  *
- * Billed tokens are the disjoint counts summed; reasoning tokens are already
- * inside `outputTokens` and are not added again. An absent cost is charged as
- * nothing, which is what "not reported" means — a caller that needs a provider
- * to report one checks for it before charging.
+ * An absent cost is charged as nothing, which is what "not reported" means — a
+ * caller that needs a provider to report one checks for it before charging.
  */
 function spendOf(usage: TokenUsage, wallMs: number): RunSpend {
-  return {
-    tokens: usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0) + usage.outputTokens,
-    wallMs,
-    costMicroUsd: usage.costMicroUsd ?? 0,
-  }
+  return { tokens: billedTokens(usage), wallMs, costMicroUsd: usage.costMicroUsd ?? 0 }
 }
 
 /** Run one invocation under the given allowance, and report what it billed. */

@@ -24,7 +24,7 @@
  */
 
 import type { RunId } from '@deepseek-ai/dsh-control-plane'
-import type { StreamChunk, TokenUsage } from '@deepseek-ai/dsh-llm'
+import { billedTokens, type StreamChunk, type TokenUsage } from '@deepseek-ai/dsh-llm'
 import { hasRemainingBudget, type BudgetDimension, type RunBudget, type RunSpend } from '@deepseek-ai/dsh-run-budget'
 import type { RunChargeResult, RunLedgerResult } from '@deepseek-ai/dsh-run-ledger'
 
@@ -52,14 +52,6 @@ export interface RunMeterPorts {
   readonly charge: (runId: RunId, spend: RunSpend) => Promise<RunLedgerResult<RunChargeResult>>
   /** Epoch milliseconds; a caller with its own clock passes it for the wall dimension. */
   readonly now?: () => number
-}
-
-/** Tokens this call consumed, as the provider reported them. */
-function tokensOf(usage: TokenUsage | undefined): number {
-  if (usage === undefined) return 0
-  // `totalTokens` is the provider's exact full-call figure when it gave one;
-  // the sum of the disjoint counters is the derivation adapters use otherwise.
-  return usage.totalTokens ?? usage.inputTokens + usage.outputTokens
 }
 
 /**
@@ -154,7 +146,7 @@ export async function* meterRun(
  * arithmetic defect rather than recording as a refund.
  */
 function spendOf(usage: TokenUsage | undefined, wallMs: number): RunSpend {
-  return { tokens: tokensOf(usage), wallMs: Math.max(0, wallMs), costMicroUsd: costOf(usage) }
+  return { tokens: usage === undefined ? 0 : billedTokens(usage), wallMs: Math.max(0, wallMs), costMicroUsd: costOf(usage) }
 }
 
 /** The consumable dimensions an allowance has already used in full. */

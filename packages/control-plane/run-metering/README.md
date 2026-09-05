@@ -88,6 +88,12 @@ That check is also why the charge lands before the terminal chunk reaches the co
 
 The stream ends; the run stays open with what the call consumed on its record. Ending the run here would take a decision that belongs to whoever started it — a caller may report the exhaustion, ask for more allowance, or settle. What this guarantees is that the work stops.
 
+### Why the token count comes from `dsh-llm`
+
+`billedTokens` is that package's own derivation and the one place it lives. It prefers the provider's exact `totalTokens` and, without one, adds all four disjoint counters — `inputTokens` is uncached input only, so a call whose prompt was mostly a cache hit would otherwise be charged at a fraction of what it cost. `reasoningTokens` is already inside `outputTokens` and is not added again.
+
+It is deliberately not `dsh-token-meter`'s context-pressure baseline, which sums the disjoint counters alone: a smaller figure is the conservative one when the question is how full a context window is, and the larger one is correct when the question is what a call cost.
+
 ### Why an unreported cost is not zero spend
 
 `TokenUsage.costMicroUsd` is present only when the provider reported a billed figure. Absent means "not reported", so a run on a silent provider is metered on tokens and time and its money dimension never moves. Deriving a figure from a price list here would be indistinguishable from a reported one and wrong wherever the deployment's contract is not list price.
@@ -132,6 +138,7 @@ These are current package constraints, not a task backlog.
 - **A silent stream is not cut** — wall time is checked as chunks arrive, so a provider that stalls without emitting anything runs past its deadline unnoticed. `dsh-run-ledger`'s lease is what bounds an abandoned run; this bounds a talkative one.
 - **Tokens are charged once per call** — a stream reports usage at most once, so an over-long single response is measured only when it ends. The wall-time cut is what bounds one call; the token cut bounds the next.
 - **Concurrent calls each read the same remainder** — two streams metered against one run both start against the allowance neither has charged yet. A run whose calls overlap can overshoot by one call's worth per stream.
+- **A charge that cannot be written is thrown, not finished** — the two budget endings are terminal chunks, but a rejected charge leaves the stream by throwing. That is what the [`dsh-llm`](../../llm/llm/README.md) seam says of middleware failures, and it means a consumer that only handles a failed call also needs to handle a failed medium.
 - **No cancellation is propagated** — a cut stops reading the source and lets the generator close it. A provider that ignores that keeps running until whoever launched it reaps it.
 
 <a id="dev-note"></a>

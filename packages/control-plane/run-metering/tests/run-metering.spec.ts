@@ -69,6 +69,19 @@ describe('meterRun', () => {
     expect(charges[0]?.tokens).toBe(50)
   })
 
+  it('counts a cached prompt when the provider reported no total', async () => {
+    // `inputTokens` is uncached input only, so a call whose prompt was mostly a
+    // cache hit would be charged at a fraction of what it cost.
+    const { ports, charges } = metered()
+
+    await collect(meterRun(emits(
+      { type: 'usage', usage: { inputTokens: 4, outputTokens: 6, cacheReadTokens: 90, cacheWriteTokens: 10 } },
+      DONE,
+    ), RUN, ports))
+
+    expect(charges[0]?.tokens).toBe(110)
+  })
+
   it('treats an unreported cost as unreported, not as zero spend', async () => {
     // A provider that stays silent leaves the money dimension alone; deriving a
     // figure from a price list would be indistinguishable from a real one.
