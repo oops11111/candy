@@ -49,7 +49,7 @@ Load this plugin alongside `dsh-subagent` and `dsh-run-scheduler` in a Candy com
 
 ### What changes for the operator
 
-A subagent delegation through `dsh-subagent`'s shipped in-process spawn or fork provider now opens its own Candy run before the child agent is created, parented to the delegating run and funded from `childBudget`. That run meters the child's own model calls exactly like a root run, and its unspent remainder returns to the parent when the child settles. A delegation whose parent cannot afford the configured request fails before any child exists, with a message naming why. A parent with no open Candy run — a local `dsh --profile headless` run, for instance — sees no change: this plugin only ever funds a Candy tenant's own delegation, never an unrelated composition's.
+A subagent delegation through `dsh-subagent`'s shipped in-process spawn or fork provider now opens its own Candy run before the child agent is created, parented to the delegating run and funded from `childBudget`. A continuable child is funded once per residency epoch — a dormant child's run is released while it is away, so its next resume opens a new one; a child that resumes while its previous run is still open keeps that run rather than opening a second. That run meters the child's own model calls exactly like a root run, and its unspent remainder returns to the parent when the child settles. A delegation whose parent cannot afford the configured request fails before any child exists, with a message naming why. A parent with no open Candy run — a local `dsh --profile headless` run, for instance — sees no change: this plugin only ever funds a Candy tenant's own delegation, never an unrelated composition's.
 
 ### Failures and recovery
 
@@ -96,7 +96,7 @@ This section explains the design behind the hook; observable behavior is fully c
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 
-- **In-process one-shot children only.** `onBeforeDelegate()` is wired from `dsh-subagent-in-process-driver`'s one-shot spawn and fork providers alone; a continuable child (`dsh-subagent`'s continuation manager) and an out-of-process product provider (`dsh-subagent-claude-code`, for instance) delegate without this plugin funding them, since a continuable child's run may need reopening on every resume rather than once at creation — a lifecycle question this package does not yet answer.
+- **In-process children only.** `onBeforeDelegate()` is wired from `dsh-subagent`'s one-shot driver and its continuation manager; an out-of-process product provider (`dsh-subagent-claude-code`, for instance) delegates without this plugin funding it, so those children reach their provider with no Candy run behind them.
 - **One fixed allowance, not a computed share.** Every delegated child is funded identically regardless of the task, the tool that started it, or how much of the parent's own allowance remains beyond the bare admission check; a deployment wanting per-tool or per-task shares composes its own hook against `onBeforeDelegate()` rather than extending this plugin's config shape.
 
 -----

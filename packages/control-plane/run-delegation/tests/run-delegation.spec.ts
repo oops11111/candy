@@ -156,6 +156,29 @@ describe('opening a run for a delegated child', () => {
     expect(childRuns[0]?.record.reserved).toEqual(CHILD_BUDGET)
   })
 
+  it('leaves a child that already has a run with the run it has', async () => {
+    // A continuable child is prepared on every residency epoch. One that
+    // resumes before its previous run's lease lapses still has that run, and a
+    // second run for one session is refused at admission.
+    root = await mkdtemp(join(tmpdir(), 'dsh-run-delegation-'))
+    const context = await boot(root, { childBudget: CHILD_BUDGET }, [textResponse('child answer')])
+    const now = Date.now()
+    await provision(context, now)
+    const session = SessionId('sess-second-epoch')
+    await openRootRun(context, session, RunId('run-parent-epochs'), TENANT_GRANT, now)
+    const parent = await parentAgent(context, session)
+    const run = await delegate(context, { prompt: [{ type: 'text', text: 'do X' }], parent })
+    await run.result
+    await run.dispose()
+    const funded = context.controlPlaneStore.runsOfSession(AUDIENCE, run.id)
+    expect(funded).toHaveLength(1)
+
+    // The child's next epoch, while its first run is still open.
+    await expect(context.subagents.prepareDelegatedChild(parent, run.id)).resolves.toBeUndefined()
+
+    expect(context.controlPlaneStore.runsOfSession(AUDIENCE, run.id)).toEqual(funded)
+  })
+
   it('refuses the delegation when the parent cannot fund the exact child request, with no orphaned child', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-run-delegation-'))
     // Enough for the parent's own admission to pass (nonzero in every

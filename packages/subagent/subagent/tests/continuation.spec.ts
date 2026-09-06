@@ -708,6 +708,42 @@ describe('direct-child Queue residency routing', () => {
     expect(loaded.events.filter(event => event.type === 'subagent/descriptor')).toHaveLength(1)
   })
 
+  it('prepares a delegated child on every residency epoch, not only the first', async () => {
+    // A dormant child released its epoch-scoped resources when it settled, so
+    // a consumer that funds an epoch must be consulted again on cold resume.
+    const { ctx, parent } = await setup([textResponse('first'), textResponse('after resume')])
+    const seen: Array<{ parentId: string; childId: string; resident: boolean }> = []
+    const stop = ctx.subagents.onBeforeDelegate((seenParent, childId) => {
+      seen.push({ parentId: seenParent.id, childId, resident: ctx.agents.get(childId) !== undefined })
+    })
+
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    await queuePrompt(ctx, parent, started.childId, message('continue please'))
+    await waitNoActivation(ctx, started.childId)
+
+    // Twice: the fresh creation and the cold resume, each before the child
+    // exists in the registry for that epoch.
+    expect(seen).toEqual([
+      { parentId: parent.id, childId: started.childId, resident: false },
+      { parentId: parent.id, childId: started.childId, resident: false },
+    ])
+    stop()
+  })
+
+  it('refuses a continuable start when a hook refuses, leaving no child behind', async () => {
+    const { ctx, parent } = await setup([])
+    const stop = ctx.subagents.onBeforeDelegate(() => {
+      throw new Error('epoch not authorized')
+    })
+    const before = ctx.agents.list().length
+
+    await expect(ctx.subagents.startContinuable(startSpec(parent))).rejects.toThrow(/epoch not authorized/)
+
+    expect(ctx.agents.list().length).toBe(before)
+    stop()
+  })
+
   it('cold-resumes after the initial provider unregisters', async () => {
     const { ctx, parent } = await setup([textResponse('first'), textResponse('after resume')])
     await ctx.plugin(InvariantRegistry)

@@ -171,6 +171,14 @@ interface ContinuationHost {
    */
   prepareContinuable(name: string, request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
   /**
+   * Run every registered pre-delegation hook for one child about to be
+   * materialized, whether freshly created or cold-resumed.
+   * @param parent - the delegating parent agent.
+   * @param childId - the durable child session id.
+   * @throws whatever the first hook that refuses throws or rejects with.
+   */
+  prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<void>
+  /**
    * Build the lifecycle observer for one Activation's residency epoch.
    * @param provider - the provider name recorded in the durable descriptor.
    * @param childId - the durable child session id.
@@ -1214,6 +1222,13 @@ export class SubagentContinuationManager {
     // `AgentRegistry.enter()` is the authoritative collision boundary for an id
     // some other owner holds — a duplicate would reject there with rollback.
     inputs.signal.throwIfAborted()
+    // Before the Activation exists at all, on every residency epoch rather
+    // than only the first: a hook's asynchronous setup — minting a run for
+    // this epoch, for instance — must complete before the child could make
+    // its first request, and a dormant child's own epoch-scoped resources are
+    // released while it is away. A hook that refuses leaves nothing to roll
+    // back, since nothing is created or resumed yet.
+    await this.host.prepareDelegatedChild(parent, childId)
     const setup = (childCtx: Context): void => {
       // Only fresh creation seeds the delegation policy onto the child's own
       // log (after any fork seed, so fresh policy wins stale seed state); a

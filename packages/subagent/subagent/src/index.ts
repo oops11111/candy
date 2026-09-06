@@ -226,6 +226,7 @@ export class SubagentRuntime extends TypertRemoteService {
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
         prepareContinuable: (name, request) => this.prepareContinuable(name, request),
+        prepareDelegatedChild: (parent, childId) => this.prepareDelegatedChild(parent, childId),
         observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
       })
       this.continuations = manager

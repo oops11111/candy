@@ -84,10 +84,17 @@ function describeSessionRejection(rejection: Exclude<SessionRunRejection, { reas
  * Render why admission or the ledger refused to fund the minted child run.
  *
  * A minted child's claims are copied from its own parent's already-admitted
- * record and carry a freshly generated run id and nonce, so of every stage
- * `RunRejection` and `RunLedgerRejection` name, only the delegating tenant's
- * own exhausted allowance is reachable here — every other stage guards a
- * forged, replayed, mismatched, or stale token this call site never produces.
+ * record and carry a freshly generated run id and nonce, so most of what
+ * `RunRejection` and `RunLedgerRejection` name guards a forged, replayed,
+ * mismatched, or stale token this call site never produces. Two outcomes are
+ * reachable and named exactly: the delegating tenant's own allowance is
+ * exhausted, or the parent cannot fund the configured request.
+ *
+ * Admission's `session` stage is reachable too, through the one child the
+ * caller's own already-funded check cannot recognize: a child session that
+ * several open runs claim resolves to no single run, so this asks for one
+ * more and admission refuses it. The generic tail names that stage rather
+ * than pretending it cannot happen.
  */
 function describeStartRejection(rejection: RunStartRejection): string {
   /* v8 ignore if -- unreachable from this call site; see the comment above. */
@@ -113,6 +120,11 @@ function describeStartRejection(rejection: RunStartRejection): string {
  */
 export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => ctx.subagents.onBeforeDelegate(async (parent: Agent, childId: SessionId) => {
+    // A continuable child is prepared on every residency epoch, and one that
+    // resumes before its previous run's lease lapses still has that run. A
+    // second run for one session is refused at admission, so the funded child
+    // is left with the run it already has.
+    if (ctx.runScheduler.tenantOf(childId) !== undefined) return
     const result = await ctx.runScheduler.startChildRun(parent.id, childId, () => config.childBudget)
     if (!result.ok) {
       // No Candy run governs this parent at all: nothing here to enforce.

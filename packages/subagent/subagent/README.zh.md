@@ -57,7 +57,7 @@ kind: "package-reference"
 <a id="preparing-a-delegated-child-before-it-exists"></a>
 ### 在一个受委派子会话存在之前为它做准备
 
-`SubagentRuntime.onBeforeDelegate(hook)` 注册一个异步检查，进程内一次性委派器会在创建一个子会话之前、按注册顺序等待它完成——委派器此时已经算出了子会话未来的会话 id，因此一个钩子可以在任何东西发布之前对它采取行动。一个抛出异常或拒绝的钩子会让这次委派彻底中止；因为此时还没有任何子会话存在，也就没有什么需要回滚：
+`SubagentRuntime.onBeforeDelegate(hook)` 注册一个异步检查，它会在一个子 agent 被创建之前、按注册顺序被等待完成——子会话未来的会话 id 此时已经存在，因此一个钩子可以在任何东西发布之前对它采取行动。一个抛出异常或拒绝的钩子会让这次委派彻底中止；因为此时还没有任何子会话存在，也就没有什么需要回滚：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -72,6 +72,8 @@ const stop = ctx.subagents.onBeforeDelegate(async (parent, childId) => {
   await recordDelegation(parent.id, childId)
 })
 ```
+
+一次性子级只被准备一次。一个可继续子级则在每一个驻留纪元被准备一次——它的全新创建，以及此后每一次冷恢复——因为一个休眠的子级在结算时就释放了钩子给它的东西；一个不该重复做功的钩子应当检查它自己先前的效果，而不是假定每个子级只被调用一次。
 
 这个包不携带任何关于一个钩子会用这个时机做什么的概念——[`dsh-run-delegation`](../../control-plane/run-delegation/README.zh.md) 是 Candy 自有的消费方，它会在子会话可能发起第一次请求之前，为它铸造并开启一次有资金的运行。
 
@@ -192,7 +194,7 @@ You are a delegated subagent: your permission scope was fixed when you were star
 - **不回放已接受但未记录的消息**——崩溃可能丢失从未写入子会话日志、已被接受的提示词；丢失的消息不会自动回放。
 - **没有持久化 parent mailbox**——child 到 parent 的消息要求驻留的可继续 child 与在线直接 parent，提供的是接受标识，不保证恰好一次投递。
 - **生命周期事件只供观察**——影响运行的 `subagent/end` 延续或决策接口仍需等待具体消费方。
-- **`onBeforeDelegate()` 只覆盖进程内一次性委派器**——可继续子级与进程外的产品提供方在委派时不会经过它，因为一个可继续子级的生命周期需求（在恢复时重新准备，而不只是在创建时）是一个尚未解决的独立问题。
+- **`onBeforeDelegate()` 只覆盖进程内子级**——一次性委派器与续接管理器都会咨询它，但进程外的产品提供方在委派时不会经过它，因此一个为子级出资或授权的消费方对那些子级什么也看不到。
 
 <a id="dev-note"></a>
 ### 开发备注
