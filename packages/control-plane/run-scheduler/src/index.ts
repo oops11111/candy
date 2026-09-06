@@ -40,15 +40,19 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
-import type { RunId, UserId } from '@deepseek-ai/dsh-control-plane'
+import type { ProviderAccountId, ProviderKind, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
 import {
   CredentialKeyVersion,
+  openCredential,
+  type CredentialAuditEvent,
   type CredentialKeyring,
+  type CredentialRejection,
 } from '@deepseek-ai/dsh-credential-vault'
 import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { isProviderAccountUsable } from '@deepseek-ai/dsh-provider-accounts'
+import { isProviderAccountUsable, type ProviderAccountRecord } from '@deepseek-ai/dsh-provider-accounts'
+import { runtimePoolKey, runtimePoolRoot } from '@deepseek-ai/dsh-runtime-pool'
 import type { SubprocessLaunched } from '@deepseek-ai/dsh-subprocess'
 import { CREDENTIAL_REVOKED, meterRun, refusedCall, RUN_NOT_OPEN } from '@deepseek-ai/dsh-run-metering'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
@@ -57,6 +61,7 @@ import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunRecord, 
 import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 import { startRun, type RunStartOutcome, type RunStartRejection } from '@deepseek-ai/dsh-run-start'
 import { remainingAllowance } from '@deepseek-ai/dsh-tenant-allowance'
+import { assertNever } from '@deepseek-ai/dsh-util-values'
 import {
   runtimeSubject,
   tenantSubject,
@@ -136,6 +141,51 @@ export const Config: z<Config> = z.object({
 
 /** Bytes a credential key must carry, matching what the vault seals with. */
 const CREDENTIAL_KEY_BYTES = 32
+
+/** Why a session did not resolve to one open, usable run. */
+export type SessionRunRejection =
+  /** No run of this runtime's is open for the session. */
+  | { readonly reason: 'no-open-run' }
+  /** More than one open run names this session, so neither can be charged unambiguously. */
+  | { readonly reason: 'claimed-by-several'; readonly runIds: readonly RunId[] }
+  /** The run's account can no longer authorize work — most often, it was revoked. */
+  | { readonly reason: 'account-unusable'; readonly runId: RunId; readonly accountId: ProviderAccountId }
+
+/** One session's open run and its usable account, or why neither is available. */
+export type SessionRunResult =
+  | { readonly ok: true; readonly run: DurableRunRecord; readonly account: ProviderAccountRecord }
+  | { readonly ok: false; readonly rejection: SessionRunRejection }
+
+/**
+ * What a provider binding needs to launch one call for an open run: an opened
+ * credential, the pool directory it may use, and what this call may still
+ * spend.
+ */
+export interface RunIdentity {
+  /** The run this identity was resolved for. */
+  readonly runId: RunId
+  /** The account's own provider name, for a binding to check against its own. */
+  readonly provider: ProviderKind
+  /** The tenant's runtime pool root; used as both `HOME` and the working directory. */
+  readonly poolRoot: string
+  /** The opened provider credential. The caller owns its lifetime and must not retain it past this call. */
+  readonly secret: Uint8Array
+  /** What this run may still spend, for a binding to use as this invocation's own ceiling. */
+  readonly remaining: RunBudget
+}
+
+/** Why a run's launch identity could not be resolved. */
+export type RunIdentityRejection =
+  | SessionRunRejection
+  /** The account exists but this store holds no sealed credential for it — a storage inconsistency. */
+  | { readonly reason: 'no-credential'; readonly runId: RunId; readonly accountId: ProviderAccountId }
+  /** The account's sealed credential could not be opened. */
+  | { readonly reason: CredentialRejection; readonly runId: RunId; readonly accountId: ProviderAccountId }
+
+/** The outcome of resolving a session's run into a launch identity. */
+export type RunIdentityResult =
+  | { readonly ok: true; readonly value: RunIdentity }
+  | { readonly ok: false; readonly rejection: RunIdentityRejection }
 
 /**
  * Read one required secret from the environment.
@@ -378,53 +428,79 @@ export class RunScheduler extends Service {
   }
 
   /**
-   * Meter one assembled request against the run whose session it names.
+   * Resolve the one open, usable run driving a session.
    *
-   * A request with no session, or one naming no run this runtime has open,
-   * is not this runtime's to charge and is passed through. A session that two
-   * open runs both claim is refused: the control plane minted two runs for one
-   * session, and charging either tree is a misbilling a caller cannot detect.
-   *
-   * The run's account is read again here rather than trusted from admission. A
-   * run opens its credential once and holds it, so revoking the account
-   * destroys the stored envelope without reaching the process already
-   * authenticated with it; reading the record per call is what makes a
-   * revocation stop work that is already under way.
+   * A model request carries the session it was assembled for, and an
+   * execution assertion names the session its run drives, so this is the one
+   * lookup both metering and a provider binding's per-call identity are built
+   * on. The account is read fresh rather than trusted from admission — a run
+   * opens its credential once and holds it, so revoking the account destroys
+   * the stored envelope without reaching a process already authenticated with
+   * it, and reading the record per call is what makes a revocation stop work
+   * already under way.
+   * @param sessionId - the session a request or a launch names.
+   * @returns the run and its usable account, or the reason neither is available.
    */
-  private meterRequest(
-    options: GenerateOptions,
-    next: () => AsyncIterable<StreamChunk>,
-  ): AsyncIterable<StreamChunk> {
-    if (options.sessionId === undefined) return next()
-    const open = this.ctx.controlPlaneStore.runsOfSession(this.config.audience, options.sessionId)
-    if (open.length === 0) {
-      if (!this.ended.has(options.sessionId)) return next()
-      return this.refuse(
-        undefined,
-        `session '${options.sessionId}' has no open run: the run driving it has ended`,
-        RUN_NOT_OPEN,
-      )
-    }
+  private findSessionRun(sessionId: SessionId): SessionRunResult {
+    const open = this.ctx.controlPlaneStore.runsOfSession(this.config.audience, sessionId)
+    if (open.length === 0) return { ok: false, rejection: { reason: 'no-open-run' } }
     if (open.length > 1) {
-      const runIds = open.map(run => run.record.runId).join(', ')
-      return this.refuse(
-        undefined,
-        `session '${options.sessionId}' is claimed by ${String(open.length)} open runs (${runIds}), so this call cannot be charged to one`,
-        RUN_NOT_OPEN,
-      )
+      return { ok: false, rejection: { reason: 'claimed-by-several', runIds: open.map(run => run.record.runId) } }
     }
     // The length check above establishes the entry.
     // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
     const run = open[0]!
     const account = this.ctx.controlPlaneStore.accountOf(run.accountId)
     if (account === undefined || !isProviderAccountUsable(account)) {
-      return this.refuse(
-        run.record.runId,
-        `account '${run.accountId}' can no longer authorize work, so run '${run.record.runId}' may not spend it`,
-        CREDENTIAL_REVOKED,
-      )
+      return { ok: false, rejection: { reason: 'account-unusable', runId: run.record.runId, accountId: run.accountId } }
     }
-    return this.meter(run.record.runId, next())
+    return { ok: true, run, account }
+  }
+
+  /**
+   * Meter one assembled request against the run whose session it names.
+   *
+   * A request with no session, or one naming no run this runtime has open,
+   * is not this runtime's to charge and is passed through. A session that two
+   * open runs both claim is refused: the control plane minted two runs for one
+   * session, and charging either tree is a misbilling a caller cannot detect.
+   */
+  private meterRequest(
+    options: GenerateOptions,
+    next: () => AsyncIterable<StreamChunk>,
+  ): AsyncIterable<StreamChunk> {
+    if (options.sessionId === undefined) return next()
+    const resolved = this.findSessionRun(options.sessionId)
+    if (resolved.ok) return this.meter(resolved.run.record.runId, next())
+    const { rejection } = resolved
+    switch (rejection.reason) {
+      case 'no-open-run': {
+        if (!this.ended.has(options.sessionId)) return next()
+        return this.refuse(
+          undefined,
+          `session '${options.sessionId}' has no open run: the run driving it has ended`,
+          RUN_NOT_OPEN,
+        )
+      }
+      case 'claimed-by-several': {
+        return this.refuse(
+          undefined,
+          `session '${options.sessionId}' is claimed by ${String(rejection.runIds.length)} open runs `
+            + `(${rejection.runIds.join(', ')}), so this call cannot be charged to one`,
+          RUN_NOT_OPEN,
+        )
+      }
+      case 'account-unusable': {
+        return this.refuse(
+          rejection.runId,
+          `account '${rejection.accountId}' can no longer authorize work, so run '${rejection.runId}' may not spend it`,
+          CREDENTIAL_REVOKED,
+        )
+      }
+      /* v8 ignore next 2 -- SessionRunRejection is closed and every variant is handled above. */
+      default:
+        assertNever(rejection, 'RunScheduler.meterRequest')
+    }
   }
 
   /**
@@ -448,6 +524,68 @@ export class RunScheduler extends Service {
       charge: (id, spend) => this.charge(id, spend),
       refused: (id, code, message) => this.fileRefusal(id, code, message),
     }))
+  }
+
+  /**
+   * Resolve what a provider binding needs to launch one call for the run
+   * driving a session: an opened credential, the pool it may use, and this
+   * call's own spend ceiling.
+   *
+   * This is the reach `dsh-run-admission` gives a run once, at start, made
+   * available again for every later call the same run makes. Nothing here is
+   * cached from that first admission: the account is read fresh, and the
+   * credential is opened fresh, so a binding built on this method inherits the
+   * same property `meterRequest` already does — a revocation that happens
+   * between two calls of one run stops the second rather than only the next
+   * metered chunk.
+   *
+   * The opened secret is not retained here, and this method does not itself
+   * launch anything: a caller that never calls it, and the ledger's own
+   * per-call metering, are both unaffected by whether anything ever does.
+   * @param sessionId - the session a provider binding's call was assembled for.
+   * @returns the launch identity, or the reason none could be resolved.
+   */
+  async runIdentityFor(sessionId: SessionId): Promise<RunIdentityResult> {
+    const resolved = this.findSessionRun(sessionId)
+    if (!resolved.ok) return { ok: false, rejection: resolved.rejection }
+    const { run, account } = resolved
+    const runId = run.record.runId
+    const remaining = this.ledger.remaining(runId)
+    if (remaining === undefined) return { ok: false, rejection: { reason: 'no-open-run' } }
+    const envelope = await this.ctx.controlPlaneStore.findCredential({ userId: run.userId, accountId: run.accountId })
+    if (envelope === undefined) {
+      return { ok: false, rejection: { reason: 'no-credential', runId, accountId: run.accountId } }
+    }
+    const opened = openCredential(envelope, { userId: run.userId, accountId: run.accountId }, this.keyring, Date.now())
+    await this.fileCredentialAudit(run.userId, opened.audit)
+    if (!opened.opened) return { ok: false, rejection: { reason: opened.rejection, runId, accountId: run.accountId } }
+    const poolKey = runtimePoolKey({ userId: run.userId, provider: account.provider, accountId: run.accountId })
+    return {
+      ok: true,
+      value: {
+        runId,
+        provider: account.provider,
+        poolRoot: runtimePoolRoot(this.config.poolBase, poolKey),
+        secret: opened.secret,
+        remaining,
+      },
+    }
+  }
+
+  /** File one vault operation this scheduler performed outside a scheduling attempt. */
+  private async fileCredentialAudit(userId: UserId, audit: CredentialAuditEvent): Promise<void> {
+    const record: RunAuditRecord = {
+      at: audit.at,
+      userId: audit.userId,
+      accountId: audit.accountId,
+      event: 'credential',
+      action: audit.action,
+      outcome: audit.outcome,
+    }
+    const retain = this.config.auditRetention ?? 200
+    await this.ctx.controlPlaneStore.recordAudit(tenantSubject(userId), [record], retain).catch((error: unknown) => {
+      this.ctx.logger.warn(`run-scheduler: could not record a credential open for tenant '${userId}': ${String(error)}`)
+    })
   }
 
   /**

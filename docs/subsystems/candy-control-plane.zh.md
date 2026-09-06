@@ -350,6 +350,27 @@ charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>
 meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>
 
 /**
+ * Resolve what a provider binding needs to launch one call for the run
+ * driving a session: an opened credential, the pool it may use, and this
+ * call's own spend ceiling.
+ *
+ * This is the reach `dsh-run-admission` gives a run once, at start, made
+ * available again for every later call the same run makes. Nothing here is
+ * cached from that first admission: the account is read fresh, and the
+ * credential is opened fresh, so a binding built on this method inherits the
+ * same property `meterRequest` already does — a revocation that happens
+ * between two calls of one run stops the second rather than only the next
+ * metered chunk.
+ *
+ * The opened secret is not retained here, and this method does not itself
+ * launch anything: a caller that never calls it, and the ledger's own
+ * per-call metering, are both unaffected by whether anything ever does.
+ * @param sessionId - the session a provider binding's call was assembled for.
+ * @returns the launch identity, or the reason none could be resolved.
+ */
+async runIdentityFor(sessionId: SessionId): Promise<RunIdentityResult>
+
+/**
  * Close one run and its descendants, and charge its tenant for what the tree
  * consumed.
  *
@@ -429,7 +450,7 @@ auditsOfTenant(userId: UserId): readonly RunAuditRecord[]
 auditsOfRuntime(): readonly RunAuditRecord[]
 ```
 
-Types: [StreamChunk](llm-streaming.zh.md)
+Types: [SessionId](core.zh.md) · [StreamChunk](llm-streaming.zh.md)
 
 Source: [`packages/control-plane/run-scheduler/src/index.ts`](../../packages/control-plane/run-scheduler/src/index.ts)
 <!-- END GENERATED cordis-surface -->

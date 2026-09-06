@@ -128,12 +128,38 @@ export function bindClaudeCliRun(
   deployment: ClaudeCliDeployment,
   allowance: RunBudget,
 ): ClaudeCliBindingResult {
+  return bindClaudeCliCredential(run.secret, run.poolRoot, deployment, allowance)
+}
+
+/**
+ * Bind an opened credential and a pool root to the Claude CLI launch that runs
+ * on them, without requiring a full `AdmittedRun`.
+ *
+ * {@link bindClaudeCliRun} is this call with `run.secret` and `run.poolRoot`;
+ * a caller re-opening a credential for a later invocation of a run already
+ * admitted — one whose `AdmittedRun` no longer exists — has exactly these two
+ * facts and no reason to fabricate the rest of that interface to supply them.
+ * @param secret - the opened provider credential.
+ * @param poolRoot - the tenant's runtime pool root; used verbatim as both
+ *   `HOME` and the working directory.
+ * @param deployment - the host facts a run does not carry.
+ * @param allowance - what THIS invocation may spend, which becomes the CLI's
+ *   own ceiling — see {@link bindClaudeCliRun} for why it is not the run's
+ *   whole budget.
+ * @returns the launch facts, or the reason the credential cannot be injected.
+ */
+export function bindClaudeCliCredential(
+  secret: Uint8Array,
+  poolRoot: string,
+  deployment: ClaudeCliDeployment,
+  allowance: RunBudget,
+): ClaudeCliBindingResult {
   // An exhausted allowance is refused here rather than left to become a zero
   // ceiling: `claudeCliArguments` rejects one, so a caller that binds a spent
   // run would meet a `RangeError` from inside the adapter at stream time
   // instead of a named refusal at the point it supplied the allowance.
   if (!hasRemainingBudget(allowance)) return { bound: false, rejection: 'no-allowance' }
-  const decoded = decodeCredential(run.secret)
+  const decoded = decodeCredential(secret)
   if ('rejection' in decoded) return { bound: false, rejection: decoded.rejection }
   return {
     bound: true,
@@ -143,8 +169,8 @@ export function bindClaudeCliRun(
       // `--bare` the CLI reads nothing from the working directory, so this
       // decides only where a process that ignores its arguments lands, and the
       // tenant's own pool is the one place that cannot reach another tenant's.
-      cwd: run.poolRoot,
-      isolation: { home: run.poolRoot, apiKey: decoded.key },
+      cwd: poolRoot,
+      isolation: { home: poolRoot, apiKey: decoded.key },
       graceMs: deployment.graceMs,
       maxOutputBytes: deployment.maxOutputBytes,
       maxStderrBytes: deployment.maxStderrBytes,

@@ -37,6 +37,7 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { revokeProviderAccount } from '@deepseek-ai/dsh-provider-accounts'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import { runtimePoolKey, runtimePoolRoot } from '@deepseek-ai/dsh-runtime-pool'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -1635,6 +1636,152 @@ describe('a booted Candy scheduler', () => {
 
     expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
     expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toMatchObject({ spent: { tokens: 42 } })
+  })
+
+  describe("a provider binding's launch identity for a session", () => {
+    it('resolves the pool, the opened credential, and what the run may still spend', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      await ctx.runScheduler.charge(RunId('run-root'), { tokens: 40, wallMs: 0, costMicroUsd: 0 })
+
+      const identity = await ctx.runScheduler.runIdentityFor(SESSION)
+
+      expect(identity.ok).toBe(true)
+      if (!identity.ok) return
+      expect(identity.value.runId).toBe(RunId('run-root'))
+      expect(identity.value.provider).toBe('claude-cli')
+      expect(Buffer.from(identity.value.secret).toString('utf8')).toBe('sk-ant-alice')
+      expect(identity.value.remaining).toMatchObject({ tokens: BUDGET.tokens - 40 })
+      // The pool root is a pure function of tenant, provider and account, so a
+      // caller can be shown the same value this method used without the
+      // method exposing its derivation.
+      const poolKey = runtimePoolKey({ userId: ALICE, provider: 'claude-cli', accountId: ACCOUNT })
+      expect(identity.value.poolRoot).toBe(runtimePoolRoot(join(root, 'pools'), poolKey))
+    })
+
+    it('re-opens the credential on every call rather than caching the first', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      const first = await ctx.runScheduler.runIdentityFor(SESSION)
+      expect(first.ok).toBe(true)
+
+      await revokeProviderAccount(ctx.controlPlaneStore, ALICE, ACCOUNT, now + 1)
+      const second = await ctx.runScheduler.runIdentityFor(SESSION)
+
+      // The revocation happened between the run's two calls; the second must
+      // see it rather than reuse what the first already resolved.
+      expect(second).toMatchObject({ ok: false, rejection: { reason: 'account-unusable' } })
+    })
+
+    it('refuses a session with no open run', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+
+      const identity = await ctx.runScheduler.runIdentityFor(SESSION)
+
+      expect(identity).toMatchObject({ ok: false, rejection: { reason: 'no-open-run' } })
+    })
+
+    it('refuses a session whose run the ledger no longer holds open', async () => {
+      // The store still answers for the run, but this runtime's live ledger
+      // does not — the store's own opinion of "open" is not this runtime's.
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      vi.spyOn(ctx.runScheduler.ledger, 'remaining').mockReturnValue(undefined)
+
+      const identity = await ctx.runScheduler.runIdentityFor(SESSION)
+
+      expect(identity).toMatchObject({ ok: false, rejection: { reason: 'no-open-run' } })
+    })
+
+    it('refuses a run whose account has no stored credential to open', async () => {
+      // The two are written together, so this is a storage inconsistency
+      // rather than a state normal use reaches — the same reason `deleteRun`
+      // and the store's other reads never trust a sibling read to agree.
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      vi.spyOn(ctx.controlPlaneStore, 'findCredential').mockResolvedValue(undefined)
+
+      const identity = await ctx.runScheduler.runIdentityFor(SESSION)
+
+      expect(identity).toMatchObject({ ok: false, rejection: { reason: 'no-credential', runId: RunId('run-root') } })
+    })
+
+    it('refuses a session two open runs both claim', async () => {
+      // `start` refuses the second run onto one session, so this state arrives
+      // only from outside it — another runtime sharing this audience, or a
+      // direct record write, as in the equivalent metering test above.
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+      await ctx.controlPlaneStore.openRun({
+        record: {
+          runId: RunId('run-elsewhere'), parentRunId: undefined,
+          reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
+        },
+        userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+      })
+
+      const identity = await ctx.runScheduler.runIdentityFor(SESSION)
+
+      expect(identity).toMatchObject({
+        ok: false,
+        rejection: { reason: 'claimed-by-several', runIds: [RunId('run-root'), RunId('run-elsewhere')] },
+      })
+    })
+
+    it('records every open as a credential audit, success or failure', async () => {
+      // Revocation is caught earlier, by the account check `findSessionRun`
+      // already makes — it never reaches `openCredential` at all, so it is
+      // not what exercises this method's own failure branch. A tampered
+      // envelope is: the account stays usable, and the vault itself refuses.
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      const before = ctx.runScheduler.auditsOfTenant(ALICE).filter(record => record.event === 'credential').length
+
+      const first = await ctx.runScheduler.runIdentityFor(SESSION)
+      expect(first.ok).toBe(true)
+      const entry = await ctx.controlPlaneStore.find(ACCOUNT)
+      if (entry === undefined) throw new Error('the fixture account is not in the store')
+      await ctx.controlPlaneStore.save({ ...entry, credential: { ...entry.credential, ciphertext: 'tampered' } })
+      const second = await ctx.runScheduler.runIdentityFor(SESSION)
+      expect(second).toMatchObject({ ok: false, rejection: { reason: 'corrupt' } })
+
+      const opens = ctx.runScheduler.auditsOfTenant(ALICE)
+        .filter(record => record.event === 'credential')
+        .slice(before)
+      expect(opens.map(record => record.outcome)).toEqual(['ok', 'corrupt'])
+    })
+
+    it('still resolves the identity when the trail cannot take the audit record', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      vi.spyOn(ctx.controlPlaneStore, 'recordAudit').mockRejectedValue(new Error('medium is gone'))
+
+      const identity = await ctx.runScheduler.runIdentityFor(SESSION)
+
+      expect(identity.ok).toBe(true)
+    })
   })
 
   it('refuses a child that names another tenant, and bills nobody for it', async () => {

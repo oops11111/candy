@@ -317,6 +317,28 @@ export type Config = LocalConfig
 
 来源：[`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-claude-cli-route"></a>
+
+## `@deepseek-ai/dsh-claude-cli-route`
+
+需要：`llm` · `subprocess` · `runScheduler`
+
+```ts config-catalog
+/** Deployment-varying facts for this host's Claude CLI, the same for every tenant it runs. */
+export interface Config {
+  /** Absolute path to the `claude` executable; defaults to `claude` on PATH. */
+  executable?: string
+  /** Process-tree termination grace in milliseconds. */
+  graceMs?: number
+  /** Most stdout bytes one run may write before it is failed and reaped. */
+  maxOutputBytes?: number
+  /** Most stderr bytes to keep from one run, as that stream's tail. */
+  maxStderrBytes?: number
+}
+```
+
+来源：[`packages/control-plane/claude-cli-route/src/index.ts:49`](../packages/control-plane/claude-cli-route/src/index.ts)
+
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`

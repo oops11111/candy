@@ -26,6 +26,8 @@
     { "path": "../../core/session" },
     { "path": "../run-replay" },
     { "path": "../run-start" },
-    { "path": "../tenant-allowance" }
+    { "path": "../runtime-pool" },
+    { "path": "../tenant-allowance" },
+    { "path": "../../util/values" }
   ]
 }

@@ -255,6 +255,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ProviderAccountEntry: 'candy-control-plane.md',
   ProviderAccountRecord: 'candy-control-plane.md',
   ProviderAccountId: 'candy-control-plane.md',
+  RunIdentityResult: 'candy-control-plane.md',
   RunBudget: 'candy-control-plane.md',
   UserId: 'candy-control-plane.md',
   AgentCancelCause: 'core.md',

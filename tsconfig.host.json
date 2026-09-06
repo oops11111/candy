@@ -180,6 +180,7 @@
     { "path": "./packages/control-plane/provider-accounts" },
     { "path": "./packages/control-plane/run-admission" },
     { "path": "./packages/control-plane/claude-cli-binding" },
+    { "path": "./packages/control-plane/claude-cli-route" },
     { "path": "./packages/control-plane/run-ledger" },
     { "path": "./packages/control-plane/run-replay" },
     { "path": "./packages/control-plane/run-scheduler" },

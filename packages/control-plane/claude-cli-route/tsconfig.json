@@ -1,0 +1,21 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../claude-cli-binding" },
+    { "path": "../../llm/llm" },
+    { "path": "../../llm/llm-claude-cli" },
+    { "path": "../run-metering" },
+    { "path": "../run-scheduler" },
+    { "path": "../../subprocess/subprocess" }
+  ]
+}

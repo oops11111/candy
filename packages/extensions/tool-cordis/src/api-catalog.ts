@@ -1440,6 +1440,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the same chunks, ending early when the run cannot afford the rest.',
       },
       {
+        signature: 'async runIdentityFor(sessionId: SessionId): Promise<RunIdentityResult>',
+        description: 'Resolve what a provider binding needs to launch one call for the run driving a session: an opened credential, the pool it may use, and this call\'s own spend ceiling.\n\nThis is the reach `dsh-run-admission` gives a run once, at start, made available again for every later call the same run makes. Nothing here is cached from that first admission: the account is read fresh, and the credential is opened fresh, so a binding built on this method inherits the same property `meterRequest` already does — a revocation that happens between two calls of one run stops the second rather than only the next metered chunk.\n\nThe opened secret is not retained here, and this method does not itself launch anything: a caller that never calls it, and the ledger\'s own per-call metering, are both unaffected by whether anything ever does.',
+        parameters: [{ name: 'sessionId', description: 'the session a provider binding\'s call was assembled for.' }],
+        returns: 'the launch identity, or the reason none could be resolved.',
+      },
+      {
         signature: 'close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>',
         description: 'Close one run and its descendants, and charge its tenant for what the tree consumed.\n\nClosing a root is the one point a tenant\'s durable allowance moves. A child settles into its parent\'s record instead, and reaches the tenant when that parent\'s root closes, so a tree is charged once rather than once per run.',
         parameters: [{ name: 'runId', description: 'the run to settle.' }],
@@ -4955,6 +4961,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type RunId = Branded<\'RunId\'>;',
   },
   {
+    name: 'RunIdentity',
+    declaration: 'export interface RunIdentity {\n    readonly runId: RunId;\n    readonly provider: ProviderKind;\n    readonly poolRoot: string;\n    readonly secret: Uint8Array;\n    readonly remaining: RunBudget;\n}',
+  },
+  {
+    name: 'RunIdentityRejection',
+    declaration: 'export type RunIdentityRejection = SessionRunRejection | {\n    readonly reason: \'no-credential\';\n    readonly runId: RunId;\n    readonly accountId: ProviderAccountId;\n} | {\n    readonly reason: CredentialRejection;\n    readonly runId: RunId;\n    readonly accountId: ProviderAccountId;\n};',
+  },
+  {
+    name: 'RunIdentityResult',
+    declaration: 'export type RunIdentityResult = {\n    readonly ok: true;\n    readonly value: RunIdentity;\n} | {\n    readonly ok: false;\n    readonly rejection: RunIdentityRejection;\n};',
+  },
+  {
     name: 'RunLedger',
     declaration: 'export class RunLedger {\n    openRoot(runId: RunId, budget: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    openChild(parentRunId: RunId, runId: RunId, request: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>;\n    renew(runId: RunId, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    close(runId: RunId): RunLedgerResult<RunSettlement>;\n    expire(now: number): RunSettlement[];\n    remaining(runId: RunId): RunBudget | undefined;\n    get(runId: RunId): RunRecord | undefined;\n    open(): RunRecord[];\n    settlementOf(runId: RunId): RunSettlementPreview | undefined;\n    restore(records: readonly RunRecord[]): void;\n}',
   },
@@ -5401,6 +5419,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionResultRange',
     declaration: 'export interface SessionResultRange {\n    from?: number;\n    to?: number;\n}',
+  },
+  {
+    name: 'SessionRunRejection',
+    declaration: 'export type SessionRunRejection = {\n    readonly reason: \'no-open-run\';\n} | {\n    readonly reason: \'claimed-by-several\';\n    readonly runIds: readonly RunId[];\n} | {\n    readonly reason: \'account-unusable\';\n    readonly runId: RunId;\n    readonly accountId: ProviderAccountId;\n};',
   },
   {
     name: 'SessionSearchCursor',
