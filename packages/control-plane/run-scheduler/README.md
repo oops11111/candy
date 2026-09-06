@@ -103,6 +103,25 @@ The scope is entered around each pull rather than around the stream. An async ge
 
 A launch outside any metered call — the harness's own bash, pwsh and language-server children — is left alone. It belongs to no tenant, and filing it would push a tenant's own records out of a trail bounded per subject. Admission never sees these: a run opens its credential once and then keeps calling, so a revoked account still spending, a run that has used up its allowance, and a session no open run claims are all visible here and nowhere else. The record is durable before the caller is told, so an operator reading the trail cannot be behind a consumer acting on the refusal. A refusal whose session names no run this runtime still holds is filed against the runtime, for the same reason an unverifiable assertion is: there is no tenant to believe.
 
+### Resolving a session's tenant, synchronously
+
+A caller elsewhere in the harness sometimes needs to know which tenant a session belongs to without opening its credential — a synchronous policy hook, for instance, cannot await one. `tenantOf` answers from the same in-memory run index metering already reads, and nothing else:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const sessionId: SessionId
+
+// The session's tenant, or undefined when this runtime has no single open,
+// usable run for it — the same ambiguity `runIdentityFor` refuses.
+export const userId = ctx.runScheduler.tenantOf(sessionId)
+```
+
+[`dsh-tenant-preset-policy`](../tenant-preset-policy/README.md) is the first consumer: it resolves a session's tenant this way to decide whether a preset id is on that tenant's allowlist, inside a synchronous `AgentPresets` guard.
+
 ### Metering the calls a run makes
 
 Nothing has to ask. Every model request the harness assembles carries the session it was assembled for, and an execution assertion names the session its run drives — so a request whose session belongs to an open run of this runtime is metered against it automatically:

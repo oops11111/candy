@@ -103,6 +103,25 @@ export const unattributed = ctx.runScheduler.auditsOfRuntime()
 
 发生在任何被计量调用之外的启动——harness 自己的 bash、pwsh 与语言服务器子进程——会被放过。它不属于任何租户,而把它归档进去,会把某个租户自己的记录挤出一条按主体有界的踪迹。准入永远看不到这些:一次运行只打开一次凭据,随后就一直发起调用,因此一个被吊销却仍在花费的账户、一个已用尽额度的运行,以及一个没有任何开着的运行认领的会话,都只在这里可见。记录在调用方被告知之前就已持久,因此读取踪迹的运维人员不会落后于一个已经据此行动的消费者。一次其会话指名不出任何本运行时仍持有的运行的拒绝,会被归档到运行时名下,理由与无法验证的断言相同:没有可以相信的租户。
 
+### 同步解析一个会话的租户
+
+harness 里别处的某个调用方,有时需要在不打开凭据的情况下知道一个会话属于哪个租户——比如一个同步的策略钩子就无法 await 任何东西。`tenantOf` 只从计量本就在读的那份内存运行索引里作答,不多不少:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const sessionId: SessionId
+
+// The session's tenant, or undefined when this runtime has no single open,
+// usable run for it — the same ambiguity `runIdentityFor` refuses.
+export const userId = ctx.runScheduler.tenantOf(sessionId)
+```
+
+[`dsh-tenant-preset-policy`](../tenant-preset-policy/README.zh.md) 是第一个消费方:它用这个方法解析一个会话的租户,在一个同步的 `AgentPresets` 守卫里判断某个预设 id 是否在该租户的白名单上。
+
 ### 计量一次运行发起的那些调用
 
 无需任何人开口。harness 组装的每一个模型请求都携带它所面向的那个会话,而执行断言又指名了它那次运行所驱动的会话 —— 因此,一个其会话属于本运行时某次开启中运行的请求,会自动被记到那次运行头上:

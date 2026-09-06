@@ -1784,6 +1784,55 @@ describe('a booted Candy scheduler', () => {
     })
   })
 
+  describe('the tenant of a session', () => {
+    it('resolves synchronously from the session\'s one open run', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+      expect(ctx.runScheduler.tenantOf(SESSION)).toBe(ALICE)
+    })
+
+    it('answers undefined for a session with no open run', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+
+      expect(ctx.runScheduler.tenantOf(SESSION)).toBeUndefined()
+    })
+
+    it('answers undefined for a session two open runs both claim', async () => {
+      // Mirrors the `runIdentityFor` ambiguity test: a session two runs both
+      // name has no ONE tenant this method can answer for.
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+      await ctx.controlPlaneStore.openRun({
+        record: {
+          runId: RunId('run-elsewhere'), parentRunId: undefined,
+          reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
+        },
+        userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+      })
+
+      expect(ctx.runScheduler.tenantOf(SESSION)).toBeUndefined()
+    })
+
+    it('answers undefined for a run whose account is no longer usable', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      await revokeProviderAccount(ctx.controlPlaneStore, ALICE, ACCOUNT, now + 1)
+
+      expect(ctx.runScheduler.tenantOf(SESSION)).toBeUndefined()
+    })
+  })
+
   it('refuses a child that names another tenant, and bills nobody for it', async () => {
     // Without the check the child runs on the other tenant's credential while
     // its spend settles into this parent's tree: the parent's tenant funds work

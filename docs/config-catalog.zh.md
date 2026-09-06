@@ -2626,6 +2626,25 @@ export interface Config {
 
 来源：[`packages/core/system-prompt/src/index.ts:237`](../packages/core/system-prompt/src/index.ts)
 
+<a id="deepseek-aidsh-tenant-preset-policy"></a>
+
+## `@deepseek-ai/dsh-tenant-preset-policy`
+
+需要：`agentPresets` · `runScheduler`
+
+```ts config-catalog
+/** Per-tenant preset allowlists this deployment enforces. */
+export interface Config {
+  /**
+   * Preset ids each named tenant may mount or switch to, keyed by tenant id.
+   * A tenant absent from this map is unrestricted.
+   */
+  readonly allowlists: Readonly<Record<string, readonly string[]>>
+}
+```
+
+来源：[`packages/control-plane/tenant-preset-policy/src/index.ts:33`](../packages/control-plane/tenant-preset-policy/src/index.ts)
+
 <a id="deepseek-aidsh-terminal-bash"></a>
 
 ## `@deepseek-ai/dsh-terminal-bash`

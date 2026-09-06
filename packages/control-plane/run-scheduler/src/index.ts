@@ -458,6 +458,24 @@ export class RunScheduler extends Service {
   }
 
   /**
+   * The tenant of a session's one open, usable run.
+   *
+   * Synchronous, unlike {@link runIdentityFor}: resolving a tenant reads the
+   * same in-memory run index {@link findSessionRun} already reads for
+   * metering and requires no credential open, so a caller wiring a
+   * synchronous policy hook elsewhere in the harness — an `AgentPresets`
+   * guard, for instance — can consult it directly instead of threading a
+   * `Promise` through a call path that has no other reason to be async.
+   * @param sessionId - the session naming the run to resolve.
+   * @returns the run's tenant, or `undefined` when this runtime has no
+   *   single open, usable run for that session.
+   */
+  tenantOf(sessionId: SessionId): UserId | undefined {
+    const resolved = this.findSessionRun(sessionId)
+    return resolved.ok ? resolved.run.userId : undefined
+  }
+
+  /**
    * Meter one assembled request against the run whose session it names.
    *
    * A request with no session, or one naming no run this runtime has open,

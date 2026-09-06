@@ -161,6 +161,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when no configured root supplies that id.'],
       },
       {
+        signature: 'guard(guard: AgentPresetGuard): () => void',
+        description: 'Register a guard consulted by resolveMountable before every `mount()` and `recompose()`. Any guard may refuse by returning a reason; no guard can force-allow a preset another guard refused.',
+        parameters: [{ name: 'guard', description: 'synchronous check; a returned string refuses the preset.' }],
+        returns: 'the disposer that unregisters the guard.',
+      },
+      {
         signature: 'async mount(agentCtx: Context, id?: string): Promise<AgentPreset>',
         description: 'Compose one agent from a preset: ensure the preset\'s standing mount, then parent the agent\'s scope key to it so the mount\'s registrations and listeners cover this agent.\n\nCall from the agent factory\'s `setup(agentCtx)`; a rejection there rolls the agent creation back, so a broken preset never yields a half-composed session.',
         parameters: [{ name: 'agentCtx', description: 'the agent\'s scope context.' }, { name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
@@ -1432,6 +1438,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Record what one run consumed since its last charge.',
         parameters: [{ name: 'runId', description: 'the open run.' }, { name: 'spend', description: 'what the invocation consumed.' }],
         returns: 'the updated record and the dimensions now used up, or why the charge was refused.',
+      },
+      {
+        signature: 'tenantOf(sessionId: SessionId): UserId | undefined',
+        description: 'The tenant of a session\'s one open, usable run.\n\nSynchronous, unlike runIdentityFor: resolving a tenant reads the same in-memory run index findSessionRun already reads for metering and requires no credential open, so a caller wiring a synchronous policy hook elsewhere in the harness — an `AgentPresets` guard, for instance — can consult it directly instead of threading a `Promise` through a call path that has no other reason to be async.',
+        parameters: [{ name: 'sessionId', description: 'the session naming the run to resolve.' }],
+        returns: 'the run\'s tenant, or `undefined` when this runtime has no single open, usable run for that session.',
       },
       {
         signature: 'meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>',
@@ -3607,6 +3619,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentPresetDocument',
     declaration: 'export interface AgentPresetDocument {\n    readonly agentPreset: string;\n    readonly trust: PresetTrust;\n    readonly content: string;\n    readonly name?: string;\n    readonly description?: string;\n}',
+  },
+  {
+    name: 'AgentPresetGuard',
+    declaration: 'export type AgentPresetGuard = (agentCtx: Context, id: string) => string | undefined;',
   },
   {
     name: 'AgentPresetRoster',

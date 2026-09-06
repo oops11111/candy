@@ -333,6 +333,21 @@ start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => 
 charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>
 
 /**
+ * The tenant of a session's one open, usable run.
+ *
+ * Synchronous, unlike {@link runIdentityFor}: resolving a tenant reads the
+ * same in-memory run index {@link findSessionRun} already reads for
+ * metering and requires no credential open, so a caller wiring a
+ * synchronous policy hook elsewhere in the harness — an `AgentPresets`
+ * guard, for instance — can consult it directly instead of threading a
+ * `Promise` through a call path that has no other reason to be async.
+ * @param sessionId - the session naming the run to resolve.
+ * @returns the run's tenant, or `undefined` when this runtime has no
+ *   single open, usable run for that session.
+ */
+tenantOf(sessionId: SessionId): UserId | undefined
+
+/**
  * Meter one provider stream against an open run.
  *
  * This is where an allowance stops being an accounting figure. The call is

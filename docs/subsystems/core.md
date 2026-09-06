@@ -443,6 +443,15 @@ async compositionInventory(): Promise<AgentPresetComposition[]>
 async resolve(id?: string): Promise<AgentPreset>
 
 /**
+ * Register a guard consulted by {@link resolveMountable} before every
+ * `mount()` and `recompose()`. Any guard may refuse by returning a reason;
+ * no guard can force-allow a preset another guard refused.
+ * @param guard - synchronous check; a returned string refuses the preset.
+ * @returns the disposer that unregisters the guard.
+ */
+guard(guard: AgentPresetGuard): () => void
+
+/**
  * Compose one agent from a preset: ensure the preset's standing mount, then
  * parent the agent's scope key to it so the mount's registrations and
  * listeners cover this agent.
