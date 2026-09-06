@@ -57,7 +57,7 @@ kind: "package-reference"
 <a id="preparing-a-delegated-child-before-it-exists"></a>
 ### 在一个受委派子会话存在之前为它做准备
 
-`SubagentRuntime.onBeforeDelegate(hook)` 注册一个异步检查，它会在一个子 agent 被创建之前、按注册顺序被等待完成——子会话未来的会话 id 此时已经存在，因此一个钩子可以在任何东西发布之前对它采取行动。一个抛出异常或拒绝的钩子会让这次委派彻底中止；因为此时还没有任何子会话存在，也就没有什么需要回滚：
+`SubagentRuntime.onBeforeDelegate(hook)` 注册一个异步检查，它会在一个子 agent 被创建之前、按注册顺序被等待完成——子会话未来的会话 id 此时已经存在，因此一个钩子可以在任何东西发布之前对它采取行动。一个抛出异常或拒绝的钩子会让这次委派彻底中止，而且永远不会有子会话被创建出来：
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -74,6 +74,8 @@ const stop = ctx.subagents.onBeforeDelegate(async (parent, childId) => {
 ```
 
 一次性子级只被准备一次。一个可继续子级则在每一个驻留纪元被准备一次——它的全新创建，以及此后每一次冷恢复——因为一个休眠的子级在结算时就释放了钩子给它的东西；一个不该重复做功的钩子应当检查它自己先前的效果，而不是假定每个子级只被调用一次。
+
+一个其设置会活过这次调用的钩子，要返回那个撤销它的函数。发布是这条缝隙的边界，因此在它之前所做的设置属于创建事务：一个从未发布的纪元——信号被取消、创建失败、或者后面某个钩子拒绝——会按注册的相反顺序运行这些回滚，而一个什么都不返回的钩子被理解为不拥有任何东西。
 
 这个包不携带任何关于一个钩子会用这个时机做什么的概念——[`dsh-run-delegation`](../../control-plane/run-delegation/README.zh.md) 是 Candy 自有的消费方，它会在子会话可能发起第一次请求之前，为它铸造并开启一次有资金的运行。
 

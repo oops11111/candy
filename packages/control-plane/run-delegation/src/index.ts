@@ -148,5 +148,9 @@ export function apply(ctx: Context, config: Config): void {
     if (!result.outcome.started) {
       throw new Error(`delegation refused: ${describeStartRejection(result.outcome.rejection)}`)
     }
+    // This run was opened for a child that does not exist yet. An epoch that
+    // never publishes one settles it here instead of leaving it to a lease,
+    // since no `subagent/end` will ever name a child that was not created.
+    return async () => void await ctx.runScheduler.closeSessionRun(childId)
   }), 'run-delegation.onBeforeDelegate()')
 }

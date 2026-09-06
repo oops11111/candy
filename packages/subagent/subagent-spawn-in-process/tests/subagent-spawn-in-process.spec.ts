@@ -551,6 +551,30 @@ describe('a registered onBeforeDelegate hook', () => {
     stop()
   })
 
+  it('rolls back a hook\'s setup when cancellation stops the child from publishing', async () => {
+    // A signal aborted after the hooks ran leaves the creation transaction
+    // unpublished, so what a hook set up for that child must come back.
+    const { ctx, parent } = await setup([])
+    const controller = new AbortController()
+    const undone: string[] = []
+    const stop = ctx.subagents.onBeforeDelegate(() => {
+      // Abort once the setup exists: creation is what must now fail.
+      controller.abort()
+      return () => void undone.push('rolled back')
+    })
+    const before = ctx.agents.list().length
+
+    await expect(start(ctx, 'spawn', {
+      prompt: [{ type: 'text', text: 'do X' }],
+      parent,
+      signal: controller.signal,
+    })).rejects.toThrow()
+
+    expect(undone).toEqual(['rolled back'])
+    expect(ctx.agents.list().length).toBe(before)
+    stop()
+  })
+
   it('stops being consulted once its disposer runs, idempotently', async () => {
     const { ctx, parent } = await setup([textResponse('child answer')])
     let calls = 0

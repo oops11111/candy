@@ -2378,10 +2378,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the disposer that unregisters the hook.',
       },
       {
-        signature: 'async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<void>',
-        description: 'Run every registered onBeforeDelegate hook, in registration order, before an in-process driver creates a child. Called once per delegation, before `ctx.agents.create()`, so a hook\'s asynchronous setup completes before the child exists to make its first request — and a hook that refuses leaves nothing to roll back, since no child was ever created.',
+        signature: 'async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<ChildDelegationRollback>',
+        description: 'Run every registered onBeforeDelegate hook, in registration order, before an in-process driver creates a child. Called once per residency epoch, before `ctx.agents.create()` or `ctx.agents.resume()`, so a hook\'s asynchronous setup completes before the child exists to make its first request.\n\nThe returned rollback undoes what the hooks set up, in reverse order, and belongs to the caller\'s creation transaction: an epoch that never publishes must run it, or a hook\'s setup outlives the child it was for. A hook that refuses is unwound here instead, since the caller never receives a rollback it could run.',
         parameters: [{ name: 'parent', description: 'the delegating parent agent.' }, { name: 'childId', description: 'the session id the child will be created with.' }],
-        throws: ['whatever the first hook that refuses throws or rejects with.'],
+        returns: 'the rollback for every hook that set something up.',
+        throws: ['whatever the first hook that refuses throws or rejects with, after the hooks before it have been rolled back.'],
       },
       {
         signature: 'async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>',
@@ -3836,7 +3837,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ChildDelegationHook',
-    declaration: 'export type ChildDelegationHook = (parent: Agent, childId: SessionId) => Promise<void> | void;',
+    declaration: 'export type ChildDelegationHook = (parent: Agent, childId: SessionId) => Promise<ChildDelegationRollback | void> | ChildDelegationRollback | void;',
+  },
+  {
+    name: 'ChildDelegationRollback',
+    declaration: 'export type ChildDelegationRollback = () => Promise<void> | void;',
   },
   {
     name: 'ChunkRow',
@@ -5868,7 +5873,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRuntime',
-    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    onBeforeDelegate(hook: ChildDelegationHook): () => void;\n    async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<void>;\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    @Remote(\'list\')\n    async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>;\n    @Remote(\'prompt\')\n    async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>;\n    @Remote(\'interruptByParent\')\n    interruptByParent(childSessionId: SessionId, parentSessionId: SessionId, mode: \'continuable\'): SubagentInterruptReceipt;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(n /* …truncated — full shape in source */',
+    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    onBeforeDelegate(hook: ChildDelegationHook): () => void;\n    async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<ChildDelegationRollback>;\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    @Remote(\'list\')\n    async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>;\n    @Remote(\'prompt\')\n    async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>;\n    @Remote(\'interruptByParent\')\n    interruptByParent(childSessionId: SessionId, parentSessionId: SessionId, mode: \'continuable\'): SubagentInterruptReceipt;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[] /* …truncated — full shape in source */',
   },
   {
     name: 'SubagentSendMessageOptions',

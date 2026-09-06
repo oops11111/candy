@@ -16,6 +16,38 @@ import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ObjectJsonSchema, ToolRestriction } from '@deepseek-ai/dsh-tools'
 import type { SubagentDescriptorData } from './descriptor.ts'
 
+/**
+ * Undo one hook's pre-publication setup for a child that never published.
+ *
+ * Publication is this seam's boundary: before it the setup belongs to the
+ * creation transaction and must be undone when the transaction fails, which a
+ * hook's own setup — a run minted for the child, for instance — is part of.
+ */
+export type ChildDelegationRollback = () => Promise<void> | void
+
+/**
+ * Hook consulted before an in-process child is created, given its delegating
+ * parent and the session id the child will be created with.
+ *
+ * Async because a hook may need to complete setup — minting a run for the
+ * child, for instance — before the child can make its first request, and a
+ * hook may refuse the delegation entirely by throwing or rejecting. This
+ * package carries no notion of what a hook does with the parent or the
+ * child's future session id; a consumer that needs one (a tenant-aware
+ * control plane, for instance) registers it without teaching this
+ * general-purpose package a concept it does not otherwise need.
+ *
+ * A hook whose setup outlives the call returns the {@link ChildDelegationRollback}
+ * that undoes it; one that owns nothing returns nothing.
+ * @param parent - the delegating parent agent.
+ * @param childId - the session id the child will be created with.
+ * @returns the rollback for this hook's own setup, if it made any.
+ */
+export type ChildDelegationHook = (parent: Agent, childId: SessionId) =>
+  | Promise<ChildDelegationRollback | void>
+  | ChildDelegationRollback
+  | void
+
 /** Identifies one accepted subagent run across its lifecycle event pair. */
 export type SubagentRunId = Branded<'SubagentRunId'>
 

@@ -39,6 +39,7 @@ import type { SessionObservation, SessionQueryEngine } from '@deepseek-ai/dsh-se
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 import { foldSubagentDescriptor, snapshotSubagentDescriptor } from './descriptor.ts'
 import type { SubagentDescriptorData } from './descriptor.ts'
+import type { ChildDelegationRollback } from './types.ts'
 import {
   appendDelegatedPolicyOverrides,
   applyChildComposition,
@@ -175,9 +176,11 @@ interface ContinuationHost {
    * materialized, whether freshly created or cold-resumed.
    * @param parent - the delegating parent agent.
    * @param childId - the durable child session id.
+   * @returns the rollback undoing what the hooks set up, for an epoch that
+   *   does not reach publication.
    * @throws whatever the first hook that refuses throws or rejects with.
    */
-  prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<void>
+  prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<ChildDelegationRollback>
   /**
    * Build the lifecycle observer for one Activation's residency epoch.
    * @param provider - the provider name recorded in the durable descriptor.
@@ -1228,7 +1231,7 @@ export class SubagentContinuationManager {
     // its first request, and a dormant child's own epoch-scoped resources are
     // released while it is away. A hook that refuses leaves nothing to roll
     // back, since nothing is created or resumed yet.
-    await this.host.prepareDelegatedChild(parent, childId)
+    const rollbackPreparation = await this.host.prepareDelegatedChild(parent, childId)
     const setup = (childCtx: Context): void => {
       // Only fresh creation seeds the delegation policy onto the child's own
       // log (after any fork seed, so fresh policy wins stale seed state); a
@@ -1241,22 +1244,31 @@ export class SubagentContinuationManager {
     const observer = this.host.observeActivation(provider, childId, parent)
     // Agent creation owns rollback before handle transfer. A rejection leaves
     // no resident Activation and therefore publishes no lifecycle edge.
-    const handle: AgentHandle = create === undefined
-      ? await this.ownerCtx.agents.resume({
-        resumeSessionId: childId,
-        agentOptions: inputs.agentOptions,
-        signal: inputs.signal,
-        setup,
-      })
-      : await this.ownerCtx.agents.create({
-        sessionId: childId,
-        meta: create.meta,
-        seed: create.seed,
-        inheritedEventCount: create.inheritedEventCount,
-        agentOptions: inputs.agentOptions,
-        signal: inputs.signal,
-        setup,
-      })
+    // Publication is what the preparation was made for, so an epoch that does
+    // not reach it undoes that setup here; past this point the Activation's
+    // own rollback below owns the child, and its settlement ends the epoch.
+    let handle: AgentHandle
+    try {
+      handle = create === undefined
+        ? await this.ownerCtx.agents.resume({
+          resumeSessionId: childId,
+          agentOptions: inputs.agentOptions,
+          signal: inputs.signal,
+          setup,
+        })
+        : await this.ownerCtx.agents.create({
+          sessionId: childId,
+          meta: create.meta,
+          seed: create.seed,
+          inheritedEventCount: create.inheritedEventCount,
+          agentOptions: inputs.agentOptions,
+          signal: inputs.signal,
+          setup,
+        })
+    } catch (unpublished) {
+      await rollbackPreparation()
+      throw unpublished
+    }
 
     const activation: Activation = {
       childId,

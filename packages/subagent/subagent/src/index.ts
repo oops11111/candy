@@ -50,6 +50,8 @@ import type {
   SubagentPromptRequestId,
 } from './control-types.ts'
 import type {
+  ChildDelegationHook,
+  ChildDelegationRollback,
   ContinuableCreateRequest,
   ContinuableCreateSpec,
   ResolvedSubagentStartRequest,
@@ -130,7 +132,7 @@ export type {
 } from './continuation.ts'
 export type * from './control-types.ts'
 export type { SubagentDescendantListEntry } from './list-children.ts'
-export type { SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
+export type { ChildDelegationHook, ChildDelegationRollback, SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
 export type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -187,22 +189,6 @@ interface BrowserPromptSource {
   readonly clientTimeZone?: string
 }
 
-/**
- * Hook consulted before an in-process one-shot child is created, given its
- * delegating parent and the session id the child will be created with.
- *
- * Async because a hook may need to complete setup — minting a run for the
- * child, for instance — before the child can make its first request, and a
- * hook may refuse the delegation entirely by throwing or rejecting. This
- * package carries no notion of what a hook does with the parent or the
- * child's future session id; a consumer that needs one (a tenant-aware
- * control plane, for instance) registers it without teaching this
- * general-purpose package a concept it does not otherwise need.
- * @param parent - the delegating parent agent.
- * @param childId - the session id the child will be created with.
- */
-export type ChildDelegationHook = (parent: Agent, childId: SessionId) => Promise<void> | void
-
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends TypertRemoteService {
   private providers = new Map<string, SubagentProvider>()
@@ -255,18 +241,38 @@ export class SubagentRuntime extends TypertRemoteService {
   /**
    * Run every registered {@link onBeforeDelegate} hook, in registration
    * order, before an in-process driver creates a child. Called once per
-   * delegation, before `ctx.agents.create()`, so a hook's asynchronous setup
-   * completes before the child exists to make its first request — and a
-   * hook that refuses leaves nothing to roll back, since no child was ever
-   * created.
+   * residency epoch, before `ctx.agents.create()` or `ctx.agents.resume()`,
+   * so a hook's asynchronous setup completes before the child exists to make
+   * its first request.
+   *
+   * The returned rollback undoes what the hooks set up, in reverse order, and
+   * belongs to the caller's creation transaction: an epoch that never
+   * publishes must run it, or a hook's setup outlives the child it was for.
+   * A hook that refuses is unwound here instead, since the caller never
+   * receives a rollback it could run.
    * @param parent - the delegating parent agent.
    * @param childId - the session id the child will be created with.
-   * @throws whatever the first hook that refuses throws or rejects with.
+   * @returns the rollback for every hook that set something up.
+   * @throws whatever the first hook that refuses throws or rejects with,
+   *   after the hooks before it have been rolled back.
    */
-  async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<void> {
-    for (const hook of this.delegationHooks.values()) {
-      await hook(parent, childId)
+  async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<ChildDelegationRollback> {
+    const rollbacks: ChildDelegationRollback[] = []
+    const undo = async (): Promise<void> => {
+      // Reverse order: a later hook may have built on an earlier one's setup.
+      for (const rollback of rollbacks.reverse()) await rollback()
     }
+    for (const hook of this.delegationHooks.values()) {
+      let rollback: ChildDelegationRollback | void
+      try {
+        rollback = await hook(parent, childId)
+      } catch (refusal) {
+        await undo()
+        throw refusal
+      }
+      if (rollback !== undefined) rollbacks.push(rollback)
+    }
+    return undo
   }
 
   /**

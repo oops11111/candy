@@ -731,6 +731,26 @@ describe('direct-child Queue residency routing', () => {
     stop()
   })
 
+  it('rolls back an earlier hook\'s setup when a later one refuses', async () => {
+    // Publication is the boundary: setup made before it belongs to the
+    // creation transaction, so a refusal unwinds what already succeeded.
+    const { ctx, parent } = await setup([])
+    const undone: string[] = []
+    const stopFirst = ctx.subagents.onBeforeDelegate(() => () => void undone.push('first'))
+    const stopSecond = ctx.subagents.onBeforeDelegate(() => () => void undone.push('second'))
+    const stopThird = ctx.subagents.onBeforeDelegate(() => {
+      throw new Error('third refuses')
+    })
+
+    await expect(ctx.subagents.startContinuable(startSpec(parent))).rejects.toThrow(/third refuses/)
+
+    // Reverse order: a later hook may have built on an earlier one's setup.
+    expect(undone).toEqual(['second', 'first'])
+    stopFirst()
+    stopSecond()
+    stopThird()
+  })
+
   it('refuses a continuable start when a hook refuses, leaving no child behind', async () => {
     const { ctx, parent } = await setup([])
     const stop = ctx.subagents.onBeforeDelegate(() => {

@@ -187,6 +187,31 @@ describe('opening a run for a delegated child', () => {
     await second.dispose()
   })
 
+  it('releases the child\'s run when the delegation never publishes a child', async () => {
+    // The run is opened before the child is created. A delegation that fails
+    // after that point must not leave the run holding its parent's allowance.
+    root = await mkdtemp(join(tmpdir(), 'dsh-run-delegation-'))
+    const context = await boot(root, { childBudget: CHILD_BUDGET }, [])
+    const now = Date.now()
+    await provision(context, now)
+    const session = SessionId('sess-unpublished')
+    await openRootRun(context, session, RunId('run-parent-unpublished'), TENANT_GRANT, now)
+    const parent = await parentAgent(context, session)
+    // Registered after the plugin's, so the run is already open when it refuses.
+    let childId: SessionId | undefined
+    const stop = context.subagents.onBeforeDelegate((_delegating, id) => {
+      childId = id
+      throw new Error('refused after funding')
+    })
+
+    await expect(delegate(context, { prompt: [{ type: 'text', text: 'do X' }], parent }))
+      .rejects.toThrow(/refused after funding/)
+
+    expect(childId).toBeDefined()
+    expect(context.controlPlaneStore.runsOfSession(AUDIENCE, childId!)).toEqual([])
+    stop()
+  })
+
   it('leaves a child that already has a run with the run it has', async () => {
     // A continuable child is prepared on every residency epoch. One that
     // resumes before its previous run's lease lapses still has that run, and a
@@ -205,7 +230,7 @@ describe('opening a run for a delegated child', () => {
 
     // A second epoch reached before the first one's run is closed — a resume
     // racing the settlement that releases it.
-    await expect(context.subagents.prepareDelegatedChild(parent, childId)).resolves.toBeUndefined()
+    await expect(context.subagents.prepareDelegatedChild(parent, childId)).resolves.toBeTypeOf('function')
 
     expect(context.controlPlaneStore.runsOfSession(AUDIENCE, childId)).toEqual(funded)
   })

@@ -120,11 +120,10 @@ export async function startInProcessRun(
 
   // Before the child exists at all: a registered hook's asynchronous setup —
   // minting a run for the child, for instance — must complete before the
-  // child could possibly make its first request, and a hook that refuses
-  // must leave nothing published to roll back. `ctx.get` reads the global
+  // child could possibly make its first request. `ctx.get` reads the global
   // service store rather than requiring this shared driver function itself
   // to be a declared injection.
-  await parent.ctx.get('subagents')?.prepareDelegatedChild(parent, childId)
+  const rollbackPreparation = await parent.ctx.get('subagents')?.prepareDelegatedChild(parent, childId)
 
   let structured: StructuredAttachment | undefined
   const setup = (childCtx: Context): void => {
@@ -139,15 +138,24 @@ export async function startInProcessRun(
     attachDescriptorAppend(childCtx, request.descriptor)
   }
 
-  const handle = await parent.ctx.agents.create({
-    sessionId: childId,
-    meta: childSessionMeta(parent, childDepth, seed !== undefined),
-    ...seed !== undefined ? { seed } : {},
-    ...seed === undefined ? {} : { inheritedEventCount: activationBoundary },
-    agentOptions: resolveChildAgentOptions(parent, request.agentOptions, childDepth),
-    signal: request.signal,
-    setup,
-  })
+  // Only creation is guarded: publication is the boundary the preparation was
+  // made for, so a failure to reach it undoes that setup, and anything after
+  // it belongs to the published child's own lifecycle.
+  let handle: AgentHandle
+  try {
+    handle = await parent.ctx.agents.create({
+      sessionId: childId,
+      meta: childSessionMeta(parent, childDepth, seed !== undefined),
+      ...seed !== undefined ? { seed } : {},
+      ...seed === undefined ? {} : { inheritedEventCount: activationBoundary },
+      agentOptions: resolveChildAgentOptions(parent, request.agentOptions, childDepth),
+      signal: request.signal,
+      setup,
+    })
+  } catch (unpublished) {
+    await rollbackPreparation?.()
+    throw unpublished
+  }
   return drivePublishedRun(
     handle,
     request.signal,

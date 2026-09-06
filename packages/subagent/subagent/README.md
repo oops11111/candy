@@ -57,7 +57,7 @@ Requests that need a capability the chosen provider lacks fail loudly at start r
 <a id="preparing-a-delegated-child-before-it-exists"></a>
 ### Preparing a delegated child before it exists
 
-`SubagentRuntime.onBeforeDelegate(hook)` registers an asynchronous check awaited, in registration order, before a child agent is created — the child's future session id already exists at that point, so a hook can act on it before anything is published. A hook that throws or rejects aborts the delegation entirely; since no child exists yet, there is nothing to roll back:
+`SubagentRuntime.onBeforeDelegate(hook)` registers an asynchronous check awaited, in registration order, before a child agent is created — the child's future session id already exists at that point, so a hook can act on it before anything is published. A hook that throws or rejects aborts the delegation entirely, and no child is ever created:
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -74,6 +74,8 @@ const stop = ctx.subagents.onBeforeDelegate(async (parent, childId) => {
 ```
 
 One-shot children are prepared once. A continuable child is prepared once per residency epoch — its fresh creation, and again on every cold resume — because a dormant child released whatever a hook gave it when it settled; a hook that must not repeat work checks for its own prior effect rather than assuming one call per child.
+
+A hook whose setup outlives the call returns the function that undoes it. Publication is this seam's boundary, so setup made before it belongs to the creation transaction: an epoch that never publishes — a cancelled signal, a failed creation, a later hook that refuses — runs those rollbacks in reverse registration order, and a hook that returns nothing is understood to own nothing.
 
 This package carries no notion of what a hook does with the moment it is given — [`dsh-run-delegation`](../../control-plane/run-delegation/README.md) is the Candy-owned consumer that mints and opens a funded run for the child before it can make its first request.
 
