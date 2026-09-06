@@ -777,6 +777,34 @@ export class RunScheduler extends Service {
   }
 
   /**
+   * Close the one open run driving a session, for a caller that knows the
+   * session rather than the run.
+   *
+   * A delegated child is the case this exists for: whatever opened its run
+   * named it by session, and the settlement it is reacting to names the same
+   * session. Waiting for the lease instead would hold the parent's allowance
+   * and one of its concurrency slots for minutes after the child finished, so
+   * a parent that delegates in sequence would run out of slots it is no longer
+   * using.
+   *
+   * A session this runtime has no single open run for is not an error: there
+   * is nothing here to close, exactly as {@link tenantOf} answers nothing for
+   * the same session.
+   * @param sessionId - the session whose run should be settled.
+   * @returns the settlement, or `undefined` when nothing was closed — this
+   *   runtime has no single open run for that session, or a concurrent close
+   *   settled it between resolving the run and reaching the queue.
+   */
+  async closeSessionRun(sessionId: SessionId): Promise<RunSettlement | undefined> {
+    const resolved = this.findSessionRun(sessionId)
+    if (!resolved.ok) return undefined
+    const outcome = await this.close(resolved.run.record.runId)
+    /* v8 ignore next -- the run was open a moment ago; only a close that won the
+     * race to the queue leaves nothing here to settle, which is the same answer. */
+    return outcome.ok ? outcome.value : undefined
+  }
+
+  /**
    * Register a disposer to run once, when `runId` is settled.
    *
    * The producer is whatever holds a live resource this run started and the

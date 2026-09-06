@@ -114,11 +114,25 @@ function describeStartRejection(rejection: RunStartRejection): string {
 }
 
 /**
- * Register the child-run opener against `SubagentRuntime.onBeforeDelegate()`.
+ * Register the child-run opener against `SubagentRuntime.onBeforeDelegate()`,
+ * and the closer against the settlement that ends the epoch it opened.
  * @param ctx - context carrying `subagents` and `runScheduler`.
  * @param config - the fixed allowance a delegated child is opened with.
  */
 export function apply(ctx: Context, config: Config): void {
+  // Closing belongs after publication, where opening could not: the run this
+  // settles is the one this plugin opened, and holding it until the lease
+  // lapsed would keep the parent's allowance and one of its concurrency slots
+  // for minutes after the child stopped using them — a parent delegating in
+  // sequence would run out of slots no child still holds.
+  ctx.on('subagent/end', (info) => {
+    /* v8 ignore next 3 -- the settlement's own durable write is what fails here;
+     * the scheduler leaves the run open for its next sweep either way, so this
+     * reports rather than retries, as that sweep's own failure already does. */
+    void ctx.runScheduler.closeSessionRun(info.id).catch((error: unknown) => {
+      ctx.logger.warn(`run-delegation: closing the run of settled child '${info.id}' failed: ${String(error)}`)
+    })
+  }, { global: true })
   ctx.effect(() => ctx.subagents.onBeforeDelegate(async (parent: Agent, childId: SessionId) => {
     // A continuable child is prepared on every residency epoch, and one that
     // resumes before its previous run's lease lapses still has that run. A

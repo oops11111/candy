@@ -1476,6 +1476,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the settlement, or why it could not be closed.',
       },
       {
+        signature: 'async closeSessionRun(sessionId: SessionId): Promise<RunSettlement | undefined>',
+        description: 'Close the one open run driving a session, for a caller that knows the session rather than the run.\n\nA delegated child is the case this exists for: whatever opened its run named it by session, and the settlement it is reacting to names the same session. Waiting for the lease instead would hold the parent\'s allowance and one of its concurrency slots for minutes after the child finished, so a parent that delegates in sequence would run out of slots it is no longer using.\n\nA session this runtime has no single open run for is not an error: there is nothing here to close, exactly as tenantOf answers nothing for the same session.',
+        parameters: [{ name: 'sessionId', description: 'the session whose run should be settled.' }],
+        returns: 'the settlement, or `undefined` when nothing was closed — this runtime has no single open run for that session, or a concurrent close settled it between resolving the run and reaching the queue.',
+      },
+      {
         signature: 'registerDisposer(runId: RunId, dispose: () => void | Promise<void>): () => void',
         description: 'Register a disposer to run once, when `runId` is settled.\n\nThe producer is whatever holds a live resource this run started and the ledger cannot reach: a spawned process, bound to the run at the moment it is created. Settlement ends the run\'s accounting whichever way it comes about — a normal finish, an expired lease, an account no longer able to authorize it, or an ancestor\'s tree closing around it — and this is what lets that same event reach the resource.\n\nAt most one disposer is held per run: a later registration replaces an earlier one rather than accumulating, which is correct for a run that makes several sequential calls, since only the live one still needs releasing. A caller whose resource already ended on its own unregisters with the returned function, so a stale disposer is never invoked for a process that already exited.',
         parameters: [{ name: 'runId', description: 'the run whose settlement should trigger disposal.' }, { name: 'dispose', description: 'releases the resource; a rejection is logged and never allowed to fail the settlement that triggered it.' }],

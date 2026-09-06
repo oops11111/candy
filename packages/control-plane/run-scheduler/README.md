@@ -170,6 +170,12 @@ The run's account is read again on every call, not trusted from admission. A run
 
 The sweep then ends the run itself. Refusing its calls alone left it open — holding its funder's allowance, with what it had already spent unbilled — until its lease ran out minutes later. The sweep is where this runtime ends runs it has decided should end, so a run whose account can no longer authorize it ends there, on the same judgement `meterRequest` makes. A run whose record the store cannot answer for is left to its lease instead: ending runs on a read that returned nothing is the larger mistake.
 
+### Closing a run by the session it drives
+
+`closeSessionRun(sessionId)` settles the one open run driving a session, for a caller that knows the session rather than the run — a delegated child, whose run whatever opened it named by session, and whose settlement names the same session. A session this runtime has no single open run for answers `undefined` rather than failing, exactly as `tenantOf` answers nothing for it.
+
+Waiting for the lease instead of closing would hold the funder's allowance and one of its concurrency slots for minutes after the work finished, so a parent delegating in sequence would run out of slots nothing was still using.
+
 ### Why an elapsed lease does not end a working run
 
 A lease answers one question: did the runtime holding this run go away. A runtime that still has the run's session is answering it directly, so the sweep renews that run's lease — in the ledger and on the durable record — instead of releasing its hold. Without that, every run ended `leaseMs` after it opened however hard its agent was working, and the session was then refused for the rest of its life.

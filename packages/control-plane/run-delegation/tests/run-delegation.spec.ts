@@ -17,7 +17,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import {
   ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId,
 } from '@deepseek-ai/dsh-control-plane'
-import ControlPlaneStore from '@deepseek-ai/dsh-control-plane-store'
+import ControlPlaneStore, { type DurableRunRecord } from '@deepseek-ai/dsh-control-plane-store'
 import { CredentialKeyVersion, sealCredential, type CredentialKeyring } from '@deepseek-ai/dsh-credential-vault'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
@@ -145,15 +145,46 @@ describe('opening a run for a delegated child', () => {
     await openRootRun(context, session, parentRunId, TENANT_GRANT, now)
     const parent = await parentAgent(context, session)
 
+    // Registered after the plugin's own hook, so it observes the run the
+    // plugin just opened — the child's run exists only while the child does.
+    let funded: readonly DurableRunRecord[] = []
+    const stop = context.subagents.onBeforeDelegate((_delegating, childId) => {
+      funded = context.controlPlaneStore.runsOfSession(AUDIENCE, childId)
+    })
+
     const run = await delegate(context, { prompt: [{ type: 'text', text: 'do X' }], parent })
     const result = await run.result
     await run.dispose()
 
     expect(result.stopReason).toBe('completed')
-    const childRuns = context.controlPlaneStore.runsOfSession(AUDIENCE, run.id)
-    expect(childRuns).toHaveLength(1)
-    expect(childRuns[0]?.record.parentRunId).toBe(parentRunId)
-    expect(childRuns[0]?.record.reserved).toEqual(CHILD_BUDGET)
+    expect(funded).toHaveLength(1)
+    expect(funded[0]?.record.parentRunId).toBe(parentRunId)
+    expect(funded[0]?.record.reserved).toEqual(CHILD_BUDGET)
+    // Settled: the child holds nothing once it is done.
+    expect(context.controlPlaneStore.runsOfSession(AUDIENCE, run.id)).toEqual([])
+    stop()
+  })
+
+  it('returns the parent\'s concurrency slot when a delegated child settles', async () => {
+    // A finished child holds nothing: its run closes at settlement rather than
+    // waiting out a lease, so the next delegation has the slot back.
+    root = await mkdtemp(join(tmpdir(), 'dsh-run-delegation-'))
+    const context = await boot(root, { childBudget: CHILD_BUDGET }, [textResponse('one'), textResponse('two')])
+    const now = Date.now()
+    await provision(context, now)
+    const session = SessionId('sess-sequential')
+    // One child slot: a second delegation needs the first child's slot back.
+    const oneSlot: RunBudget = { ...TENANT_GRANT, children: 1 }
+    await openRootRun(context, session, RunId('run-parent-sequential'), oneSlot, now)
+    const parent = await parentAgent(context, session)
+
+    const first = await delegate(context, { prompt: [{ type: 'text', text: 'do X' }], parent })
+    expect((await first.result).stopReason).toBe('completed')
+    await first.dispose()
+    const second = await delegate(context, { prompt: [{ type: 'text', text: 'do Y' }], parent })
+
+    expect((await second.result).stopReason).toBe('completed')
+    await second.dispose()
   })
 
   it('leaves a child that already has a run with the run it has', async () => {
@@ -167,16 +198,16 @@ describe('opening a run for a delegated child', () => {
     const session = SessionId('sess-second-epoch')
     await openRootRun(context, session, RunId('run-parent-epochs'), TENANT_GRANT, now)
     const parent = await parentAgent(context, session)
-    const run = await delegate(context, { prompt: [{ type: 'text', text: 'do X' }], parent })
-    await run.result
-    await run.dispose()
-    const funded = context.controlPlaneStore.runsOfSession(AUDIENCE, run.id)
+    const childId = SessionId('sess-child-epochs')
+    await context.subagents.prepareDelegatedChild(parent, childId)
+    const funded = context.controlPlaneStore.runsOfSession(AUDIENCE, childId)
     expect(funded).toHaveLength(1)
 
-    // The child's next epoch, while its first run is still open.
-    await expect(context.subagents.prepareDelegatedChild(parent, run.id)).resolves.toBeUndefined()
+    // A second epoch reached before the first one's run is closed — a resume
+    // racing the settlement that releases it.
+    await expect(context.subagents.prepareDelegatedChild(parent, childId)).resolves.toBeUndefined()
 
-    expect(context.controlPlaneStore.runsOfSession(AUDIENCE, run.id)).toEqual(funded)
+    expect(context.controlPlaneStore.runsOfSession(AUDIENCE, childId)).toEqual(funded)
   })
 
   it('refuses the delegation when the parent cannot fund the exact child request, with no orphaned child', async () => {

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-06-a-driver-with-no-notion-of-a-run.md
-2026-09-06-a-driver-with-no-notion-of-a-run.md: 64f99124251df4ba4a3807ec6dda47ced93f0e80
-2026-09-06-a-driver-with-no-notion-of-a-run.zh.md: 347d79d18c834004d6d0003e3cbcd1f90941ffa5
+2026-09-06-a-driver-with-no-notion-of-a-run.md: a339578478049ce86cd51740b6650dd9253b3566
+2026-09-06-a-driver-with-no-notion-of-a-run.zh.md: 312062adf82df65f73f013b2214904cb6513d070
