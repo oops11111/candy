@@ -118,6 +118,8 @@ The domain keeps every record it holds in memory, so an unbounded log would grow
 
 That makes this a place to look at recent activity rather than somewhere to keep evidence. A deployment that needs an archive ships the records somewhere that is one, and this is where it reads them from.
 
+A bounded trail rewritten whole is also erasable by whoever can make an event repeat. Eight refused calls against a retention of four left nothing but the refusals, and the credential and start records an operator would investigate them with were gone. A record identical to the newest one in every field but its instant therefore folds into it, as a `count` and a later `at`, rather than pushing the history out one entry at a time. It adds nothing the trail could distinguish, and what it would have displaced is exactly what makes the repetition worth reading about.
+
 ### Why some records name a runtime instead of a tenant
 
 Every stage past the assertion works from verified claims, so its record names the tenant, account and run it refused. An assertion that fails to verify names none this runtime may believe — and it is also the record an operator most wants — so it is filed against the runtime that refused it. The `t_` and `r_` prefixes on a subject key keep the two spaces from colliding.
@@ -163,11 +165,11 @@ These are current package constraints, not a task backlog.
 - **A run's grants are its tenant and account** — the record carries what a child can be checked against. A workspace grant is not among them: narrowing one is legitimate and nothing here models containment.
 - **`runsOfSession` scans** — the domain keeps every run record in memory and this filters them, which is right at a runtime's live-run count and would not be at a fleet's.
 - **Read-modify-writes are serialized store-wide** — a slow medium therefore orders a charge for one tenant behind an audit append for another. The alternative is per-record chains, which nothing yet needs.
-- **A trail is bounded and rewritten whole** — one subject's records live in one document, so each append rewrites that document, and records past the cap are dropped rather than archived. It suits a window of recent activity at a deployment's scale and not an audit archive at a directory's.
+- **A trail is bounded and rewritten whole** — one subject's records live in one document, so each append rewrites that document, and records past the cap are dropped rather than archived. Repetition folds into a count rather than displacing history, but a subject whose events genuinely differ still loses its oldest. It suits a window of recent activity at a deployment's scale and not an audit archive at a directory's.
 - **The trail records what the control plane observes** — scheduling attempts and vault operations. Routing, delegation, tool authorization and terminal state are not in it, because nothing in this repository produces those records yet.
 - **No period** — an allowance runs from its grant until an operator changes it, and `setTenantGrant` deliberately keeps what was consumed. Nothing here starts a new billing period, because nothing in the repository decides when one begins.
 - **`listByUser` scans** — the domain keeps every record in memory and this filters them, which is right at one deployment's account count and would not be at a directory's.
-- **No replay store** — the nonce port is [`dsh-run-replay`](../run-replay/README.md), which is in-process by design. A deployment running more than one runtime process needs a durable one, and this domain would be a reasonable home for it.
+- **No replay store, and this domain cannot host one** — the nonce port is [`dsh-run-replay`](../run-replay/README.md), which is in-process by design. A durable single-use nonce needs a write that fails when the key already exists, and the storage seam has none: `KvTable.get` answers from the snapshot loaded at open, `update` is atomic only within one process, and `putRecord` is an unconditional upsert. A deployment running more than one runtime process needs a conditional-write primitive on `dsh-storage` first.
 
 <a id="dev-note"></a>
 ## Dev Note

@@ -152,6 +152,11 @@ const storedAuditRecord = z.object({
   action: z.string(),
   /** `ok`, or the reason the step refused. */
   outcome: z.string(),
+  /**
+   * How many times this record happened, when the same thing happened more
+   * than once in a row. Absent means once; `at` is the most recent.
+   */
+  count: z.number().optional(),
 })
 
 /** One subject's most recent records, oldest first. */

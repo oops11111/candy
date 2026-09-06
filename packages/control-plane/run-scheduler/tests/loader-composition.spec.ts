@@ -975,6 +975,30 @@ describe('a booted Candy scheduler', () => {
     })).rejects.toThrow(/CANDY_CREDENTIAL_KEY_MISSING is not set/)
   })
 
+  it('keeps a tenant\'s history when its run is refused over and over', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root, { auditRetention: 4 })
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    await revokeProviderAccount(ctx.controlPlaneStore, ALICE, ACCOUNT, now + 1)
+    for (let call = 0; call < 8; call += 1) await collectChunks(ctx.llm.stream(request(SESSION)))
+
+    // Without folding, eight refusals against a retention of four leave only
+    // refusals — the trail an operator investigates them with is the trail the
+    // repetition erases.
+    const trail = ctx.runScheduler.auditsOfTenant(ALICE)
+    expect(trail.map(record => `${record.event}/${record.outcome}`)).toEqual([
+      'credential/ok',
+      'started/ok',
+      'refused/CREDENTIAL_REVOKED',
+    ])
+    expect(trail.at(-1)).toMatchObject({ count: 8 })
+  })
+
   it('keeps metering a call whose run still holds a usable account', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)

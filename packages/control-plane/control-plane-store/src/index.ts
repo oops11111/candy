@@ -44,6 +44,48 @@ import {
 export { controlPlaneDomainSpec, runtimeSubject, tenantSubject } from './spec.ts'
 export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredRun, StoredTenantAllowance } from './spec.ts'
 
+/**
+ * Add one record to a trail, folding it into the last when it says the same
+ * thing again.
+ *
+ * A bounded trail is rewritten whole, so an event that repeats pushes the
+ * subject's earlier history out of the window one record at a time. That makes
+ * the trail erasable by whoever causes the repetition: eight refused calls
+ * against a retention of four left nothing but the refusals, and the
+ * credential and start records an operator would investigate them with were
+ * gone. A record identical to the newest one in every field but its instant
+ * adds nothing the trail could distinguish, so it becomes a count on that one
+ * and the history behind it stays.
+ *
+ * @param trail - the subject's records, oldest first.
+ * @param record - the record to add.
+ * @returns the trail with the record added, or folded into its last entry.
+ */
+function append(trail: readonly RunAuditRecord[], record: RunAuditRecord): RunAuditRecord[] {
+  const last = trail.at(-1)
+  if (last === undefined || !sameEvent(last, record)) return [...trail, record]
+  return [...trail.slice(0, -1), { ...last, at: record.at, count: (last.count ?? 1) + 1 }]
+}
+
+/**
+ * Whether two records describe the same thing happening again.
+ *
+ * The instant differs by definition and the count is what folding produces, so
+ * neither takes part. Everything else identifies what happened and to whom.
+ *
+ * @param last - the newest record in the trail.
+ * @param record - the record being added.
+ * @returns true when the two differ only in when they happened.
+ */
+function sameEvent(last: RunAuditRecord, record: RunAuditRecord): boolean {
+  return last.event === record.event
+    && last.action === record.action
+    && last.outcome === record.outcome
+    && last.runId === record.runId
+    && last.userId === record.userId
+    && last.accountId === record.accountId
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     controlPlaneStore: ControlPlaneStore
@@ -400,7 +442,9 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
     }
     return this.mutate(async () => {
       if (records.length === 0) return this.auditsOf(subject)
-      const kept = [...this.audits.get(subject)?.records ?? [], ...records].slice(-retain)
+      let trail = [...this.audits.get(subject)?.records ?? []]
+      for (const record of records) trail = append(trail, record)
+      const kept = trail.slice(-retain)
       await this.audits.put(subject, { records: kept })
       return kept
     })

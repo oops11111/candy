@@ -217,7 +217,9 @@ describe('a booted control-plane store', () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
     const ctx = await boot(root)
     const subject = tenantSubject(ALICE)
-    const record = (at: number): RunAuditRecord => ({ at, event: 'started', action: 'start', outcome: 'ok' })
+    // Distinct runs: identical records fold into one instead of accumulating.
+    const record = (at: number): RunAuditRecord =>
+      ({ at, runId: RunId(`run-${String(at)}`), event: 'started', action: 'start', outcome: 'ok' })
 
     await ctx.controlPlaneStore.recordAudit(subject, [record(1), record(2)], 3)
     const kept = await ctx.controlPlaneStore.recordAudit(subject, [record(3), record(4)], 3)
@@ -262,11 +264,49 @@ describe('a booted control-plane store', () => {
 
     await Promise.all(Array.from({ length: 32 }, (_unused, index) => ctx.controlPlaneStore.recordAudit(
       subject,
-      [{ at: index, event: 'started', action: 'start', outcome: 'ok' }],
+      [{ at: index, runId: RunId(`run-${String(index)}`), event: 'started', action: 'start', outcome: 'ok' }],
       1_000,
     )))
 
     expect(ctx.controlPlaneStore.auditsOf(subject)).toHaveLength(32)
+  })
+
+  it('folds a record that says the same thing again into a count', async () => {
+    // A bounded trail is rewritten whole, so a repeating event pushes the
+    // subject's earlier history out one record at a time — which makes the
+    // trail erasable by whoever causes the repetition.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const subject = tenantSubject(ALICE)
+    const opened: RunAuditRecord = { at: 1, userId: ALICE, accountId: ACCOUNT, event: 'credential', action: 'open', outcome: 'ok' }
+    const refused = (at: number): RunAuditRecord =>
+      ({ at, runId: RunId('run-1'), event: 'refused', action: 'meter', outcome: 'CREDENTIAL_REVOKED' })
+
+    await ctx.controlPlaneStore.recordAudit(subject, [opened], 2)
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await ctx.controlPlaneStore.recordAudit(subject, [refused(attempt + 2)], 2)
+    }
+
+    expect(ctx.controlPlaneStore.auditsOf(subject)).toEqual([
+      opened,
+      { ...refused(6), count: 5 },
+    ])
+  })
+
+  it('keeps two records apart when any field but the instant differs', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const subject = tenantSubject(ALICE)
+    const base: RunAuditRecord = { at: 1, runId: RunId('run-1'), event: 'refused', action: 'meter', outcome: 'RUN_NOT_OPEN' }
+
+    await ctx.controlPlaneStore.recordAudit(subject, [
+      base,
+      { ...base, at: 2, outcome: 'CREDENTIAL_REVOKED' },
+      { ...base, at: 3, runId: RunId('run-2'), outcome: 'CREDENTIAL_REVOKED' },
+      { ...base, at: 4, runId: RunId('run-2'), outcome: 'CREDENTIAL_REVOKED', userId: ALICE },
+    ], 10)
+
+    expect(ctx.controlPlaneStore.auditsOf(subject)).toHaveLength(4)
   })
 
   it('charges every settlement when they arrive at once', async () => {
