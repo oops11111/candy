@@ -178,7 +178,11 @@ Each funder — the tenant's allowance for a root, the parent's record for a chi
 
 A record this runtime wrote is a run it was driving, and the process that drove it is gone. `Service.init` finishes every interrupted settlement, restores what is left into the ledger, and closes each restored root — so a tenant is charged what its runs actually consumed. Leaving them open instead would hold the allowance until each lease expired, and resuming them would mean resuming providers that no longer exist.
 
-Recovery reads its own runtime's records only, by the audience stamp on each one. Records that do not form complete trees fail the boot rather than being dropped: a hold against a parent that does not exist is one nothing can settle.
+Recovery reads its own runtime's records only, by the audience stamp on each one.
+
+A record naming a parent the store does not hold is damage — a partial write, or a delete that took the parent and left the child. It is adopted as a root: its parent is cleared in the store, and it is settled like any other root. Refusing to boot on it instead took every tenant on the runtime down over one damaged record, a blast radius far larger than the damage. Adopting loses no accounting, because recovery settles every root it restores anyway; the run was going to be settled a moment later either way, and the only open question was who is charged for what it spent. The record names its tenant, and that is where the parent's own settlement would have carried the charge.
+
+The parent is cleared in the store and not only in the restored ledger, because the settlement that follows reads the record back: one still naming the missing parent would charge that parent, which is to say nobody.
 
 ### Why the session is the join
 

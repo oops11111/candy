@@ -608,6 +608,41 @@ export class RunScheduler extends Service {
   }
 
   /**
+   * Recover one run, adopting it as a root when the store does not hold its
+   * parent.
+   *
+   * A record whose parent is missing is damage: a partial write, or a delete
+   * that took the parent and left the child. The ledger refuses to restore
+   * one, which failed the boot — so a single damaged record took every tenant
+   * on this runtime down, a blast radius far larger than the damage.
+   *
+   * Adopting loses no accounting, because recovery settles every root it
+   * restores. The run was going to be settled a moment later either way; the
+   * only question is who is charged for what it spent, and the record names
+   * its tenant. A charge that would have reached its parent reaches that
+   * tenant instead, which is where the parent's own settlement would have
+   * carried it.
+   *
+   * @param run - one durable run record.
+   * @param present - the ids this recovery holds records for.
+   * @returns the run, with its parent cleared when that parent is gone.
+   */
+  private async adopt(run: DurableRunRecord, present: ReadonlySet<RunId>): Promise<DurableRunRecord> {
+    const parent = run.record.parentRunId
+    if (parent === undefined || present.has(parent)) return run
+    this.ctx.logger.warn(
+      `run-scheduler: run '${run.record.runId}' names parent '${parent}', which the store does not hold; `
+      + `settling it against tenant '${run.userId}' instead`,
+    )
+    const adopted: DurableRunRecord = { ...run, record: { ...run.record, parentRunId: undefined } }
+    // Written back, not only restored: the settlement that follows reads the
+    // record from the store, and one still naming the missing parent would
+    // charge that parent — which is to say nobody — instead of the tenant.
+    await this.ctx.controlPlaneStore.openRun(adopted)
+    return adopted
+  }
+
+  /**
    * Charge one settled run to whoever funded it: its parent run, or its tenant
    * when it has none.
    *
@@ -647,7 +682,10 @@ export class RunScheduler extends Service {
         gone.add(id)
       }
     }
-    const remaining = records.filter(run => !gone.has(run.record.runId))
+    const held = records.filter(run => !gone.has(run.record.runId))
+    const present = new Set(held.map(run => run.record.runId))
+    const remaining: DurableRunRecord[] = []
+    for (const run of held) remaining.push(await this.adopt(run, present))
     this.ledger.restore(remaining.map(run => run.record))
     for (const run of remaining) {
       if (run.record.parentRunId === undefined) await this.settle(run.record.runId)

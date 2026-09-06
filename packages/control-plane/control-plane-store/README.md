@@ -160,7 +160,7 @@ An account is read by id, and the tenant its record names must be the one the ve
 These are current package constraints, not a task backlog.
 
 - **A restart ends every run it recovers** — a record this runtime wrote is a run it was driving, and the process that drove it is gone, so `dsh-run-scheduler` settles what it finds rather than resuming it. Nothing here can tell a crashed run from one whose provider is somehow still alive.
-- **Recovery is all-or-nothing on a corrupt store** — records that do not form complete trees fail the boot rather than being dropped, because a hold against a parent that does not exist is one nothing can settle. There is no repair path.
+- **Recovery repairs one damage shape, not every one** — a record naming a parent the store does not hold is settled against its own tenant and cleared, because recovery settles every root it restores anyway. Damage this does not name — a record that fails its schema, a tenant allowance that is gone — still fails the boot, and there is no repair path for those.
 - **One runtime per audience** — `runsOf` partitions by the runtime stamp, so two processes sharing an audience recover each other's records. An assertion is audience-bound already, so this is a deployment rule rather than a check made here.
 - **A run's grants are its tenant and account** — the record carries what a child can be checked against. A workspace grant is not among them: narrowing one is legitimate and nothing here models containment.
 - **`runsOfSession` scans** — the domain keeps every run record in memory and this filters them, which is right at a runtime's live-run count and would not be at a fleet's.

@@ -1131,6 +1131,42 @@ describe('a booted Candy scheduler', () => {
     expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
   })
 
+  it('recovers a run whose parent the store lost, instead of failing every tenant', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    // A child whose parent record is then lost, as a partial write or a delete
+    // that took the parent and left the child would leave it.
+    await first.controlPlaneStore.openRun({
+      record: {
+        runId: RunId('run-orphan'), parentRunId: RunId('run-gone'),
+        reserved: { tokens: 100, wallMs: 1_000, costMicroUsd: 50, children: 0 },
+        spent: { tokens: 40, wallMs: 5, costMicroUsd: 20 },
+        leaseExpiresAt: now + 300_000,
+      },
+      userId: ALICE, sessionId: brandString<SessionId>('session-orphan'), accountId: ACCOUNT,
+      runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+    })
+    await first.fiber.dispose()
+
+    const second = await boot(root)
+
+    // Recovery settles every root it restores, so the orphan was going to be
+    // settled either way; the only question was who is charged, and the record
+    // names its tenant. The damaged record is gone and its hold released.
+    expect(await second.controlPlaneStore.runsOf(AUDIENCE)).toEqual([])
+    const allowance = await second.controlPlaneStore.tenantAllowance(ALICE)
+    expect(allowance?.consumed).toMatchObject({ tokens: 40, costMicroUsd: 20 })
+    // The tenant can start again, which a failed boot would never have allowed.
+    const started = await second.runScheduler.start(
+      mintExecutionAssertion(claims(now, { runId: RunId('run-after'), nonce: 'n-after' }), Buffer.from(SECRET, 'utf8')),
+      undefined,
+      now,
+    )
+    expect(started.started).toBe(true)
+  })
+
   it('keeps metering a call whose run still holds a usable account', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)
@@ -1679,29 +1715,6 @@ describe('a booted Candy scheduler', () => {
     // forgotten with it rather than charged again.
     expect(await second.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: settled })
     expect(await second.controlPlaneStore.runsOf(AUDIENCE)).toEqual([])
-  })
-
-  it('refuses to boot on records that do not form complete trees', async () => {
-    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
-    const first = await boot(root)
-    const now = Date.now()
-    await provision(first, now)
-    await first.controlPlaneStore.openRun({
-      record: {
-        runId: RunId('run-orphan'), parentRunId: RunId('run-gone'),
-        reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
-      },
-      userId: ALICE,
-      sessionId: SESSION,
-      accountId: ACCOUNT,
-      runtime: AUDIENCE,
-      settledSpent: undefined,
-      absorbed: undefined,
-    })
-    await first.fiber.dispose()
-    context = undefined
-
-    await expect(boot(root)).rejects.toThrow(/names parent 'run-gone', which no record supplies/)
   })
 
   it('refuses to boot without the assertion secret', async () => {
