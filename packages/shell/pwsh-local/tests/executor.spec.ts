@@ -156,11 +156,11 @@ describe('spawn construction (pure, every platform)', () => {
   class CapturingSubprocessRuntime extends SubprocessRuntime {
     specs: SubprocessSpawnSpec[] = []
     override async resolveExecutable(command: string): Promise<string> { return command }
-    override spawnTerminal(): Promise<never> { throw new Error('pwsh spawns pipes, never terminals') }
+    protected override spawnTerminalSession(): Promise<never> { throw new Error('pwsh spawns pipes, never terminals') }
     private readonly reader: SubprocessOutputReader = {
       readFrom: () => ({ text: '', lossy: false, nextOffset: 0 }),
     }
-    override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    protected override spawnProcess(spec: SubprocessSpawnSpec): SubprocessHandle {
       this.specs.push(spec)
       return {
         pid: -1,

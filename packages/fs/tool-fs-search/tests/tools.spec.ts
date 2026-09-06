@@ -149,14 +149,14 @@ class FakeHandle implements SubprocessHandle {
 class FakeSubprocess extends SubprocessRuntime {
   spawns: SubprocessSpawnSpec[] = []
   override async resolveExecutable(command: string): Promise<string> { return command }
-  override spawnTerminal(): Promise<never> { throw new Error('search tools spawn pipes, never terminals') }
+  protected override spawnTerminalSession(): Promise<never> { throw new Error('search tools spawn pipes, never terminals') }
   handles: FakeHandle[] = []
   /** Arms the per-spawn script; a `{ reject }` return scripts a spawn-level failure. */
   handler: (spec: SubprocessSpawnSpec) => ScriptedRun | { reject: Error } = () => runResult('')
   /** When true, spawned handles drop their collect readers (the defensive branch). */
   dropReaders = false
 
-  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+  protected override spawnProcess(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.spawns.push(spec)
     const handle = new FakeHandle(spec, () => this.handler(spec), this.dropReaders)
     this.handles.push(handle)

@@ -72,6 +72,16 @@ For interactive programs, `spawnTerminal` allocates a real PTY: write text, read
 
 Children never inherit the harness's ambient secrets: credential-shaped names and ambient `DSH_*` facts are scrubbed, and the caller's explicit `env` merges after that scrub. A deliberately forwarded credential or a current `DSH_*` deployment fact still reaches the child; an explicit `undefined` tombstone removes an ordinary ambient entry.
 
+### Every child announces itself
+
+`spawn` and `spawnTerminal` emit `subprocess/launched` once per child, from this seam rather than from each implementation, so a deployment can answer what it ran without every spawner reporting for itself. Implementations override `spawnProcess` and `spawnTerminalSession`; the announcing halves are this seam's.
+
+The record names the executable, the working directory, the pid, and whether the child owns a terminal. It does not name the arguments or the environment. A spawner's argv carries whatever its caller put there — a model prompt, a credential passed as a flag — and the environment is where credentials live; a record of a launch should not become the way either escapes. A consumer that needs more knows more than this seam does.
+
+A pid of `-1` is a spawn that failed. A handle is returned either way, so the record reports a launch that did not happen rather than being absent.
+
+Attribution is not here. Which tenant, which run, which agent — this seam has no notion of any of them, and a consumer that has one adds it.
+
 ### What can go wrong
 
 An executable that cannot be resolved fails loud with a stable error. A spawn that never starts rejects `done`; there is no buffered output for a process that never ran. A daemonized child that leaves its tree or session can outlive termination — provider READMEs document their observability limits. When a transport owns its own spawn (the SDK client, MCP), route around the service and import `scrubbedParentEnv` directly so environment policy stays single-sourced.

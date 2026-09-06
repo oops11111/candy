@@ -9,7 +9,7 @@ import {
   spawnSubprocess,
   taskkillProcessTree,
 } from '../src/spawn.ts'
-import type { SubprocessHandle, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessLaunched, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 
 /**
@@ -1108,5 +1108,47 @@ describe('environment and spill-file hardening', () => {
     setTimeout(() => { controller.abort() }, 50)
     const result = await running.done
     expect(result.signal).toBe(process.platform === 'win32' ? null : 'SIGTERM')
+  })
+})
+
+describe('launch records', () => {
+  it('announces every child the seam starts, naming the executable and not its arguments', async () => {
+    const { Context } = await import('@deepseek-ai/cordis')
+    const { default: LocalSubprocessRuntime } = await import('@deepseek-ai/dsh-subprocess-local')
+    const ctx = new Context()
+    await ctx.plugin(LocalSubprocessRuntime)
+    const launches: SubprocessLaunched[] = []
+    ctx.on('subprocess/launched', (launch) => { launches.push(launch) })
+
+    // A secret passed as an argument: the record must not carry it.
+    const running = ctx.subprocess.spawn(spec("echo 'sk-ant-not-in-the-record'"))
+    await running.done
+
+    expect(launches).toHaveLength(1)
+    expect(launches[0]).toMatchObject({ executable: 'bash', kind: 'process' })
+    expect(launches[0]?.pid).toBeGreaterThan(0)
+    expect(JSON.stringify(launches[0])).not.toContain('sk-ant-not-in-the-record')
+  })
+
+  it('announces a spawn that failed, with the pid that says so', async () => {
+    const { Context } = await import('@deepseek-ai/cordis')
+    const { default: LocalSubprocessRuntime } = await import('@deepseek-ai/dsh-subprocess-local')
+    const ctx = new Context()
+    await ctx.plugin(LocalSubprocessRuntime)
+    const launches: SubprocessLaunched[] = []
+    ctx.on('subprocess/launched', (launch) => { launches.push(launch) })
+
+    const running = ctx.subprocess.spawn({
+      argv: ['/nonexistent/executable'],
+      cwd: process.cwd(),
+      stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'inherit' },
+      graceMs: 1_000,
+    })
+    await running.done.catch(() => undefined)
+
+    // A handle is returned either way, so the record is the seam reporting a
+    // launch that did not happen rather than the absence of one.
+    expect(launches).toHaveLength(1)
+    expect(launches[0]).toMatchObject({ executable: '/nonexistent/executable' })
   })
 })

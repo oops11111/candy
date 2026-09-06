@@ -78,9 +78,9 @@ function terminalHandle(): SubprocessTerminalHandle {
 }
 
 class StubSubprocessRuntime extends SubprocessRuntime {
-  async resolveExecutable(command: string): Promise<string> { return command }
-  spawn(_spec: SubprocessSpawnSpec): SubprocessHandle { throw new Error('unused') }
-  async spawnTerminal(_spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+  override async resolveExecutable(command: string): Promise<string> { return command }
+  protected override spawnProcess(_spec: SubprocessSpawnSpec): SubprocessHandle { throw new Error('unused') }
+  protected override async spawnTerminalSession(_spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
     return terminalHandle()
   }
 }

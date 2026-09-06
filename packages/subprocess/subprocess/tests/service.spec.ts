@@ -20,7 +20,7 @@ class StubSubprocessRuntime extends SubprocessRuntime {
     return `/bin/${command}`
   }
 
-  spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+  protected override spawnProcess(spec: SubprocessSpawnSpec): SubprocessHandle {
     const read: SubprocessOutputRead = { text: '', nextOffset: 0, lossy: false }
     const collected = spec.stdio.stdout !== 'pipe' && spec.stdio.stdout !== 'inherit'
       ? { stdout: { readFrom: () => read } }
@@ -37,7 +37,7 @@ class StubSubprocessRuntime extends SubprocessRuntime {
     }
   }
 
-  async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+  protected override async spawnTerminalSession(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
     return {
       pid: spec.argv.length,
       output: new PassThrough(),

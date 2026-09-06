@@ -37,11 +37,11 @@ class RecordedSubprocess extends SubprocessRuntime {
 
   override resolveExecutable(command: string): Promise<string> { return Promise.resolve(command) }
 
-  override spawnTerminal(): Promise<never> {
+  protected override spawnTerminalSession(): Promise<never> {
     throw new Error('llm-claude-cli spawns pipes, never terminals')
   }
 
-  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+  protected override spawnProcess(spec: SubprocessSpawnSpec): SubprocessHandle {
     RecordedSubprocess.spawns.push(spec)
     return {
       pid: 1234,

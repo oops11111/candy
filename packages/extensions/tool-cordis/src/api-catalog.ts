@@ -2430,13 +2430,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a canonical executable path.',
       },
       {
-        signature: 'abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle',
+        signature: 'spawn(spec: SubprocessSpawnSpec): SubprocessHandle',
         description: 'Start one managed child process from a fully-specified spec; this seam applies no defaults.',
         parameters: [{ name: 'spec', description: 'argv, directory, stdio dispositions, grace, cancellation, and environment.' }],
         returns: 'the live process handle (streams/readers, signalling, outcome promise).',
       },
       {
-        signature: 'abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>',
+        signature: 'async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>',
         description: 'Allocate a real terminal and start one owned process session. This is the only non-pipe process primitive: implementations own terminal byte I/O, foreground groups, signals, and complete session-tree cleanup.',
         parameters: [{ name: 'spec', description: 'fully specified argv, cwd, environment, dimensions, grace, and allocation cancellation.' }],
         returns: 'the live terminal handle after allocation succeeds.',
@@ -3401,6 +3401,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'A provider established a published child.',
     description: 'A provider established a published child. For in-process providers, `ctx.agents.get(info.id)` resolves during this notification. Scope-filtered dispatch keys the carrier by the delegating parent, so a parent-scoped listener observes only its own delegations. Paired with `subagent/end`.',
     parameters: [{ name: 'info', description: 'the provider and published child identity.' }],
+  },
+  {
+    name: 'subprocess/launched',
+    mode: 'emit',
+    signature: '\'subprocess/launched\'(launch: SubprocessLaunched): void',
+    summary: 'One managed child process was started, emitted once per launch by the seam every spawner routes through, after the handle exists and its pid is known.',
+    description: 'One managed child process was started, emitted once per launch by the seam every spawner routes through, after the handle exists and its pid is known.\n\nThe payload names the executable and where it ran, never the arguments or the environment. Attribution — which tenant, which run — belongs to a consumer that has it; this seam has no notion of either.',
+    parameters: [{ name: 'launch', description: 'executable, working directory, pid (`-1` when the spawn failed), and whether the child owns a terminal.' }],
   },
   {
     name: 'system-prompt/assemble',
@@ -5801,6 +5809,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubprocessHandle',
     declaration: 'export interface SubprocessHandle {\n    readonly pid: number;\n    readonly stdin: Writable | undefined;\n    readonly stdout: Readable | undefined;\n    readonly stderr: Readable | undefined;\n    readonly collected: SubprocessCollectedOutputs;\n    readonly done: Promise<SubprocessOutcome>;\n    terminate(): void;\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\n}',
+  },
+  {
+    name: 'SubprocessLaunched',
+    declaration: 'export interface SubprocessLaunched {\n    readonly executable: string;\n    readonly cwd: string;\n    readonly pid: number;\n    readonly kind: SubprocessLaunchKind;\n}',
+  },
+  {
+    name: 'SubprocessLaunchKind',
+    declaration: 'export type SubprocessLaunchKind = \'process\' | \'terminal\';',
   },
   {
     name: 'SubprocessOutcome',

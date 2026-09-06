@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-06-every-spawner-reports-through-one-seam.md
+2026-09-06-every-spawner-reports-through-one-seam.md: cbef7045a89d231f2f96d90c57cf55039b6d9415
+2026-09-06-every-spawner-reports-through-one-seam.zh.md: 586818afc4c2b15e7a55935c334863a41ce9c817
