@@ -546,7 +546,7 @@ export class RunScheduler extends Service {
   async sweep(now: number): Promise<readonly RunSettlement[]> {
     const settled: RunSettlement[] = []
     for (const record of this.ledger.open()) {
-      if (record.leaseExpiresAt > now) continue
+      if (record.leaseExpiresAt > now && !this.spent(record.runId)) continue
       // Re-read through `settle`: closing one run closes its descendants, and a
       // descendant already gone is no longer expired.
       const outcome = await this.queue(() => this.settle(record.runId))
@@ -758,6 +758,30 @@ export class RunScheduler extends Service {
         return { next: async () => { await recorded; return chunks.next() } }
       },
     }
+  }
+
+  /**
+   * Whether one open run can no longer authorize anything it does.
+   *
+   * Revoking an account destroys its stored envelope, which stops the next
+   * admission and refuses the run's next call, but leaves the run itself open
+   * — holding its funder's allowance, and with what it already spent unbilled,
+   * until its lease runs out minutes later. The sweep is where this runtime
+   * ends runs it has decided should end, so it ends these too.
+   *
+   * The judgement is the one {@link meterRequest} makes, so a run whose every
+   * call is refused is not also a run that lingers. It is made only on
+   * positive evidence: a run whose record this runtime cannot read is left to
+   * its lease rather than settled on a store that answered nothing.
+   *
+   * @param runId - one open run.
+   * @returns true when the account behind it can no longer authorize work.
+   */
+  private spent(runId: RunId): boolean {
+    const run = this.ctx.controlPlaneStore.findRun(runId)
+    if (run === undefined) return false
+    const account = this.ctx.controlPlaneStore.accountOf(run.accountId)
+    return account === undefined || !isProviderAccountUsable(account)
   }
 
   /**

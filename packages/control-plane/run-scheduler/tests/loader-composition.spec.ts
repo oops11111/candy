@@ -1282,6 +1282,50 @@ describe('a booted Candy scheduler', () => {
     expect(ctx.runScheduler.auditsOfTenant(ALICE)).toHaveLength(before)
   })
 
+  it('ends a run whose account can no longer authorize it, without waiting for its lease', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.runScheduler.charge(RunId('run-root'), { tokens: 40, wallMs: 5, costMicroUsd: 20 })
+
+    await revokeProviderAccount(ctx.controlPlaneStore, ALICE, ACCOUNT, now + 1)
+    // Well before the lease would have expired.
+    const settled = await ctx.runScheduler.sweep(now + 1_000)
+
+    // Refusing its calls left the run open, holding its funder's allowance
+    // with what it had already spent unbilled, for the rest of its lease.
+    expect(settled).toHaveLength(1)
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toBeUndefined()
+    expect((await ctx.controlPlaneStore.tenantAllowance(ALICE))?.consumed).toMatchObject({ tokens: 40 })
+  })
+
+  it('leaves a run alone when its account is still usable and its lease holds', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+    expect(await ctx.runScheduler.sweep(now + 1_000)).toHaveLength(0)
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toBeDefined()
+  })
+
+  it('leaves a run to its lease when the store cannot answer for it', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    // The ledger holds the run and the store does not: settling on a store
+    // that answered nothing would end runs over a read that failed.
+    await ctx.controlPlaneStore.deleteRun(RunId('run-root'))
+
+    expect(await ctx.runScheduler.sweep(now + 1_000)).toHaveLength(0)
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toBeDefined()
+  })
+
   it('keeps metering a call whose run still holds a usable account', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)
