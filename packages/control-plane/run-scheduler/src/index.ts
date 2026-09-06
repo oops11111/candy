@@ -36,6 +36,7 @@
  * @module @deepseek-ai/dsh-run-scheduler
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
@@ -48,6 +49,7 @@ import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assert
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { isProviderAccountUsable } from '@deepseek-ai/dsh-provider-accounts'
+import type { SubprocessLaunched } from '@deepseek-ai/dsh-subprocess'
 import { CREDENTIAL_REVOKED, meterRun, refusedCall, RUN_NOT_OPEN } from '@deepseek-ai/dsh-run-metering'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
@@ -197,6 +199,20 @@ export class RunScheduler extends Service {
   /** Per run, the call that must end before the next one may read its remainder. */
   private readonly callLines = new Map<RunId, Promise<void>>()
 
+  /**
+   * The run whose metered call the current asynchronous work belongs to.
+   *
+   * A provider process is started deep inside an adapter, with no session and
+   * no run of its own to name. What it does have is a place in the call that
+   * started it, and this carries the run across that distance.
+   *
+   * The scope is entered around each pull rather than around the stream: an
+   * async generator's body runs when its consumer asks for a chunk, in the
+   * consumer's context and not the one the generator was created in, so a
+   * scope wrapped around creation reaches none of the body.
+   */
+  private readonly metered = new AsyncLocalStorage<RunId>()
+
   private readonly keyring: CredentialKeyring
   private readonly assertionSecret: Buffer
 
@@ -246,6 +262,12 @@ export class RunScheduler extends Service {
       global: true,
       prepend: true,
     })
+    // A provider process is started deep inside an adapter, so what it belongs
+    // to is the metered call it was started during. A launch with no such call
+    // — the harness's own bash or language-server children — is left alone:
+    // it belongs to no tenant, and filing it would push a tenant's records out
+    // of a trail bounded per subject.
+    this.ctx.on('subprocess/launched', (launch) => { this.fileLaunch(launch) }, { global: true })
     this.ctx.interval(() => {
       // A sweep now writes to the medium, and a rejected write must not become
       // an unhandled rejection that takes the runtime down: the holds it failed
@@ -464,8 +486,11 @@ export class RunScheduler extends Service {
               await ahead
               reader = start()
             }
+            // Captured after the assignment above: the closure would widen the
+            // narrowed local back to `undefined` on its own.
+            const active = reader
             try {
-              const step = await reader.next()
+              const step = await this.metered.run(runId, () => active.next())
               if (step.done === true) leaveLine()
               return step
             } catch (failure) {
@@ -733,6 +758,37 @@ export class RunScheduler extends Service {
         return { next: async () => { await recorded; return chunks.next() } }
       },
     }
+  }
+
+  /**
+   * Record one launched process against the run whose call started it.
+   *
+   * The seam that announces a launch knows the executable and nothing about
+   * tenants; the run scope entered around each metered pull is what supplies
+   * the rest. A launch outside any metered call is not this runtime's to
+   * attribute and is dropped.
+   *
+   * @param launch - the seam's record of one started child.
+   */
+  private fileLaunch(launch: SubprocessLaunched): void {
+    const runId = this.metered.getStore()
+    if (runId === undefined) return
+    const run = this.ctx.controlPlaneStore.findRun(runId)
+    if (run === undefined) return
+    const record: RunAuditRecord = {
+      at: Date.now(),
+      runId,
+      userId: run.userId,
+      accountId: run.accountId,
+      event: 'launched',
+      action: launch.executable,
+      outcome: launch.pid === -1 ? 'spawn-failed' : 'ok',
+    }
+    const retain = this.config.auditRetention ?? 200
+    this.ctx.controlPlaneStore.recordAudit(tenantSubject(run.userId), [record], retain)
+      .catch((error: unknown) => {
+        this.ctx.logger.warn(`run-scheduler: could not record a launched process: ${String(error)}`)
+      })
   }
 
   /**

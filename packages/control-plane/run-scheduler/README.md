@@ -95,7 +95,13 @@ export const unattributed = ctx.runScheduler.auditsOfRuntime()
 
 Every stage past the assertion works from verified claims, so its record names the tenant, account and run it refused. An assertion that fails to verify names none this runtime may believe, so `auditsOfRuntime` is where that record goes rather than into a tenant's trail — it is the clearest attack signal admission can observe, and dropping it was the alternative. Both trails are capped by `auditRetention`.
 
-A refused *call* is filed the same way, under `event: 'refused'` and `action: 'meter'`, with the failure code as its outcome. Admission never sees these: a run opens its credential once and then keeps calling, so a revoked account still spending, a run that has used up its allowance, and a session no open run claims are all visible here and nowhere else. The record is durable before the caller is told, so an operator reading the trail cannot be behind a consumer acting on the refusal. A refusal whose session names no run this runtime still holds is filed against the runtime, for the same reason an unverifiable assertion is: there is no tenant to believe.
+A refused *call* is filed the same way, under `event: 'refused'` and `action: 'meter'`, with the failure code as its outcome.
+
+A process launched during a metered call is filed too, under `event: 'launched'` with the executable as its action. `dsh-subprocess` announces every managed child it starts, and knows nothing about tenants; what supplies the rest is a run scope this service enters around each pull of a metered stream. A provider process is started deep inside an adapter, with no session and no run of its own to name — the call it was started during is the only thing that connects it to one.
+
+The scope is entered around each pull rather than around the stream. An async generator's body runs when its consumer asks for a chunk, in the consumer's context and not the one the generator was created in, so a scope wrapped around creation reaches none of the body and attributes nothing.
+
+A launch outside any metered call — the harness's own bash, pwsh and language-server children — is left alone. It belongs to no tenant, and filing it would push a tenant's own records out of a trail bounded per subject. Admission never sees these: a run opens its credential once and then keeps calling, so a revoked account still spending, a run that has used up its allowance, and a session no open run claims are all visible here and nowhere else. The record is durable before the caller is told, so an operator reading the trail cannot be behind a consumer acting on the refusal. A refusal whose session names no run this runtime still holds is filed against the runtime, for the same reason an unverifiable assertion is: there is no tenant to believe.
 
 ### Metering the calls a run makes
 

@@ -146,8 +146,8 @@ const storedAuditRecord = z.object({
   runId: z.string().optional(),
   userId: z.string().optional(),
   accountId: z.string().optional(),
-  /** What the record is about: a scheduling attempt, or one vault operation. */
-  event: z.enum(['started', 'refused', 'credential']),
+  /** What the record is about: a scheduling attempt, a vault operation, or a launched process. */
+  event: z.enum(['started', 'refused', 'credential', 'launched']),
   /** The step that refused, or the vault action that ran. */
   action: z.string(),
   /** `ok`, or the reason the step refused. */

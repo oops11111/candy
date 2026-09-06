@@ -4480,6 +4480,9 @@ importers:
       '@deepseek-ai/dsh-storage-sqlite':
         specifier: workspace:^
         version: link:../../storage/storage-sqlite
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
       '@deepseek-ai/dsh-tenant-allowance':
         specifier: workspace:^
         version: link:../tenant-allowance

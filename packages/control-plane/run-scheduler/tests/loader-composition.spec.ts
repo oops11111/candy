@@ -35,6 +35,7 @@ import {
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { revokeProviderAccount } from '@deepseek-ai/dsh-provider-accounts'
+import type {} from '@deepseek-ai/dsh-subprocess'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
@@ -1165,6 +1166,120 @@ describe('a booted Candy scheduler', () => {
       now,
     )
     expect(started.started).toBe(true)
+  })
+
+  it('attributes a process launched during a metered call to that run', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    // An adapter that starts a provider process the way a CLI route does: deep
+    // inside the stream, with no session and no run of its own to name.
+    class SpawningAdapter extends LlmAdapter {
+      async *stream(): AsyncIterable<StreamChunk> {
+        ctx.emit('subprocess/launched', { executable: '/opt/candy/bin/claude', cwd: '/pool', pid: 4242, kind: 'process' })
+        yield { type: 'usage', usage: { inputTokens: 30, outputTokens: 12, costMicroUsd: 900 } }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+    ctx.llm.registerAdapter(['fake'], new SpawningAdapter())
+
+    await collectChunks(ctx.llm.stream(request(SESSION)))
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE).at(-1)).toMatchObject({
+      runId: RunId('run-root'),
+      userId: ALICE,
+      accountId: ACCOUNT,
+      event: 'launched',
+      action: '/opt/candy/bin/claude',
+      outcome: 'ok',
+    })
+  })
+
+  it('records a spawn that failed during a metered call', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    class FailedSpawnAdapter extends LlmAdapter {
+      async *stream(): AsyncIterable<StreamChunk> {
+        // The seam returns a handle either way, and -1 is how it says the
+        // launch did not happen.
+        ctx.emit('subprocess/launched', { executable: '/opt/candy/bin/claude', cwd: '/pool', pid: -1, kind: 'process' })
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+    ctx.llm.registerAdapter(['fake'], new FailedSpawnAdapter())
+
+    await collectChunks(ctx.llm.stream(request(SESSION)))
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE).at(-1)).toMatchObject({ event: 'launched', outcome: 'spawn-failed' })
+  })
+
+  it('drops a launch whose run the store no longer holds', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    class RaceAdapter extends LlmAdapter {
+      async *stream(): AsyncIterable<StreamChunk> {
+        // The run settles while its stream is still being pulled: there is no
+        // record left to name a tenant with.
+        await ctx.controlPlaneStore.deleteRun(RunId('run-root'))
+        ctx.emit('subprocess/launched', { executable: '/opt/candy/bin/claude', cwd: '/pool', pid: 9, kind: 'process' })
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+    ctx.llm.registerAdapter(['fake'], new RaceAdapter())
+    const before = ctx.runScheduler.auditsOfTenant(ALICE).length
+
+    await collectChunks(ctx.llm.stream(request(SESSION)))
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toHaveLength(before)
+  })
+
+  it('keeps streaming when the trail cannot take a launch record', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    class SpawningAdapter extends LlmAdapter {
+      async *stream(): AsyncIterable<StreamChunk> {
+        ctx.emit('subprocess/launched', { executable: '/opt/candy/bin/claude', cwd: '/pool', pid: 4242, kind: 'process' })
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+    }
+    ctx.llm.registerAdapter(['fake'], new SpawningAdapter())
+    vi.spyOn(ctx.controlPlaneStore, 'recordAudit').mockRejectedValue(new Error('medium is gone'))
+
+    const seen = await collectChunks(ctx.llm.stream(request(SESSION)))
+
+    // A trail that cannot take the record must not fail the call it describes.
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('leaves a launch that belongs to no metered call unattributed', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    const before = ctx.runScheduler.auditsOfTenant(ALICE).length
+
+    // The harness's own bash or language-server children: no tenant to name,
+    // and filing them would push a tenant's records out of a bounded trail.
+    ctx.emit('subprocess/launched', { executable: '/bin/bash', cwd: '/tmp', pid: 7, kind: 'process' })
+    await Promise.resolve()
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toHaveLength(before)
   })
 
   it('keeps metering a call whose run still holds a usable account', async () => {

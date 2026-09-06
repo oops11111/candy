@@ -21,6 +21,7 @@
     { "path": "../run-ledger" },
     { "path": "../provider-accounts" },
     { "path": "../run-metering" },
+    { "path": "../../subprocess/subprocess" },
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },
     { "path": "../run-replay" },
