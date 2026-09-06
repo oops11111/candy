@@ -50,7 +50,12 @@ import * as ClaudeCliRoute from '../src/index.ts'
 const STAND_IN = `
 const say = (frame) => process.stdout.write(JSON.stringify(frame) + '\\n')
 say({ type: 'system', subtype: 'init', apiKeySource: 'ANTHROPIC_API_KEY' })
-const report = JSON.stringify({ home: process.env.HOME, key: process.env.ANTHROPIC_API_KEY ?? 'absent' })
+const budgetFlag = process.argv.indexOf('--max-budget-usd')
+const report = JSON.stringify({
+  home: process.env.HOME,
+  key: process.env.ANTHROPIC_API_KEY ?? 'absent',
+  budget: budgetFlag === -1 ? 'absent' : process.argv[budgetFlag + 1],
+})
 say({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } })
 say({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: report } } })
 const pidFile = process.env.STAND_IN_PIDS
@@ -308,5 +313,51 @@ describe('the Claude CLI route, resolved per call from a session', () => {
     while (Date.now() < deadline && alive()) await new Promise(resolve => setTimeout(resolve, 10))
     expect(alive()).toBe(false)
     try { process.kill(pid, 'SIGKILL') } catch { /* already gone, which is the passing case */ }
+  })
+
+  it("resolves a delegated child's own remainder, not its parent's", async () => {
+    // Every earlier test in this file has exactly one open run for the
+    // tenant; `runIdentityFor`'s session lookup was never exercised with two
+    // open at once. A parent and its child share one tenant and account, so
+    // credential and pool cannot tell them apart — only the spend ceiling
+    // can, since the child's share (below) is far smaller than the parent's
+    // own budget. The launch reporting the child's ceiling is what proves the
+    // route resolved the session to the child, not to the tenant's other run.
+    root = await mkdtemp(join(tmpdir(), 'dsh-claude-cli-route-'))
+    const executable = join(root, 'stand-in-claude.mjs')
+    await writeFile(executable, STAND_IN, 'utf8')
+    const context = await boot(root)
+    useStandIn(context, executable)
+    const now = Date.now()
+    await provision(context, now)
+    await context.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    const childSession = brandString<SessionId>('session-child')
+    const childRun = RunId('run-child')
+    const share = { tokens: 1_000, wallMs: 60_000, costMicroUsd: 10_000, children: 0 }
+    await context.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, { sessionId: childSession, runId: childRun, parentRunId: RUN, nonce: 'nonce-2' }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => share,
+      now,
+    )
+
+    const assembler = new BlockAssembler()
+    for (const chunk of await collectChunks(context.llm.stream({
+      provider: 'claude-cli',
+      model: 'claude-sonnet-5',
+      sessionId: childSession,
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'report' }], source: { kind: 'user' } })],
+    }))) assembler.push(chunk)
+    const block = assembler.blocks().find(candidate => candidate.type === 'text')
+    const text = block?.type === 'text' ? block.text : ''
+
+    // 10_000 micro-USD is the child's own share; the parent's full budget
+    // (2_500_000) would report '2.5' instead.
+    expect(JSON.parse(text)).toMatchObject({ budget: '0.01' })
+    const launched = context.runScheduler.auditsOfTenant(ALICE).find(record => record.event === 'launched')
+    expect(launched).toMatchObject({ runId: childRun })
+    expect(context.runScheduler.ledger.get(RUN)).toMatchObject({ spent: { tokens: 0 } })
   })
 })
