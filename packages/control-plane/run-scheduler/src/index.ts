@@ -477,9 +477,17 @@ export class RunScheduler extends Service {
             // A consumer that stops reading part-way leaves the line too, or
             // every later call on this run would wait on a stream nobody is
             // draining. `meterRun` charges what the abandoned call used.
-            if (reader !== undefined) await reader.return()
-            leaveLine()
-            return { done: true, value: undefined }
+            //
+            // The line is given up in a `finally` because closing can fail:
+            // a cancelled call closes a source that is itself failing, and
+            // that rejection reaches here. Leaving after it would hold the
+            // line for the life of the run over a close that went wrong.
+            try {
+              if (reader !== undefined) await reader.return()
+              return { done: true, value: undefined }
+            } finally {
+              leaveLine()
+            }
           },
         }
       },

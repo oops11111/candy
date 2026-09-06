@@ -102,7 +102,7 @@ The port's implementation settles its own failures. A rejection here would leave
 
 A meter reads what the run may spend once, before the provider is called, and charges once the call ends. Two calls that overlap therefore both start against a remainder neither has been charged against yet: a run funded for one call from the fake adapter spent two calls' worth, 84 tokens against an allowance of 42. The dimensions bound the run, not the call, so they hold only if the calls do not observe the same remainder.
 
-`RunScheduler.meter` holds a run's calls in a line, so each reads a remainder the one before it has already been charged against. The line is per run, so two tenants never wait for each other, and a run whose calls are sequential — an agent loop's are — never waits either, because the line is empty when its next call starts. A consumer that abandons a stream part-way leaves the line as well; otherwise every later call on that run would wait on a stream nobody is draining.
+`RunScheduler.meter` holds a run's calls in a line, so each reads a remainder the one before it has already been charged against. The line is per run, so two tenants never wait for each other, and a run whose calls are sequential — an agent loop's are — never waits either, because the line is empty when its next call starts. A consumer that abandons a stream part-way leaves the line as well; otherwise every later call on that run would wait on a stream nobody is draining. It gives the line up in a `finally`, because closing can fail — a cancelled call closes a source that is itself failing, and a provider whose teardown throws would otherwise strand its run for the rest of its life.
 
 ### Why a cut is one call, not the run
 

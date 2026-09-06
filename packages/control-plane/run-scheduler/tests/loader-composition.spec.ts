@@ -1062,6 +1062,75 @@ describe('a booted Candy scheduler', () => {
     expect(inspect(run, { depth: 4 })).not.toContain('sk-ant-bobby')
   })
 
+  it('charges a cancelled call for what it used and leaves the run open', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    let closed = false
+    class CancellableAdapter extends LlmAdapter {
+      async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+        try {
+          yield { type: 'usage', usage: { inputTokens: 30, outputTokens: 12, costMicroUsd: 900 } }
+          if (options.signal === undefined) { yield { type: 'finish', reason: { kind: 'stop' } }; return }
+          await new Promise((_resolve, reject) => {
+            // The signal may already have fired by the time this runs.
+            if (options.signal?.aborted === true) { reject(new Error('aborted')); return }
+            options.signal?.addEventListener('abort', () => { reject(new Error('aborted')) })
+          })
+        } finally { closed = true }
+      }
+    }
+    ctx.llm.registerAdapter(['fake'], new CancellableAdapter())
+
+    const control = new AbortController()
+    for await (const _chunk of ctx.llm.stream({ ...request(SESSION), signal: control.signal })) control.abort()
+
+    // A cancelled call is not a free one: the meter charges what it consumed
+    // before the caller gave up, and the run it belonged to stays open.
+    expect(closed).toBe(true)
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))?.spent).toMatchObject({ tokens: 42, costMicroUsd: 900 })
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toBeDefined()
+
+    // And it gave up its place, so the run's next call is not waiting on it.
+    const seen = await collectChunks(ctx.llm.stream(request(SESSION)))
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('gives up the line even when closing a cancelled call fails', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    let failOnClose = true
+    class FailingCloseAdapter extends LlmAdapter {
+      async *stream(): AsyncIterable<StreamChunk> {
+        try {
+          yield { type: 'usage', usage: { inputTokens: 30, outputTokens: 12, costMicroUsd: 900 } }
+          yield { type: 'finish', reason: { kind: 'stop' } }
+        } finally {
+          // A provider whose teardown throws: reaping its process failed.
+          if (failOnClose) throw new Error('the provider process could not be reaped')
+        }
+      }
+    }
+    ctx.llm.registerAdapter(['fake'], new FailingCloseAdapter())
+
+    const abandoned = ctx.llm.stream(request(SESSION))[Symbol.asyncIterator]()
+    await abandoned.next()
+    await expect(abandoned.return?.(undefined)).rejects.toThrow(/could not be reaped/)
+
+    // Holding the line over a close that went wrong would strand the run for
+    // the rest of its life.
+    failOnClose = false
+    const seen = await collectChunks(ctx.llm.stream(request(SESSION)))
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
   it('keeps metering a call whose run still holds a usable account', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)
