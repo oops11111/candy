@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-06-a-run-that-settled-but-kept-running.md
-2026-09-06-a-run-that-settled-but-kept-running.md: eef32e25dc06904ca201dab945f6428f9b149983
-2026-09-06-a-run-that-settled-but-kept-running.zh.md: efd57f1e2067722176a9e069dbf6e4de8c5f285d
+2026-09-06-a-run-that-settled-but-kept-running.md: 834903e0c912983e7e75e3e1dfdbc71326db1cb1
+2026-09-06-a-run-that-settled-but-kept-running.zh.md: 6e8db323f27a6d065cc08d71d5e0e952a73334ec

@@ -37,6 +37,8 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { revokeProviderAccount } from '@deepseek-ai/dsh-provider-accounts'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
@@ -58,6 +60,30 @@ async function collectChunks(stream: AsyncIterable<StreamChunk>): Promise<Stream
   const seen: StreamChunk[] = []
   for await (const chunk of stream) seen.push(chunk)
   return seen
+}
+
+/** Whether a pid is still addressable by this process. */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    // ESRCH: no such process. This test's own descendant cannot raise EPERM.
+    return false
+  }
+}
+
+const REAP_DEADLINE_MS = 5_000
+const REAP_POLL_MS = 10
+
+/** Wait until a pid is no longer addressable, or give up so the assertion reports it. */
+async function reaped(pid: number): Promise<boolean> {
+  const deadline = Date.now() + REAP_DEADLINE_MS
+  while (Date.now() < deadline) {
+    if (!alive(pid)) return true
+    await new Promise(resolve => setTimeout(resolve, REAP_POLL_MS))
+  }
+  return false
 }
 
 /** One assembled request, as the loop stamps it for a session. */
@@ -1456,6 +1482,35 @@ describe('a booted Candy scheduler', () => {
     await ctx.runScheduler.close(RunId('run-root'))
 
     expect(terminate).not.toHaveBeenCalled()
+  })
+
+  it('kills a real process, not just a mocked handle, when its run settles', async () => {
+    // Every other disposer test uses a fake handle to pin the registry's own
+    // logic; this one proves `disposableSpawn` actually reaps something a
+    // real `SubprocessRuntime.spawn` started, the way a provider binding's
+    // own `spawn` would.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    await ctx.plugin(SubprocessLocal)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    const spawn = ctx.runScheduler.disposableSpawn(
+      RunId('run-root'),
+      (spec: SubprocessSpawnSpec) => ctx.subprocess.spawn(spec),
+    )
+
+    const handle = spawn({
+      argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'],
+      cwd: root,
+      stdio: { stdin: 'ignore', stdout: { maxBytes: 1_024 }, stderr: { maxBytes: 1_024 } },
+      graceMs: 1_000,
+    })
+    expect(alive(handle.pid)).toBe(true)
+
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    expect(await reaped(handle.pid)).toBe(true)
   })
 
   it('keeps metering a call whose run still holds a usable account', async () => {
