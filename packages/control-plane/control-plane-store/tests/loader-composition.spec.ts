@@ -364,6 +364,7 @@ describe('a booted control-plane store', () => {
     const missing = RunId('run-absent')
 
     await ctx.controlPlaneStore.recordRunSpend(missing, { tokens: 1, wallMs: 1, costMicroUsd: 1 })
+    await ctx.controlPlaneStore.renewRun(missing, Date.now() + 300_000)
     await ctx.controlPlaneStore.absorbChild(missing, RunId('run-child'), { tokens: 1, wallMs: 1, costMicroUsd: 1 })
 
     // Settling is the exception: a run open in a ledger always has a record, so

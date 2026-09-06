@@ -162,13 +162,19 @@ declare const request: GenerateOptions
 export const stream = ctx.llm.stream(request)
 ```
 
-A request naming no session, or one naming a session this runtime never had a run for, passes through untouched — it is not this runtime's to charge. A session whose run *ended* here is refused instead: a lease can expire under an agent that is still working, and the run record is gone by then, so without a memory of the ending its next call would look like one this runtime never had and run for free.
+A request naming no session, or one naming a session this runtime never had a run for, passes through untouched — it is not this runtime's to charge. A session whose run *ended* here is refused instead: a run can end under an agent that is still working — its account revoked, the tree around it closed, its root closed by a restart — and the run record is gone by then, so without a memory of the ending its next call would look like one this runtime never had and run for free.
 
 The mapping is kept unambiguous where it is created: a run whose session another run already drives is refused at `start`, before its nonce is spent, so it can be retried once that session settles. A request whose session two records still claim is refused with a terminal `error` finish — that state arrives only from outside `start`, and charging either tree would be a misbilling the caller cannot detect.
 
 The run's account is read again on every call, not trusted from admission. A run opens its credential once and holds it for as long as it lives, so revoking the account destroys the stored envelope without reaching a process already authenticated with it. Reading the record per call is what makes a revocation stop work that is already under way: the call is refused with `CREDENTIAL_REVOKED` before the provider is reached, and nothing is charged.
 
 The sweep then ends the run itself. Refusing its calls alone left it open — holding its funder's allowance, with what it had already spent unbilled — until its lease ran out minutes later. The sweep is where this runtime ends runs it has decided should end, so a run whose account can no longer authorize it ends there, on the same judgement `meterRequest` makes. A run whose record the store cannot answer for is left to its lease instead: ending runs on a read that returned nothing is the larger mistake.
+
+### Why an elapsed lease does not end a working run
+
+A lease answers one question: did the runtime holding this run go away. A runtime that still has the run's session is answering it directly, so the sweep renews that run's lease — in the ledger and on the durable record — instead of releasing its hold. Without that, every run ended `leaseMs` after it opened however hard its agent was working, and the session was then refused for the rest of its life.
+
+Liveness is not activity. A session parked between turns — waiting on a tool, an approval, or a person — is still this runtime's to fund, and loses its run only when the session itself goes. A composition with no session store leaves every run to its lease, exactly as before this rule existed, and a revoked account still ends its run however live the session is: this rule decides abandonment, never authority.
 
 ### Metering one stream by hand
 

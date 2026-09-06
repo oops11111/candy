@@ -43,7 +43,7 @@ import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { type SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import Llm, { LlmAdapter, type GenerateOptions } from '@deepseek-ai/dsh-llm'
 import RunScheduler from '../src/index.ts'
@@ -1977,6 +1977,64 @@ describe('a booted Candy scheduler', () => {
         },
       },
     }])
+  })
+
+  it('keeps a run open past its lease while this runtime still drives its session', async () => {
+    // The lease answers "did the runtime holding this run go away". A runtime
+    // that still has the session live answers that directly, so an elapsed
+    // lease under a working session renews rather than cutting the agent off.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+    await ctx.plugin(SessionStore)
+    ctx.sessions.create(SESSION)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+
+    expect(await ctx.runScheduler.sweep(now + 300_001)).toEqual([])
+
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))?.leaseExpiresAt).toBeGreaterThan(now + 300_001)
+    expect(ctx.controlPlaneStore.findRun(RunId('run-root'))?.record.leaseExpiresAt).toBeGreaterThan(now + 300_001)
+    const seen = await collectChunks(ctx.llm.stream(request(SESSION)))
+    expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toMatchObject({ spent: { tokens: 42, costMicroUsd: 900 } })
+  })
+
+  it('settles an expired run whose session this runtime no longer drives', async () => {
+    // The session store is composed and answers for other sessions; this run's
+    // own session is gone, which is what an abandoned run looks like.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+    await ctx.plugin(SessionStore)
+    ctx.sessions.create(SECOND_SESSION)
+
+    expect(await ctx.runScheduler.sweep(now + 300_001)).toHaveLength(1)
+
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toBeUndefined()
+  })
+
+  it('settles an expired run whose account was revoked, however live its session', async () => {
+    // Liveness answers abandonment, never authority: a run whose account can no
+    // longer authorize work is released whether or not its session is here.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+    await ctx.plugin(SessionStore)
+    ctx.sessions.create(SESSION)
+    const entry = await ctx.controlPlaneStore.find(ACCOUNT)
+    if (entry === undefined) throw new Error('test setup: account not found')
+    await ctx.controlPlaneStore.save({ record: { ...entry.record, revokedAt: now + 1 }, credential: entry.credential })
+
+    expect(await ctx.runScheduler.sweep(now + 1_000)).toHaveLength(1)
+
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toBeUndefined()
   })
 
   it('meters a session again once a new run drives it', async () => {

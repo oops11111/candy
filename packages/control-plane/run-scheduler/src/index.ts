@@ -855,7 +855,15 @@ export class RunScheduler extends Service {
   async sweep(now: number): Promise<readonly RunSettlement[]> {
     const settled: RunSettlement[] = []
     for (const record of this.ledger.open()) {
-      if (record.leaseExpiresAt > now && !this.spent(record.runId)) continue
+      // A revoked account ends its run however live the session driving it is:
+      // this decides authority, and only the branch below decides abandonment.
+      if (!this.spent(record.runId)) {
+        if (record.leaseExpiresAt > now) continue
+        if (this.driven(record.runId)) {
+          await this.queue(() => this.renew(record.runId, now))
+          continue
+        }
+      }
       // Re-read through `settle`: closing one run closes its descendants, and a
       // descendant already gone is no longer expired.
       const outcome = await this.queue(() => this.settle(record.runId))
@@ -863,6 +871,44 @@ export class RunScheduler extends Service {
     }
     this.replay.evict(now)
     return settled
+  }
+
+  /**
+   * Whether this runtime still drives the session one open run was started
+   * for.
+   *
+   * A lease answers "did the runtime holding this run go away", which a
+   * runtime that still has the session is answering directly rather than
+   * waiting to be asked. The session store is read opportunistically: a
+   * composition without one leaves every run to its lease, exactly as before
+   * this check existed.
+   *
+   * Liveness is not activity. A session parked between turns — waiting on a
+   * tool, an approval, or a person — is still this runtime's to fund, and
+   * loses its run only when the session itself goes.
+   * @param runId - one open run.
+   * @returns true when this runtime holds a live session for that run.
+   */
+  private driven(runId: RunId): boolean {
+    const run = this.ctx.controlPlaneStore.findRun(runId)
+    if (run === undefined) return false
+    return this.ctx.get('sessions')?.get(run.sessionId) !== undefined
+  }
+
+  /**
+   * Hold one still-driven run's allowance for another lease.
+   *
+   * The durable record moves with the ledger so a later reader sees the same
+   * lease this runtime is honouring. A write that fails leaves the ledger's
+   * own lease advanced and the next sweep renewing again, which costs one
+   * sweep of staleness rather than a run settled underneath a live session.
+   */
+  private async renew(runId: RunId, now: number): Promise<void> {
+    const leaseExpiresAt = now + (this.config.leaseMs ?? 300_000)
+    // Neither result is read: both operations are no-ops for a run this
+    // queued step found already settled, which is the outcome either way.
+    this.ledger.renew(runId, leaseExpiresAt)
+    await this.ctx.controlPlaneStore.renewRun(runId, leaseExpiresAt)
   }
 
   /** The admission policy for this runtime, assembled from the store and this instance's state. */

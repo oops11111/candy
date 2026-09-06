@@ -764,6 +764,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution after the write reaches the medium; a run with no record is a no-op, because only a live ledger can say it exists.',
       },
       {
+        signature: 'async renewRun(runId: RunId, leaseExpiresAt: number): Promise<void>',
+        description: 'Push one run\'s lease out, leaving every other field as it is.\n\nThe stored lease is what a later reader — this runtime after a restart, an operator, another runtime sharing this audience — uses to tell a run still being driven from one whose runtime went away. A renewal held only in a live ledger would leave that reader a record that looks abandoned while the run is working.',
+        parameters: [{ name: 'runId', description: 'the run whose hold should be held longer.' }, { name: 'leaseExpiresAt', description: 'the new release time, in epoch milliseconds.' }],
+        returns: 'resolution after the write reaches the medium; a run with no record is a no-op, because only a live ledger can say it exists.',
+      },
+      {
         signature: 'async absorbChild(parentRunId: RunId, childRunId: RunId, spent: RunSpend): Promise<void>',
         description: 'Fold one settled child\'s charge into its parent, at most once.\n\nThe parent\'s allowance is what a child\'s spend is charged to, exactly as a tenant\'s is for a root, so this is consumeTenantAllowance one level lower and carries the same marker for the same reason: crediting the parent and deleting the child are two writes, and a crash between them must not credit the parent twice.',
         parameters: [{ name: 'parentRunId', description: 'the delegating run.' }, { name: 'childRunId', description: 'the settled child, recorded as absorbed.' }, { name: 'spent', description: 'the child\'s charge, already capped at what it reserved.' }],

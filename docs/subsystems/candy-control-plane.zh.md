@@ -236,6 +236,21 @@ async openRun(run: DurableRunRecord): Promise<void>
 async recordRunSpend(runId: RunId, spent: RunSpend): Promise<void>
 
 /**
+ * Push one run's lease out, leaving every other field as it is.
+ *
+ * The stored lease is what a later reader — this runtime after a restart,
+ * an operator, another runtime sharing this audience — uses to tell a run
+ * still being driven from one whose runtime went away. A renewal held only
+ * in a live ledger would leave that reader a record that looks abandoned
+ * while the run is working.
+ * @param runId - the run whose hold should be held longer.
+ * @param leaseExpiresAt - the new release time, in epoch milliseconds.
+ * @returns resolution after the write reaches the medium; a run with no
+ *   record is a no-op, because only a live ledger can say it exists.
+ */
+async renewRun(runId: RunId, leaseExpiresAt: number): Promise<void>
+
+/**
  * Fold one settled child's charge into its parent, at most once.
  *
  * The parent's allowance is what a child's spend is charged to, exactly as a

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/candy-control-plane.md
-candy-control-plane.md: 0f23427384d536e3615aa9442e7883a113a7125f
-candy-control-plane.zh.md: ac4a0f6df1077554312778d39bff1d30299c7539
+candy-control-plane.md: f5d0a7fa7d91aecd3457801e80149e71ff683f1d
+candy-control-plane.zh.md: 58185279b91a8d514b208eac24e86d185e627567
