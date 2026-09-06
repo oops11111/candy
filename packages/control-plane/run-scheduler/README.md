@@ -46,6 +46,21 @@ Its records are durable and every settlement is exactly-once across a crash, and
 
 It requires [`dsh-control-plane-store`](../control-plane-store/README.md) for the accounts and allowances it reads, and the `timer` service for its clock. Both secrets are named as environment variables rather than written into the composition: `assertionSecretEnv` (default `CANDY_ASSERTION_SECRET`) and `credentialKeyEnv` (default `CANDY_CREDENTIAL_KEY`). An unset one fails the boot, and a credential key that is not 32 bytes fails it too — the vault seals with exactly that.
 
+### Rotating the credential key
+
+Every sealed envelope names the version it was sealed under, so changing `credentialKeyVersion` and the key behind it makes this runtime unable to open anything sealed before: each tenant is refused with `unknown-key` on every run until the old value is put back. `retiredCredentialKeys` is what makes a rotation a migration instead of an outage — the old version stays openable while the new one seals:
+
+```yml
+    credentialKeyVersion: 2026-09-b
+    retiredCredentialKeys:
+      - version: 2026-09-a
+        env: CANDY_CREDENTIAL_KEY_PREVIOUS
+```
+
+A retired version that is also the current one, or retired twice, fails the boot. Either would decide silently which key a version means, and the wrong answer is a tenant whose credential opens with the wrong key or not at all. An entry whose variable is unset fails the boot for the same reason every secret does.
+
+Retiring a key is not finishing the rotation. The envelopes are rewrapped under the current key by whoever drives that pass, and only then can the retired entry go.
+
 ### Starting a run
 
 ```ts
@@ -201,7 +216,7 @@ These are current package constraints, not a task backlog.
 
 - **No queue** — it starts the run a caller asks for, or refuses it. Whether a refused run waits and in what order queued requests run are decisions nothing makes yet; how much a tenant may have live at once is now answered, by its grant's `children`.
 - **A restart ends every run** — recovery settles what it finds rather than resuming it, because the provider processes died with the runtime. A deployment that restarts a runtime under load ends its live runs and charges their tenants for what they had spent.
-- **One credential key** — the config names one version, so the keyring cannot open an envelope sealed under a retired one. Rotation needs the keyring to carry more than the current key.
+- **Nothing rewraps** — a retired key is retained until every envelope has been rewrapped under the current one, and driving that pass is the operator's; this package opens envelopes and does not migrate them, so a key retired forever is a key never actually retired.
 - **A charge is not visible until settlement** — `charge` writes a run's spend to its own record at once, and the tenant's consumption moves only when the tree's root closes. That is correct while the run is open, since its reservation is already held out of the tenant's remainder, and it means a tenant's consumption lags its live spending by one tree.
 - **A run's calls are serialized too** — `meter` holds one run's calls in a line so each reads a remainder the one before it has been charged against. Two tenants never wait for each other, but a run cannot make two calls at once, however long the first takes.
 - **Every operation is serialized** — one chain orders every start, charge and settlement in the runtime, which is what makes the exactly-once marker and the allowance checks guarantees. It also means one tenant's start waits behind another's, including the pool directory each start creates.

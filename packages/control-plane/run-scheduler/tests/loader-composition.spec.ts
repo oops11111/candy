@@ -100,22 +100,26 @@ afterEach(async () => {
 })
 
 /** The composition entry for the scheduler, as a deployment writes it. */
-function schedulerEntry(at: string, overrides: Readonly<Record<string, number>>): readonly string[] {
+function schedulerEntry(at: string, overrides: Readonly<Record<string, unknown>>): readonly string[] {
+  const config: Record<string, unknown> = {
+    issuer: ISSUER,
+    audience: AUDIENCE,
+    credentialKeyVersion: KEY_VERSION,
+    poolBase: join(at, 'pools'),
+    ...overrides,
+  }
   return [
     '- id: run-scheduler',
     "  name: '@deepseek-ai/dsh-run-scheduler'",
     '  config:',
-    `    issuer: ${JSON.stringify(ISSUER)}`,
-    `    audience: ${JSON.stringify(AUDIENCE)}`,
-    `    credentialKeyVersion: ${JSON.stringify(KEY_VERSION)}`,
-    `    poolBase: ${JSON.stringify(join(at, 'pools'))}`,
-    ...Object.entries(overrides).map(([key, value]) => `    ${key}: ${String(value)}`),
+    // JSON is a YAML subset, so one line per field carries any value shape.
+    ...Object.entries(config).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
   ]
 }
 
 async function boot(
   at: string,
-  overrides: Readonly<Record<string, number>> = {},
+  overrides: Readonly<Record<string, unknown>> = {},
   mountScheduler = true,
 ): Promise<Context> {
   vi.stubEnv('CANDY_ASSERTION_SECRET', SECRET)
@@ -894,6 +898,81 @@ describe('a booted Candy scheduler', () => {
 
     expect(alice).toEqual({ type: 'finish', reason: { kind: 'stop' } })
     expect(bobby).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('still opens a credential sealed before the key was rotated', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    await first.fiber.dispose()
+
+    // The operator rotates: a new key under a new version, with the old
+    // version retained until every envelope has been rewrapped.
+    vi.stubEnv('CANDY_CREDENTIAL_KEY', 'candy-credential-key-ROTATED-32b')
+    vi.stubEnv('CANDY_CREDENTIAL_KEY_PREVIOUS', KEY)
+    const second = await boot(root, {
+      credentialKeyVersion: '2026-09-b',
+      retiredCredentialKeys: [{ version: KEY_VERSION, env: 'CANDY_CREDENTIAL_KEY_PREVIOUS' }],
+    })
+
+    const started = await second.runScheduler.start(
+      mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')),
+      undefined,
+      now,
+    )
+
+    expect(started.started).toBe(true)
+  })
+
+  it('locks nobody out by name: a rotation without the old key refuses every tenant', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    await first.fiber.dispose()
+
+    vi.stubEnv('CANDY_CREDENTIAL_KEY', 'candy-credential-key-ROTATED-32b')
+    const second = await boot(root, { credentialKeyVersion: '2026-09-b' })
+
+    const started = await second.runScheduler.start(
+      mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')),
+      undefined,
+      now,
+    )
+
+    // The envelope names the version it was sealed under, and this runtime no
+    // longer holds that key. Retaining it is what makes the rotation safe.
+    expect(started).toMatchObject({
+      started: false,
+      rejection: { rejection: { stage: 'credential', reason: 'unknown-key' } },
+    })
+  })
+
+  it.each([
+    ['a version that is also the current one', KEY_VERSION, /is both current and retired/],
+    ['a version retired twice', '2026-09-old', /is retired twice/],
+  ])('refuses at load %s', async (_case, version, message) => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    vi.stubEnv('CANDY_CREDENTIAL_KEY_PREVIOUS', KEY)
+
+    // Either would silently decide which key a version means, and the wrong
+    // answer is a tenant whose credential opens with the wrong key or not at
+    // all, so the composition fails instead.
+    await expect(boot(root, {
+      retiredCredentialKeys: [
+        { version, env: 'CANDY_CREDENTIAL_KEY_PREVIOUS' },
+        { version: '2026-09-old', env: 'CANDY_CREDENTIAL_KEY_PREVIOUS' },
+      ],
+    })).rejects.toThrow(message)
+  })
+
+  it('refuses at load a retired key whose variable is not set', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+
+    await expect(boot(root, {
+      retiredCredentialKeys: [{ version: '2026-09-old', env: 'CANDY_CREDENTIAL_KEY_MISSING' }],
+    })).rejects.toThrow(/CANDY_CREDENTIAL_KEY_MISSING is not set/)
   })
 
   it('keeps metering a call whose run still holds a usable account', async () => {

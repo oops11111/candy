@@ -83,6 +83,17 @@ export interface Config {
   credentialKeyEnv?: string
   /** Keyring version the credential key is registered under. */
   credentialKeyVersion: string
+  /**
+   * Key versions this runtime still opens, beside the current one.
+   *
+   * A rotation changes `credentialKeyVersion` and the key behind it, and every
+   * envelope already sealed names the version it was sealed under. Without the
+   * retired key the runtime cannot open any of them: each tenant is locked out
+   * of the account it configured until the old value is put back. Retaining
+   * the old version is what makes a rotation a migration rather than an
+   * outage — a retired key is dropped once every envelope has been rewrapped.
+   */
+  retiredCredentialKeys?: RetiredCredentialKey[]
   /** Absolute directory holding every runtime pool's root; the deployment provisions it. */
   poolBase: string
   /** How long an unsettled run holds its allowance before `expire` releases it. */
@@ -95,6 +106,14 @@ export interface Config {
   auditRetention?: number
 }
 
+/** One key version a rotation left behind, and where its key is read from. */
+export interface RetiredCredentialKey {
+  /** Version the envelopes sealed under this key name. */
+  version: string
+  /** Environment variable holding that key, exactly 32 bytes. */
+  env: string
+}
+
 export const Config: z<Config> = z.object({
   issuer: z.string().required(),
   audience: z.string().required(),
@@ -102,6 +121,10 @@ export const Config: z<Config> = z.object({
   assertionSecretEnv: z.string().role('credential-ref').default('CANDY_ASSERTION_SECRET'),
   credentialKeyEnv: z.string().role('credential-ref').default('CANDY_CREDENTIAL_KEY'),
   credentialKeyVersion: z.string().required(),
+  retiredCredentialKeys: z.array(z.object({
+    version: z.string().required(),
+    env: z.string().role('credential-ref').required(),
+  })).default([]),
   poolBase: z.string().required(),
   leaseMs: z.number().step(1).min(1).default(300_000),
   sweepMs: z.number().step(1).min(1).default(30_000),
@@ -187,10 +210,24 @@ export class RunScheduler extends Service {
         `dsh-run-scheduler: the credential key must be ${String(CREDENTIAL_KEY_BYTES)} bytes, got ${String(key.byteLength)}`,
       )
     }
-    this.keyring = {
-      currentVersion: CredentialKeyVersion(config.credentialKeyVersion),
-      keys: new Map([[CredentialKeyVersion(config.credentialKeyVersion), key]]),
+    const currentVersion = CredentialKeyVersion(config.credentialKeyVersion)
+    const keys = new Map([[currentVersion, key]])
+    for (const retired of config.retiredCredentialKeys ?? []) {
+      const version = CredentialKeyVersion(retired.version)
+      // Both of these would silently decide which key a version means, and the
+      // wrong answer is a tenant whose credential opens with someone's key or
+      // not at all, so neither is resolved here.
+      if (version === currentVersion) {
+        throw new Error(
+          `dsh-run-scheduler: credential key version '${retired.version}' is both current and retired, so it names two keys`,
+        )
+      }
+      if (keys.has(version)) {
+        throw new Error(`dsh-run-scheduler: credential key version '${retired.version}' is retired twice`)
+      }
+      keys.set(version, requireSecret(environment, retired.env))
     }
+    this.keyring = { currentVersion, keys }
   }
 
   /**

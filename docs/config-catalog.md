@@ -1740,6 +1740,17 @@ export interface Config {
   credentialKeyEnv?: string
   /** Keyring version the credential key is registered under. */
   credentialKeyVersion: string
+  /**
+   * Key versions this runtime still opens, beside the current one.
+   *
+   * A rotation changes `credentialKeyVersion` and the key behind it, and every
+   * envelope already sealed names the version it was sealed under. Without the
+   * retired key the runtime cannot open any of them: each tenant is locked out
+   * of the account it configured until the old value is put back. Retaining
+   * the old version is what makes a rotation a migration rather than an
+   * outage — a retired key is dropped once every envelope has been rewrapped.
+   */
+  retiredCredentialKeys?: RetiredCredentialKey[]
   /** Absolute directory holding every runtime pool's root; the deployment provisions it. */
   poolBase: string
   /** How long an unsettled run holds its allowance before `expire` releases it. */
@@ -1750,6 +1761,14 @@ export interface Config {
   endedSessionMemory?: number
   /** Most audit records kept per tenant, and per runtime for attempts that named none. */
   auditRetention?: number
+}
+
+/** One key version a rotation left behind, and where its key is read from. */
+export interface RetiredCredentialKey {
+  /** Version the envelopes sealed under this key name. */
+  version: string
+  /** Environment variable holding that key, exactly 32 bytes. */
+  env: string
 }
 ```
 
