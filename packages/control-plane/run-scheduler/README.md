@@ -79,6 +79,30 @@ export const started = outcome.started ? outcome.value.run.poolRoot : outcome.re
 
 What comes back is not running. Binding a provider to it stays with the caller — `charge` and `close` are on this service, and the run's record is open until `close`.
 
+### Minting a child run for a delegated session
+
+`start` needs a caller-supplied assertion, minted by whatever authenticated the request. A session delegated from an already-open run — a subagent, for instance — needs no new authentication: its identity is exactly its parent's, already verified when the parent's own run opened. `startChildRun` is that case handled directly, without an external issuing authority:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const parentSessionId: SessionId
+declare const childSessionId: SessionId
+declare const share: (run: { budget: RunBudget }) => RunBudget
+
+const result = await ctx.runScheduler.startChildRun(parentSessionId, childSessionId, share)
+
+export const started = result.ok ? result.outcome.started : false
+```
+
+It resolves the parent session's open run, copies its tenant, account, provider, device, workspace grant and conversation, mints a fresh assertion naming the child session and the parent's run as `parentRunId`, and drives it through the same `start` this section already documents — so a minted child is funded, ledgered and audited exactly as a caller-supplied one is, including the parent-subset budget `dsh-run-budget` already enforces for any assertion naming a `parentRunId`. The minted token is never transmitted or persisted; it exists only to drive that one call. `share` has no default: how much of a parent's remaining budget a delegated child should receive is a policy choice this service has no basis to guess, so a caller states it every time.
+
+`result.ok` is `false` only when the parent session itself does not resolve to one open, usable run — the same ambiguity `runIdentityFor` and `tenantOf` refuse. Once minting proceeds, the child's own admission decision — started, or a named refusal — travels inside `result.outcome`, unchanged from what `start` itself would report.
+
 ### Reading what a tenant's attempts did
 
 ```ts

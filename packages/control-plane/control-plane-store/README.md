@@ -128,6 +128,10 @@ Every stage past the assertion works from verified claims, so its record names t
 
 A child run inherits a subset of its parent's grants, and tenant and account are the two a runtime can decide: the parent held exactly one of each. `findRun` is what `dsh-run-admission` checks a child's claimed identity against, and this record is where the parent's is written down.
 
+### Why a run record names its device, workspace grant and conversation
+
+An execution assertion's device, workspace grant and conversation claims exist only for as long as verifying that one token needs them; nothing before this kept them past admission. `RunScheduler.startChildRun` needs to mint a delegated child's own assertion from an already-open run, and a minted assertion cannot state a fact the runtime does not still have — so a run record carries the three fields a child's claims must copy from its parent's.
+
 ### Why a run record names a session
 
 A model request carries the session it was assembled for and no Candy concept of its own, and an execution assertion names the session its run drives. Recording that session on the run makes `runsOfSession` the whole of the lookup that turns a provider stream into the run it is charged to — without a `runId` on `GenerateOptions`, which would let one consumer dictate a contract the whole `dsh-llm` seam shares.

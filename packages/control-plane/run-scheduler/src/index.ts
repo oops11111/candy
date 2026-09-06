@@ -36,11 +36,12 @@
  * @module @deepseek-ai/dsh-run-scheduler
  */
 
+import { randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
-import type { ProviderAccountId, ProviderKind, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
+import { RunId, type ProviderAccountId, type ProviderKind, type UserId } from '@deepseek-ai/dsh-control-plane'
 import {
   CredentialKeyVersion,
   openCredential,
@@ -48,7 +49,7 @@ import {
   type CredentialKeyring,
   type CredentialRejection,
 } from '@deepseek-ai/dsh-credential-vault'
-import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
+import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { isProviderAccountUsable, type ProviderAccountRecord } from '@deepseek-ai/dsh-provider-accounts'
@@ -186,6 +187,19 @@ export type RunIdentityRejection =
 export type RunIdentityResult =
   | { readonly ok: true; readonly value: RunIdentity }
   | { readonly ok: false; readonly rejection: RunIdentityRejection }
+
+/**
+ * The outcome of {@link RunScheduler.startChildRun}: `ok: false` only when the
+ * PARENT session itself could not be resolved to one open run — once minting
+ * proceeds, admission's own decision (started, or a named refusal) travels
+ * inside `outcome`, exactly as {@link RunScheduler.start} already reports it.
+ */
+export type StartChildRunResult =
+  | { readonly ok: true; readonly outcome: RunStartOutcome }
+  | { readonly ok: false; readonly rejection: SessionRunRejection }
+
+/** An assertion this runtime mints for itself is valid only long enough to admit immediately: it is never transmitted or persisted. */
+const MINTED_CHILD_ASSERTION_LIFETIME_MS = 60_000
 
 /**
  * Read one required secret from the environment.
@@ -394,6 +408,9 @@ export class RunScheduler extends Service {
         userId: claims.userId,
         sessionId: claims.sessionId,
         accountId: claims.accountId,
+        deviceId: claims.deviceId,
+        workspaceGrantId: claims.workspaceGrantId,
+        conversationId: claims.conversationId,
         runtime: this.config.audience,
         settledSpent: undefined,
         absorbed: undefined,
@@ -588,6 +605,63 @@ export class RunScheduler extends Service {
         remaining,
       },
     }
+  }
+
+  /**
+   * Mint and admit a child run for a session delegated from an already-open
+   * run, inheriting the delegating run's tenant, account, provider, device,
+   * workspace grant and conversation.
+   *
+   * This is the one place this runtime mints an execution assertion rather
+   * than only verifying one it was handed. It needs no external issuing
+   * authority because it authenticates nothing new: a delegated child's
+   * identity is exactly its parent's, already verified when the parent's own
+   * run was admitted, so re-deriving it here — sessionId, runId and nonce
+   * freshly generated, everything else copied — is not a new grant of
+   * authority, only a restatement of one already held. The minted token is
+   * never transmitted or persisted; it exists only to drive the same
+   * `start()` admission path a caller-supplied token would, so a child run is
+   * funded, ledgered and audited exactly as a root run is, including the
+   * parent-subset budget and concurrency accounting `dsh-run-budget` already
+   * enforces for any assertion naming a `parentRunId`.
+   * @param parentSessionId - the session whose open run the child delegates from.
+   * @param childSessionId - the session the new child run drives.
+   * @param share - the allowance to open the child with, computed from the
+   *   parent's own remaining budget. Required rather than defaulted: how much
+   *   of a parent's budget a delegated child should receive is a policy
+   *   choice this runtime has no basis to guess.
+   * @param now - epoch milliseconds; defaults to this runtime's clock.
+   * @returns the child's start outcome, or the reason the parent session
+   *   itself could not be resolved to one open, usable run.
+   */
+  async startChildRun(
+    parentSessionId: SessionId,
+    childSessionId: SessionId,
+    share: (run: { budget: RunBudget }) => RunBudget,
+    now: number = Date.now(),
+  ): Promise<StartChildRunResult> {
+    const resolved = this.findSessionRun(parentSessionId)
+    if (!resolved.ok) return { ok: false, rejection: resolved.rejection }
+    const { run, account } = resolved
+    const claims: ExecutionAssertionClaims = {
+      issuer: this.config.issuer,
+      audience: this.config.audience,
+      userId: run.userId,
+      deviceId: run.deviceId,
+      accountId: run.accountId,
+      provider: account.provider,
+      workspaceGrantId: run.workspaceGrantId,
+      conversationId: run.conversationId,
+      sessionId: childSessionId,
+      runId: RunId(randomUUID()),
+      parentRunId: run.record.runId,
+      nonce: randomUUID(),
+      issuedAt: now,
+      expiresAt: now + MINTED_CHILD_ASSERTION_LIFETIME_MS,
+    }
+    const token = mintExecutionAssertion(claims, this.assertionSecret)
+    const outcome = await this.start(token, share, now)
+    return { ok: true, outcome }
   }
 
   /** File one vault operation this scheduler performed outside a scheduling attempt. */

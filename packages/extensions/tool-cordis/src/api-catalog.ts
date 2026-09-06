@@ -1458,6 +1458,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the launch identity, or the reason none could be resolved.',
       },
       {
+        signature: 'async startChildRun( parentSessionId: SessionId, childSessionId: SessionId, share: (run: { budget: RunBudget }) => RunBudget, now: number = Date.now(), ): Promise<StartChildRunResult>',
+        description: 'Mint and admit a child run for a session delegated from an already-open run, inheriting the delegating run\'s tenant, account, provider, device, workspace grant and conversation.\n\nThis is the one place this runtime mints an execution assertion rather than only verifying one it was handed. It needs no external issuing authority because it authenticates nothing new: a delegated child\'s identity is exactly its parent\'s, already verified when the parent\'s own run was admitted, so re-deriving it here — sessionId, runId and nonce freshly generated, everything else copied — is not a new grant of authority, only a restatement of one already held. The minted token is never transmitted or persisted; it exists only to drive the same `start()` admission path a caller-supplied token would, so a child run is funded, ledgered and audited exactly as a root run is, including the parent-subset budget and concurrency accounting `dsh-run-budget` already enforces for any assertion naming a `parentRunId`.',
+        parameters: [{ name: 'parentSessionId', description: 'the session whose open run the child delegates from.' }, { name: 'childSessionId', description: 'the session the new child run drives.' }, { name: 'share', description: 'the allowance to open the child with, computed from the parent\'s own remaining budget. Required rather than defaulted: how much of a parent\'s budget a delegated child should receive is a policy choice this runtime has no basis to guess.' }, { name: 'now', description: 'epoch milliseconds; defaults to this runtime\'s clock.' }],
+        returns: 'the child\'s start outcome, or the reason the parent session itself could not be resolved to one open, usable run.',
+      },
+      {
         signature: 'close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>',
         description: 'Close one run and its descendants, and charge its tenant for what the tree consumed.\n\nClosing a root is the one point a tenant\'s durable allowance moves. A child settles into its parent\'s record instead, and reaches the tenant when that parent\'s root closes, so a tree is charged once rather than once per run.',
         parameters: [{ name: 'runId', description: 'the run to settle.' }],
@@ -4182,7 +4188,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DurableRunRecord',
-    declaration: 'export interface DurableRunRecord {\n    readonly record: RunRecord;\n    readonly userId: TenantId;\n    readonly sessionId: SessionId;\n    readonly accountId: ProviderAccountId;\n    readonly runtime: string;\n    readonly settledSpent: RunSpend | undefined;\n    readonly absorbed: RunId | undefined;\n}',
+    declaration: 'export interface DurableRunRecord {\n    readonly record: RunRecord;\n    readonly userId: TenantId;\n    readonly sessionId: SessionId;\n    readonly accountId: ProviderAccountId;\n    readonly deviceId: DeviceId;\n    readonly workspaceGrantId: WorkspaceGrantId;\n    readonly conversationId: ConversationId;\n    readonly runtime: string;\n    readonly settledSpent: RunSpend | undefined;\n    readonly absorbed: RunId | undefined;\n}',
   },
   {
     name: 'DynamicCordisPackage',
@@ -5743,6 +5749,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SpillSource',
     declaration: 'export interface SpillSource {\n    toolName: string;\n    callId: ToolCallId;\n    label: string;\n}',
+  },
+  {
+    name: 'StartChildRunResult',
+    declaration: 'export type StartChildRunResult = {\n    readonly ok: true;\n    readonly outcome: RunStartOutcome;\n} | {\n    readonly ok: false;\n    readonly rejection: SessionRunRejection;\n};',
   },
   {
     name: 'StartedRun',

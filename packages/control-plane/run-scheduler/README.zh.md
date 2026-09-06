@@ -79,6 +79,30 @@ export const started = outcome.started ? outcome.value.run.poolRoot : outcome.re
 
 返回的东西不在运行。把提供方绑定到它上面仍归调用方 —— `charge` 与 `close` 在本服务上,而这次运行的记录在 `close` 之前一直开着。
 
+### 为一个被委派的会话铸造一次子运行
+
+`start` 需要一份由认证了这次请求的东西铸造出来的断言。而一个从某次已开启运行那里委派出来的会话——比如一个子代理——不需要任何新的认证:它的身份恰好就是它父运行的身份,早已在父运行自己开启时被验证过。`startChildRun` 就是把这种情况直接处理掉,不需要任何外部的签发权威:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import type { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const parentSessionId: SessionId
+declare const childSessionId: SessionId
+declare const share: (run: { budget: RunBudget }) => RunBudget
+
+const result = await ctx.runScheduler.startChildRun(parentSessionId, childSessionId, share)
+
+export const started = result.ok ? result.outcome.started : false
+```
+
+它解析出父会话开启中的运行,复制它的租户、账户、provider、设备、workspace 授权与对话,铸造一份指名子会话、并把父运行当作 `parentRunId` 的全新断言,再把它推过本节前面已经记录过的同一个 `start`——因此一次铸造出来的子运行,会像一份调用方自带的断言一样被资助、记账、审计,包括 `dsh-run-budget` 早已为任何指名了 `parentRunId` 的断言强制执行的、父级子集式的预算。铸造出来的 token 从不被传输或持久化;它存在的唯一目的就是推动这一次调用。`share` 没有默认值:一个被委派的子运行应该拿到父运行剩余预算的多少,是一个策略选择,本服务没有依据去猜测,因此每次都由调用方陈述。
+
+`result.ok` 只在父会话本身没能解析出唯一一个开启中、可用的运行时才是 `false`——这与 `runIdentityFor` 和 `tenantOf` 所拒绝的是同一种歧义。一旦铸造得以进行,子运行自己的准入决定——启动,或者一个被指名的拒绝——就会原样携带在 `result.outcome` 里,与 `start` 自己会报告的完全一致。
+
 ### 读出一个租户的尝试做了什么
 
 ```ts

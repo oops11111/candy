@@ -14,7 +14,7 @@
 import { z } from 'zod'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
+import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type { UserId as TenantId } from '@deepseek-ai/dsh-control-plane'
 import { CredentialKeyVersion, type CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountRecord } from '@deepseek-ai/dsh-provider-accounts'
@@ -110,6 +110,12 @@ const storedRun = z.object({
   sessionId: z.string(),
   /** The provider account this run was admitted for; a child may not name another. */
   accountId: z.string(),
+  /** Paired device the run was requested from; a minted child assertion copies its parent's. */
+  deviceId: z.string(),
+  /** Workspace grant bounding the run's filesystem authority; a minted child assertion copies its parent's. */
+  workspaceGrantId: z.string(),
+  /** Tenant-visible conversation the run belongs to; a minted child assertion copies its parent's. */
+  conversationId: z.string(),
   runtime: z.string(),
   reserved: storedGrant,
   spent: storedConsumed,
@@ -352,6 +358,27 @@ export interface DurableRunRecord {
    */
   readonly accountId: ProviderAccountId
   /**
+   * Paired device the run was requested from.
+   *
+   * A minted child assertion copies its parent's, since a delegated child acts
+   * from the same device its parent does.
+   */
+  readonly deviceId: DeviceId
+  /**
+   * Workspace grant bounding the run's filesystem authority.
+   *
+   * A minted child assertion copies its parent's, since a delegated child's
+   * grant may not widen what its parent was given.
+   */
+  readonly workspaceGrantId: WorkspaceGrantId
+  /**
+   * Tenant-visible conversation the run belongs to.
+   *
+   * A minted child assertion copies its parent's, since a delegated child
+   * belongs to the same conversation its parent does.
+   */
+  readonly conversationId: ConversationId
+  /**
    * The runtime that opened this run, as its own audience identifier.
    *
    * Recovery reads only its own runtime's records. Two runtimes sharing one
@@ -376,6 +403,9 @@ export function toStoredRun(run: DurableRunRecord): StoredRun {
     userId: run.userId,
     sessionId: run.sessionId,
     accountId: run.accountId,
+    deviceId: run.deviceId,
+    workspaceGrantId: run.workspaceGrantId,
+    conversationId: run.conversationId,
     runtime: run.runtime,
     reserved: {
       tokens: run.record.reserved.tokens,
@@ -420,6 +450,9 @@ export function fromStoredRun(stored: StoredRun): DurableRunRecord {
     userId: UserId(stored.userId),
     sessionId: brandString<SessionId>(stored.sessionId),
     accountId: ProviderAccountId(stored.accountId),
+    deviceId: DeviceId(stored.deviceId),
+    workspaceGrantId: WorkspaceGrantId(stored.workspaceGrantId),
+    conversationId: ConversationId(stored.conversationId),
     runtime: stored.runtime,
     absorbed: stored.absorbed === undefined ? undefined : RunId(stored.absorbed),
     settledSpent: stored.settledSpent === undefined ? undefined : {

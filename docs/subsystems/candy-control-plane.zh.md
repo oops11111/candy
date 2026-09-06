@@ -386,6 +386,35 @@ meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChu
 async runIdentityFor(sessionId: SessionId): Promise<RunIdentityResult>
 
 /**
+ * Mint and admit a child run for a session delegated from an already-open
+ * run, inheriting the delegating run's tenant, account, provider, device,
+ * workspace grant and conversation.
+ *
+ * This is the one place this runtime mints an execution assertion rather
+ * than only verifying one it was handed. It needs no external issuing
+ * authority because it authenticates nothing new: a delegated child's
+ * identity is exactly its parent's, already verified when the parent's own
+ * run was admitted, so re-deriving it here — sessionId, runId and nonce
+ * freshly generated, everything else copied — is not a new grant of
+ * authority, only a restatement of one already held. The minted token is
+ * never transmitted or persisted; it exists only to drive the same
+ * `start()` admission path a caller-supplied token would, so a child run is
+ * funded, ledgered and audited exactly as a root run is, including the
+ * parent-subset budget and concurrency accounting `dsh-run-budget` already
+ * enforces for any assertion naming a `parentRunId`.
+ * @param parentSessionId - the session whose open run the child delegates from.
+ * @param childSessionId - the session the new child run drives.
+ * @param share - the allowance to open the child with, computed from the
+ *   parent's own remaining budget. Required rather than defaulted: how much
+ *   of a parent's budget a delegated child should receive is a policy
+ *   choice this runtime has no basis to guess.
+ * @param now - epoch milliseconds; defaults to this runtime's clock.
+ * @returns the child's start outcome, or the reason the parent session
+ *   itself could not be resolved to one open, usable run.
+ */
+async startChildRun( parentSessionId: SessionId, childSessionId: SessionId, share: (run: { budget: RunBudget }) => RunBudget, now: number = Date.now(), ): Promise<StartChildRunResult>
+
+/**
  * Close one run and its descendants, and charge its tenant for what the tree
  * consumed.
  *

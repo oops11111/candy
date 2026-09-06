@@ -109,6 +109,9 @@ const SECOND_SESSION = brandString<SessionId>('session-2')
 const CHILD_SESSION = brandString<SessionId>('session-child')
 const BOBBY = UserId('user-bobby')
 const ACCOUNT = ProviderAccountId('account-1')
+const DEVICE = DeviceId('device-1')
+const WORKSPACE_GRANT = WorkspaceGrantId('grant-1')
+const CONVERSATION = ConversationId('conversation-1')
 const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 2_500_000, children: 4 }
 /** A share small enough that the tenant's grant still funds another run beside it. */
 const SHARE: RunBudget = { tokens: 1_000, wallMs: 60_000, costMicroUsd: 10_000, children: 0 }
@@ -540,6 +543,9 @@ describe('a booted Candy scheduler', () => {
       userId: ALICE,
       sessionId: SESSION,
       accountId: ACCOUNT,
+      deviceId: DEVICE,
+      workspaceGrantId: WORKSPACE_GRANT,
+      conversationId: CONVERSATION,
       runtime: AUDIENCE,
       settledSpent: { tokens: 70, wallMs: 4, costMicroUsd: 5 },
       absorbed: undefined,
@@ -571,6 +577,9 @@ describe('a booted Candy scheduler', () => {
       userId: ALICE,
       sessionId: SESSION,
       accountId: ACCOUNT,
+      deviceId: DEVICE,
+      workspaceGrantId: WORKSPACE_GRANT,
+      conversationId: CONVERSATION,
       runtime: AUDIENCE,
       settledSpent: spent,
       absorbed: undefined,
@@ -598,6 +607,9 @@ describe('a booted Candy scheduler', () => {
       userId: ALICE,
       sessionId: SESSION,
       accountId: ACCOUNT,
+      deviceId: DEVICE,
+      workspaceGrantId: WORKSPACE_GRANT,
+      conversationId: CONVERSATION,
       runtime: 'candy-runtime-debian-2',
       settledSpent: undefined,
       absorbed: undefined,
@@ -1174,6 +1186,7 @@ describe('a booted Candy scheduler', () => {
         leaseExpiresAt: now + 300_000,
       },
       userId: ALICE, sessionId: brandString<SessionId>('session-orphan'), accountId: ACCOUNT,
+      deviceId: DEVICE, workspaceGrantId: WORKSPACE_GRANT, conversationId: CONVERSATION,
       runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
     })
     await first.fiber.dispose()
@@ -1566,7 +1579,9 @@ describe('a booted Candy scheduler', () => {
         runId: RunId('run-elsewhere'), parentRunId: undefined,
         reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
       },
-      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT,
+      deviceId: DEVICE, workspaceGrantId: WORKSPACE_GRANT, conversationId: CONVERSATION,
+      runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
     })
     await ctx.plugin(Llm)
     ctx.llm.registerAdapter(['fake'], new FakeAdapter())
@@ -1733,7 +1748,9 @@ describe('a booted Candy scheduler', () => {
           runId: RunId('run-elsewhere'), parentRunId: undefined,
           reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
         },
-        userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+        userId: ALICE, sessionId: SESSION, accountId: ACCOUNT,
+        deviceId: DEVICE, workspaceGrantId: WORKSPACE_GRANT, conversationId: CONVERSATION,
+        runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
       })
 
       const identity = await ctx.runScheduler.runIdentityFor(SESSION)
@@ -1815,7 +1832,9 @@ describe('a booted Candy scheduler', () => {
           runId: RunId('run-elsewhere'), parentRunId: undefined,
           reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
         },
-        userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+        userId: ALICE, sessionId: SESSION, accountId: ACCOUNT,
+        deviceId: DEVICE, workspaceGrantId: WORKSPACE_GRANT, conversationId: CONVERSATION,
+        runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
       })
 
       expect(ctx.runScheduler.tenantOf(SESSION)).toBeUndefined()
@@ -2239,14 +2258,18 @@ describe('a booted Candy scheduler', () => {
         runId: RunId('run-root'), parentRunId: undefined,
         reserved: BUDGET, spent: settled, leaseExpiresAt: now + 300_000,
       },
-      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: settled, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT,
+      deviceId: DEVICE, workspaceGrantId: WORKSPACE_GRANT, conversationId: CONVERSATION,
+      runtime: AUDIENCE, settledSpent: settled, absorbed: undefined,
     })
     await first.controlPlaneStore.openRun({
       record: {
         runId: RunId('run-child'), parentRunId: RunId('run-root'),
         reserved: SHARE, spent: { tokens: 3, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
       },
-      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT,
+      deviceId: DEVICE, workspaceGrantId: WORKSPACE_GRANT, conversationId: CONVERSATION,
+      runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
     })
     await first.fiber.dispose()
     context = undefined
@@ -2314,5 +2337,163 @@ describe('a booted Candy scheduler', () => {
 
     expect(released.map(settlement => settlement.runId)).toEqual([RunId('run-root')])
     expect(ctx.runScheduler.ledger.open()).toEqual([])
+  })
+
+  describe('minting a child run for a delegated session', () => {
+    it('opens a real child run, inheriting the parent\'s tenant, account, device, workspace and conversation', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+      const result = await ctx.runScheduler.startChildRun(SESSION, CHILD_SESSION, () => SHARE, now)
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.outcome.started).toBe(true)
+      if (!result.outcome.started) return
+      const childRunId = result.outcome.value.run.claims.runId
+      expect(childRunId).not.toBe(RunId('run-root'))
+      expect(result.outcome.value.run.claims.parentRunId).toBe(RunId('run-root'))
+      const stored = ctx.controlPlaneStore.findRun(childRunId)
+      expect(stored).toMatchObject({
+        userId: ALICE,
+        sessionId: CHILD_SESSION,
+        accountId: ACCOUNT,
+        deviceId: DEVICE,
+        workspaceGrantId: WORKSPACE_GRANT,
+        conversationId: CONVERSATION,
+      })
+    })
+
+    it('fixes the exact gap this method exists for: the child session now resolves a launch identity', async () => {
+      // Before this method existed, a delegated child's session had no run at
+      // all, so `runIdentityFor` — and therefore a real LLM route — refused it
+      // with `no-open-run` no matter how legitimate the parent's own run was.
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      expect(await ctx.runScheduler.runIdentityFor(CHILD_SESSION)).toMatchObject({ ok: false, rejection: { reason: 'no-open-run' } })
+
+      await ctx.runScheduler.startChildRun(SESSION, CHILD_SESSION, () => SHARE, now)
+
+      const identity = await ctx.runScheduler.runIdentityFor(CHILD_SESSION)
+      expect(identity.ok).toBe(true)
+      expect(ctx.runScheduler.tenantOf(CHILD_SESSION)).toBe(ALICE)
+    })
+
+    it('subtracts the child\'s share from the parent, exactly as a caller-minted child assertion would', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      const before = ctx.runScheduler.ledger.remaining(RunId('run-root'))
+
+      await ctx.runScheduler.startChildRun(SESSION, CHILD_SESSION, () => SHARE, now)
+
+      const after = ctx.runScheduler.ledger.remaining(RunId('run-root'))
+      expect(after).toMatchObject({ tokens: (before?.tokens ?? 0) - SHARE.tokens, children: (before?.children ?? 0) - 1 })
+    })
+
+    it('refuses a session with no open run to delegate from', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+
+      const result = await ctx.runScheduler.startChildRun(SESSION, CHILD_SESSION, () => SHARE)
+
+      expect(result).toMatchObject({ ok: false, rejection: { reason: 'no-open-run' } })
+    })
+
+    it('refuses a delegating session two open runs both claim', async () => {
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now)
+      await ctx.controlPlaneStore.openRun({
+        record: {
+          runId: RunId('run-elsewhere'), parentRunId: undefined,
+          reserved: SHARE, spent: { tokens: 0, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: now + 300_000,
+        },
+        userId: ALICE, sessionId: SESSION, accountId: ACCOUNT,
+        deviceId: DEVICE, workspaceGrantId: WORKSPACE_GRANT, conversationId: CONVERSATION,
+        runtime: AUDIENCE, settledSpent: undefined, absorbed: undefined,
+      })
+
+      const result = await ctx.runScheduler.startChildRun(SESSION, CHILD_SESSION, () => SHARE, now)
+
+      expect(result).toMatchObject({
+        ok: false,
+        rejection: { reason: 'claimed-by-several', runIds: [RunId('run-root'), RunId('run-elsewhere')] },
+      })
+    })
+
+    it('surfaces the child\'s own admission refusal rather than starting it', async () => {
+      // The minted token drives the exact same `start()` admission path a
+      // caller-supplied token would, so a share the tenant cannot afford is
+      // refused the same way — the child gains no authority its parent lacks.
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+      // The parent's root run reserved the whole tenant grant for itself (the
+      // default share); a child asking for more than that has nothing left
+      // to draw from.
+      const result = await ctx.runScheduler.startChildRun(
+        SESSION, CHILD_SESSION, () => ({ ...SHARE, tokens: BUDGET.tokens + 1 }), now,
+      )
+
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      expect(result.outcome).toMatchObject({
+        started: false,
+        rejection: { stage: 'ledger', rejection: { reason: 'parent-exhausted' } },
+      })
+      expect(ctx.runScheduler.tenantOf(CHILD_SESSION)).toBeUndefined()
+    })
+
+    it('lets two children meter independently, neither waiting on the other\'s call', async () => {
+      // Each child is its own RunId, so `oneCallAtATime`'s per-run call line
+      // never couples them — the reason this mints a separate child run
+      // instead of aliasing the child's session onto the parent's run, which
+      // would have serialized every parallel delegation onto one call line.
+      root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+      const ctx = await boot(root)
+      const now = Date.now()
+      await provision(ctx, now)
+      await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+      const first = await ctx.runScheduler.startChildRun(SESSION, CHILD_SESSION, () => SHARE, now)
+      const second = await ctx.runScheduler.startChildRun(SESSION, SECOND_SESSION, () => SHARE, now)
+      if (!first.ok || !first.outcome.started || !second.ok || !second.outcome.started) throw new Error('expected both children to start')
+      const firstRunId = first.outcome.value.run.claims.runId
+      const secondRunId = second.outcome.value.run.claims.runId
+
+      let firstYielded = false
+      async function* hangs(): AsyncIterable<StreamChunk> {
+        yield { type: 'usage', usage: { inputTokens: 1, outputTokens: 1, costMicroUsd: 1 } }
+        firstYielded = true
+        await new Promise<never>(() => {})
+      }
+      async function* finishes(): AsyncIterable<StreamChunk> {
+        yield { type: 'usage', usage: { inputTokens: 1, outputTokens: 1, costMicroUsd: 1 } }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      }
+      const stuck = (async () => {
+        for await (const _chunk of ctx.runScheduler.meter(firstRunId, hangs())) { /* never returns */ }
+      })()
+      void stuck.catch(() => {})
+
+      const seen: StreamChunk[] = []
+      for await (const chunk of ctx.runScheduler.meter(secondRunId, finishes())) seen.push(chunk)
+
+      expect(firstYielded).toBe(true)
+      expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    })
   })
 })

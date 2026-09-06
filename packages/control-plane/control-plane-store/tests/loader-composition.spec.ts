@@ -15,7 +15,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
+import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import {
   CredentialKeyVersion,
@@ -35,6 +35,9 @@ const ALICE = UserId('user-alice')
 const SESSION = brandString<SessionId>('session-1')
 const BOBBY = UserId('user-bobby')
 const ACCOUNT = ProviderAccountId('account-1')
+const DEVICE = DeviceId('device-1')
+const WORKSPACE_GRANT = WorkspaceGrantId('grant-1')
+const CONVERSATION = ConversationId('conversation-1')
 const KEY_VERSION = CredentialKeyVersion('2026-09-a')
 const KEYRING: CredentialKeyring = { currentVersion: KEY_VERSION, keys: new Map([[KEY_VERSION, Buffer.alloc(32, 5)]]) }
 const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 2_500_000, children: 4 }
@@ -203,7 +206,9 @@ describe('a booted control-plane store', () => {
         runId: RunId('run-root'), parentRunId: undefined,
         reserved: BUDGET, spent: { tokens: 5, wallMs: 0, costMicroUsd: 0 }, leaseExpiresAt: NOW,
       },
-      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT, runtime: 'runtime-1', settledSpent: undefined, absorbed: undefined,
+      userId: ALICE, sessionId: SESSION, accountId: ACCOUNT,
+      deviceId: DEVICE, workspaceGrantId: WORKSPACE_GRANT, conversationId: CONVERSATION,
+      runtime: 'runtime-1', settledSpent: undefined, absorbed: undefined,
     })
 
     await ctx.controlPlaneStore.absorbChild(RunId('run-root'), RunId('run-child'), { tokens: 30, wallMs: 1, costMicroUsd: 2 })
