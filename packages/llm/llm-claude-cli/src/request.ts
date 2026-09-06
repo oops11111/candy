@@ -27,12 +27,16 @@ function refuse(reason: string): never {
  * Read the one user turn a CLI invocation can carry.
  *
  * Multi-turn history is refused rather than flattened. The CLI's
- * `--input-format stream-json` accepts only user messages, and each one it
- * accepts starts its own turn with its own terminal frame, so it replays no
- * assistant history and cannot serve one model call. Rendering the history
- * into the prompt as text would mean inventing a transcript format this
- * repository has no evidence for, and getting it wrong degrades model output
- * silently. The decision is therefore deferred to a consumer that needs it.
+ * `--input-format stream-json` looks like a way to send one, and a recorded run
+ * settles that it is not: each user message becomes its own billed turn with
+ * its own terminal frame, and an assistant message is accepted and dropped
+ * without a frame reporting it. Since the translator settles on the first
+ * terminal frame, flattening onto that input would answer the conversation's
+ * first message and discard the reply to its last. Rendering the history into
+ * the prompt as text is the remaining alternative, and it would mean inventing
+ * a transcript format this repository has no evidence for, where getting it
+ * wrong degrades model output silently. The decision is therefore deferred to
+ * a consumer that needs it.
  * @param messages - the request's conversation, exactly as the seam assembled it.
  * @returns the single user turn's text.
  */

@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 `dsh-claude-cli-protocol` is what the Claude CLI's `--output-format stream-json` output means and what an invocation of it must say. It decodes the CLI's line-delimited stdout, translates the frames into the harness [`StreamChunk`](../llm/README.md) vocabulary, and composes the argument vector and environment overlay that make one run a plain streaming model endpoint spending exactly one tenant's key. It spawns nothing: the adapter that runs the CLI supplies the process, so everything here is testable against recorded output with no credential, no network, and no child process.
 
-The behavior was derived from `claude` 2.1.259 and the `@anthropic-ai/claude-agent-sdk` declarations shipped with it, not from documentation, and both test fixtures are real recorded runs. Three of the findings are load-bearing and none is guessable; they are described under [Understand the implementation](#understand-the-implementation).
+The behavior was derived from `claude` 2.1.259 and the `@anthropic-ai/claude-agent-sdk` declarations shipped with it, not from documentation, and every test fixture is a real recorded run. Three of the findings are load-bearing and none is guessable; they are described under [Understand the implementation](#understand-the-implementation).
 
 ## Table of Contents
 
@@ -111,6 +111,12 @@ Without it the CLI falls back to whatever ambient login the host has. A recorded
 
 `SCRUBBED_STATE_VARIABLES` tombstones them. The list covers the standard state-directory variables rather than only the ones a particular CLI version is known to read, because the two mistakes are not symmetric: a tombstoned name the CLI ignores changes nothing, since the fallback is the location under the pinned `HOME` that was wanted anyway, while a name left off the list is a directory two tenants share.
 
+### A conversation on stdin is answered turn by turn, not replayed
+
+`--input-format stream-json` looks like a way to hand the CLI a conversation, and it is not. A recorded run fed a user message, an assistant message, and a second user message opened *two* sessions and produced *two* terminal frames: each user message became a turn of its own, billed on its own, and the assistant message was accepted and dropped without a frame reporting it. The CLI has no input through which prior assistant content reaches the model.
+
+That matters here because the translator settles on the first terminal frame it sees. Replaying the recording shows what a caller would actually receive: the reply to the conversation's *first* message, with the reply to its last message — the one asked for — discarded after being paid for. The `injected-history.jsonl` fixture is that run, and it is why [`dsh-llm-claude-cli`](../llm-claude-cli/README.md) refuses a multi-message request rather than flattening it onto this input.
+
 ### Frame handling is open by default
 
 The CLI multiplexes session bookkeeping, rate-limit reports, hook and task activity, and status onto the same stream, and its own declarations describe that union as an open set. Unknown frame tags, unmodelled content-block types, and unrecognized delta types therefore yield no chunks instead of failing the run. The one thing that does fail is a *complete* stdout line that is not a JSON object, because that means the decoder is not reading what it believes it is; an unterminated final line, which is what killing the CLI produces, is discarded instead.
@@ -177,7 +183,7 @@ These are current package constraints, not a task backlog.
 - **Only the invocation total is carried, not its breakdown** — `total_cost_usd` reaches `TokenUsage.costMicroUsd`, but the terminal frame's per-model `modelUsage` totals are dropped. A tenant's bill is reconstructable; which model earned which part of it is not.
 - **The isolation verdict is reported, not enforced** — `isCredentialIsolated` reads the CLI's announcement; nothing here fails a run whose answer is `false`, because this package never owns the process to fail.
 - **Pinned to one CLI version** — the fixtures and the frame vocabulary come from `claude` 2.1.259. The frame union is open, so a newer CLI adding frames is handled; one that renames a field this package acts on is not, and would surface as a translation that silently stops seeing content.
-- **Re-recording the fixtures needs a live CLI and a key** — both are real recorded runs, so refreshing them is a manual step: run the flags `claudeCliArguments` builds, then normalize session ids, uuids, host paths and account telemetry, and empty the payloads of ignored frames. `text-turn.jsonl` is deliberately recorded *without* `--bare`, so it pins the un-isolated `apiKeySource` this package exists to detect; re-recording it with `--bare` would silently retire that coverage.
+- **Re-recording the fixtures needs a live CLI and a key** — each is a real recorded run, so refreshing them is a manual step: run the flags `claudeCliArguments` builds, then normalize session ids, uuids, host paths and account telemetry, and empty the payloads of ignored frames. `text-turn.jsonl` is deliberately recorded *without* `--bare`, so it pins the un-isolated `apiKeySource` this package exists to detect; re-recording it with `--bare` would silently retire that coverage.
 
 ### Dev Note
 

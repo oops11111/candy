@@ -48,7 +48,7 @@ One user turn of text, a system prompt, a model id, and a reasoning effort. Ever
 |---|---|
 | One user message, text blocks only | Runs |
 | `system`, `model`, `reasoningEffort` (`low`…`max`) | Runs; each maps to a CLI flag |
-| More than one message | Refused — the CLI replays no assistant history |
+| More than one message | Refused — the CLI replays no assistant history, as measured |
 | A non-text block | Refused — the positional prompt carries text only |
 | `tools` | Refused — the CLI accepts no caller-supplied schemas |
 | `maxTokens`, `temperature`, `stop` | Refused — the CLI has no flag for them |
@@ -98,7 +98,9 @@ export const adapter = new ClaudeCliAdapter({
 
 ### Why history is refused rather than flattened
 
-The CLI's `--input-format stream-json` accepts only user messages, and each one it accepts starts its own turn with its own terminal frame — a recorded two-message input produced two `result` frames. It therefore replays no assistant history and cannot serve one model call. The alternative, rendering the conversation into the prompt as text, means inventing a transcript format this repository has no evidence for; getting it wrong degrades model output silently, and nothing in the harness would show it. The decision waits for a consumer that needs it.
+The CLI's `--input-format stream-json` looks like the way to hand it a conversation. A recorded run fed a user message, an assistant message, and a second user message — [`injected-history.jsonl`](../claude-cli-protocol/tests/fixtures/injected-history.jsonl) — settles what it does instead: two sessions, two `result` frames, one billed turn per user message, and the assistant message accepted and dropped with no frame reporting it. Nothing on that input reaches the model as prior assistant content.
+
+Flattening onto it would therefore not merely lose history; it would answer the wrong question. The translator settles on the first terminal frame, so the caller would receive the reply to the conversation's *first* message while the reply to its last — the one asked for — was discarded after being paid for. The remaining alternative, rendering the conversation into the prompt as text, means inventing a transcript format this repository has no evidence for; getting it wrong degrades model output silently, and nothing in the harness would show it. The decision waits for a consumer that needs it.
 
 ### Exactly one terminal chunk, three ways to get there
 

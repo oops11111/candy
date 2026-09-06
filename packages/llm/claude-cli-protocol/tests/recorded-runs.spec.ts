@@ -130,3 +130,44 @@ describe('a recorded authentication failure', () => {
     expect(verdicts).toEqual([false])
   })
 })
+
+describe('a recorded run fed a conversation on stdin', () => {
+  it('answers each user message as its own turn rather than replaying one', () => {
+    const decoder = new ClaudeCliLineDecoder()
+    const frames = decoder.push(recorded('injected-history.jsonl'))
+
+    // The input was user, assistant, user. Two init frames and two terminal
+    // frames: the CLI opened a session per user message and finished each one.
+    expect(frames.filter(frame => frame.type === 'system' && frame.subtype === 'init')).toHaveLength(2)
+    expect(frames.filter(frame => frame.type === 'result')).toHaveLength(2)
+  })
+
+  it('discards the injected assistant turn without reporting it', () => {
+    // No frame carries the assistant text that was written to stdin, and no
+    // frame reports it as rejected: the CLI accepted the line and dropped it.
+    expect(recorded('injected-history.jsonl')).not.toContain('Understood. Your favorite color is teal.')
+  })
+
+  it('bills the injected history as a model call of its own', () => {
+    const results = recorded('injected-history.jsonl')
+      .split('\n').filter(Boolean)
+      .map(line => JSON.parse(line) as { type?: string; usage?: { input_tokens: number; output_tokens: number } })
+      .filter(frame => frame.type === 'result')
+
+    // The first user message was not context for the second; it was a paid
+    // turn that produced 76 output tokens nobody asked for.
+    expect(results[0]?.usage).toMatchObject({ input_tokens: 3889, output_tokens: 76 })
+  })
+
+  it('answers the caller with the first turn and drops the last one', () => {
+    const chunks = replay('injected-history.jsonl')
+    const text = chunks.filter(chunk => chunk.type === 'text-delta').map(chunk => chunk.text).join('')
+
+    // The translator settles on the first terminal frame, so a stream carrying
+    // two turns reaches the caller as one: the reply to the conversation's
+    // first message, while the reply to its last message — 'Teal.', the answer
+    // the caller asked for — is discarded after being paid for.
+    expect(chunks.filter(chunk => chunk.type === 'finish')).toHaveLength(1)
+    expect(text).toBe("Got it \u2014 your favorite color is teal. I'll keep that in mind for our conversation.")
+  })
+})
