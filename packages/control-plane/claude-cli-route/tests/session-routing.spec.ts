@@ -195,6 +195,27 @@ describe('the Claude CLI route, resolved per call from a session', () => {
     expect(JSON.parse(text)).toMatchObject({ key: 'sk-ant-alice' })
   })
 
+  it("attributes the process it launches to the run's own tenant", async () => {
+    // The launch is filed by `run-scheduler`'s own `subprocess/launched`
+    // listener, which attributes through the run scope entered around each
+    // metered pull — proving that scope still reaches a process started this
+    // deep inside a route's own per-call adapter, not only inside a directly
+    // constructed one.
+    root = await mkdtemp(join(tmpdir(), 'dsh-claude-cli-route-'))
+    const executable = join(root, 'stand-in-claude.mjs')
+    await writeFile(executable, STAND_IN, 'utf8')
+    const context = await boot(root)
+    useStandIn(context, executable)
+    const now = Date.now()
+    await provision(context, now)
+    await context.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+    await collectText(context)
+
+    const launched = context.runScheduler.auditsOfTenant(ALICE).find(record => record.event === 'launched')
+    expect(launched).toMatchObject({ runId: RUN, userId: ALICE, outcome: 'ok' })
+  })
+
   it('re-resolves the credential for a second call of the same run', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-claude-cli-route-'))
     const executable = join(root, 'stand-in-claude.mjs')
