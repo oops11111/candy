@@ -200,6 +200,19 @@ export class RunScheduler extends Service {
   private readonly callLines = new Map<RunId, Promise<void>>()
 
   /**
+   * Per run, the disposer that releases whatever live resource its ledger
+   * record has no reach into — a spawned process, most concretely.
+   *
+   * A run ends here as accounting: `settle` writes a charge and forgets the
+   * record. Nothing in that write reaches what the run actually started, so a
+   * run ended for cause — a revoked account, an expired lease, a tree closed
+   * around it — left its process running with no accounting left to stop it.
+   * This is that reach, registered by whatever holds the resource and invoked
+   * once, by `settle`, whichever way the run ends.
+   */
+  private readonly disposers = new Map<RunId, () => void | Promise<void>>()
+
+  /**
    * The run whose metered call the current asynchronous work belongs to.
    *
    * A provider process is started deep inside an adapter, with no session and
@@ -534,6 +547,72 @@ export class RunScheduler extends Service {
   }
 
   /**
+   * Register a disposer to run once, when `runId` is settled.
+   *
+   * The producer is whatever holds a live resource this run started and the
+   * ledger cannot reach: a spawned process, bound to the run at the moment it
+   * is created. Settlement ends the run's accounting whichever way it comes
+   * about — a normal finish, an expired lease, an account no longer able to
+   * authorize it, or an ancestor's tree closing around it — and this is what
+   * lets that same event reach the resource.
+   *
+   * At most one disposer is held per run: a later registration replaces an
+   * earlier one rather than accumulating, which is correct for a run that
+   * makes several sequential calls, since only the live one still needs
+   * releasing. A caller whose resource already ended on its own unregisters
+   * with the returned function, so a stale disposer is never invoked for a
+   * process that already exited.
+   * @param runId - the run whose settlement should trigger disposal.
+   * @param dispose - releases the resource; a rejection is logged and never
+   *   allowed to fail the settlement that triggered it.
+   * @returns unregisters this disposer without invoking it.
+   */
+  registerDisposer(runId: RunId, dispose: () => void | Promise<void>): () => void {
+    this.disposers.set(runId, dispose)
+    return () => { if (this.disposers.get(runId) === dispose) this.disposers.delete(runId) }
+  }
+
+  /**
+   * Wrap a process-spawning function so every handle it returns is registered
+   * against `runId`'s lifetime and unregistered once that process exits on
+   * its own.
+   *
+   * This is the whole of the disposal wiring a provider binding needs: compose
+   * it around the `spawn` function an adapter is given, and settlement reaches
+   * every process that function ever starts for this run, without the binding
+   * knowing anything about settlement itself.
+   * @param runId - the run each spawned handle's disposer is registered against.
+   * @param spawn - the underlying spawn function, called unchanged.
+   * @returns a spawn function with the same signature.
+   */
+  disposableSpawn<Spec, Handle extends { readonly done: Promise<unknown>; terminate(): void }>(
+    runId: RunId,
+    spawn: (spec: Spec) => Handle,
+  ): (spec: Spec) => Handle {
+    return (spec: Spec): Handle => {
+      const handle = spawn(spec)
+      const unregister = this.registerDisposer(runId, () => { handle.terminate() })
+      handle.done.then(unregister, unregister)
+      return handle
+    }
+  }
+
+  /** Invoke and clear a run's registered disposer, if it has one; never throws. */
+  private async disposeOf(runId: RunId): Promise<void> {
+    const dispose = this.disposers.get(runId)
+    if (dispose === undefined) return
+    this.disposers.delete(runId)
+    try {
+      await dispose()
+    } catch (error) {
+      // The disposer's own failure must not leave a run unsettled: settlement
+      // is accounting and has already happened by the time this runs, so
+      // there is nowhere left for this error to go but the log.
+      this.ctx.logger.warn(`run-scheduler: disposer for run '${runId}' failed: ${String(error)}`)
+    }
+  }
+
+  /**
    * Release every hold whose lease has passed and drop nonce records that can
    * no longer deny anything.
    *
@@ -617,10 +696,18 @@ export class RunScheduler extends Service {
    * Callers reach this through {@link close} and {@link sweep}, which queue it
    * on the one write chain; nothing else may run between the charge and the
    * deletion it is paired with.
+   *
+   * Disposal runs first and independently of the writes below: a run and
+   * every descendant this settlement closes has whatever resource it
+   * registered released before anything is charged, since a process this
+   * settlement is about to stop billing for should stop running as soon as
+   * that is decided, not once the durable writes that follow succeed.
    */
   private async settle(runId: RunId): Promise<RunLedgerResult<RunSettlement>> {
     const preview = this.ledger.settlementOf(runId)
     if (preview === undefined) return { ok: false, rejection: { reason: 'unknown-run', runId } }
+    await this.disposeOf(runId)
+    for (const descendant of preview.closed) await this.disposeOf(descendant)
     const store = this.ctx.controlPlaneStore
     const marked = await store.markRunSettled(runId, preview.spent)
     await this.applyCharge(marked, preview.spent)

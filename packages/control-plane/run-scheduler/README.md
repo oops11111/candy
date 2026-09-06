@@ -145,6 +145,27 @@ export const stream = ctx.runScheduler.meter(runId, adapter.stream(request))
 
 A caller holding a run and a stream directly can skip the lookup. `meter` charges the call — durably — before its terminal chunk reaches the consumer, so the next call is admitted against a ledger that already knows about this one. A run with nothing left never reaches the provider, and a call that outruns the wall time its run had is cut with a terminal `error` finish. A cut ends the call, not the run: the record stays open with what the call consumed.
 
+### Disposing of a run's process when it settles for cause
+
+Settlement is accounting: it writes a charge and forgets the record. A run ended for cause — a revoked account, an expired lease, a tree closed around it — has that decided in the sweep, deep inside this service, with no reach into whatever process the run's own call is still running. `registerDisposer` is that reach, for a caller that holds the resource:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { RunId } from '@deepseek-ai/dsh-control-plane'
+import type { SubprocessRuntime, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type {} from '@deepseek-ai/dsh-run-scheduler'
+
+declare const ctx: Context
+declare const runId: RunId
+declare const subprocess: SubprocessRuntime
+
+// Every process this spawns for `runId` is terminated the moment the run
+// settles, however it settles, and left alone once it exits on its own.
+export const spawn = ctx.runScheduler.disposableSpawn(runId, (spec: SubprocessSpawnSpec) => subprocess.spawn(spec))
+```
+
+Composing `disposableSpawn` around the `spawn` function a provider binding hands its adapter is the whole of the wiring: a caller with the raw handle instead calls `registerDisposer(runId, () => handle.terminate())` directly and unregisters it once the handle's own `done` settles. Nothing calls either unless a caller does — this service still runs no provider itself, and a composition that spawns without either leaves a settled run's process running exactly as it always has.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -157,7 +178,7 @@ A caller holding a run and a stream directly can skip the lookup. `meter` charge
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `Config`, the `RunScheduler` service, its admission policy, the settlement, the recovery, and the meter |
+| [`src/index.ts`](src/index.ts) | `Config`, the `RunScheduler` service, its admission policy, the settlement, the recovery, the meter, and the disposer registry |
 | — | No runtime invariant companion is published; the relations here belong to the ledger and the store, and the composition test checks them end to end. |
 
 ### Why one instance owns one ledger
@@ -181,6 +202,10 @@ So the chain orders whole operations rather than writes. The state a decision wa
 A settlement is two writes the medium cannot make one: charge whoever funded the run, then forget the run. Doing it in memory first and writing after loses the charge whenever the write fails, which is exactly when it matters. So the charge is computed with `RunLedger.settlementOf`, written down as the run's own settled figure, applied to its funder, and only then are the records forgotten and the hold released. A rejected write leaves the run open in both places, and its lease brings the next sweep back to try again.
 
 Each funder — the tenant's allowance for a root, the parent's record for a child — stores the id of the settlement it last absorbed, in the same atomic write as the charge. A repeat of that id is a no-op, so a restarting runtime re-drives an interrupted settlement without knowing how far it got. That guarantee holds only while no two settlements interleave, which is why every write to a run record queues on one chain here.
+
+### Why disposal runs before the settlement writes
+
+A caller registers a disposer once, when it starts a process for a run; nothing re-registers it per call, and a run's second sequential call replaces the first's disposer rather than adding to it — the first's process has already exited by then, so only the live one still needs releasing. `settle` invokes whatever is registered for the run, and every descendant `RunLedger.settlementOf` reports closing with it, before writing the charge or forgetting the record: a process this settlement is about to stop billing for should stop running as soon as that is decided, not once the durable writes that follow it succeed. A disposer that throws is logged and swallowed, because its failure is not a reason to leave the run's accounting stuck open — the settlement it would have blocked has already been decided.
 
 ### Why a restart settles instead of resuming
 
@@ -233,13 +258,14 @@ These are current package constraints, not a task backlog.
 - **A run's calls are serialized too** — `meter` holds one run's calls in a line so each reads a remainder the one before it has been charged against. Two tenants never wait for each other, but a run cannot make two calls at once, however long the first takes.
 - **Every operation is serialized** — one chain orders every start, charge and settlement in the runtime, which is what makes the exactly-once marker and the allowance checks guarantees. It also means one tenant's start waits behind another's, including the pool directory each start creates.
 - **A rejected sweep is logged, not retried immediately** — the runs it could not settle stay open with expired leases, so the next sweep retries them. A medium that stays unavailable holds those allowances until it comes back.
-- **It does not run the provider** — binding and cancellation stay with the caller; `meter` wraps a stream the caller opened, and this service holds no process.
+- **It does not run the provider** — binding and cancellation stay with the caller; `meter` wraps a stream the caller opened, and this service holds no process of its own. `registerDisposer` and `disposableSpawn` let a caller tie one it holds to a run's settlement, but nothing calls either unless the composition does.
 - **A trail is a window, not an archive** — `auditRetention` records per tenant, and per runtime for attempts that named none; older records are dropped rather than shipped anywhere. A deployment that needs to keep them reads them from here and sends them on.
 - **Ended sessions are remembered in memory, and capped** — `endedSessionMemory` sessions, oldest evicted first, and an evicted session's calls pass through again. The memory is deliberately not durable: it must outlive the run, not the process, because the agent that could still make a call lives in this process too.
 - **One session, one run** — a second run naming a session this runtime already has open is refused. A control plane that mints one session for a parent and its child gets the child refused, which makes a session per run a requirement on the control plane rather than a convention.
 - **Metering follows the session, not the process** — a request assembled for a run's session is metered wherever it is made, and a request made outside that session is not metered at all, even if the same run caused it. A deployment that runs work for a tenant without a session of its own is unmetered.
 - **The trail covers scheduling, not the run's work** — starting, denying, and the vault operations an attempt produced. Routing, delegation, tool authorization and terminal state are not recorded, because nothing produces those records yet.
-- **A cut call does not reap the provider** — `meter` ends the stream on the run's wall time, including for a provider that goes silent, but closing that provider's process stays with whoever launched it; this package does not run the provider.
+- **A cut call does not reap the provider by itself** — `meter` ends the stream on the run's wall time, including for a provider that goes silent, but closing that provider's process is still whoever launched it's to arrange: registering a disposer against the run is how, and nothing does it automatically.
+- **Disposal is opt-in, per run, and per call** — a caller that never calls `registerDisposer` or `disposableSpawn` gets none of this; one that does must register again for each sequential call a run makes, since only the live call's process is worth releasing. No provider binding wires this yet — the composition that would is the R3 orchestration join, still unbuilt.
 
 <a id="dev-note"></a>
 ## Dev Note

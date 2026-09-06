@@ -362,6 +362,44 @@ meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChu
 close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>
 
 /**
+ * Register a disposer to run once, when `runId` is settled.
+ *
+ * The producer is whatever holds a live resource this run started and the
+ * ledger cannot reach: a spawned process, bound to the run at the moment it
+ * is created. Settlement ends the run's accounting whichever way it comes
+ * about — a normal finish, an expired lease, an account no longer able to
+ * authorize it, or an ancestor's tree closing around it — and this is what
+ * lets that same event reach the resource.
+ *
+ * At most one disposer is held per run: a later registration replaces an
+ * earlier one rather than accumulating, which is correct for a run that
+ * makes several sequential calls, since only the live one still needs
+ * releasing. A caller whose resource already ended on its own unregisters
+ * with the returned function, so a stale disposer is never invoked for a
+ * process that already exited.
+ * @param runId - the run whose settlement should trigger disposal.
+ * @param dispose - releases the resource; a rejection is logged and never
+ *   allowed to fail the settlement that triggered it.
+ * @returns unregisters this disposer without invoking it.
+ */
+registerDisposer(runId: RunId, dispose: () => void | Promise<void>): () => void
+
+/**
+ * Wrap a process-spawning function so every handle it returns is registered
+ * against `runId`'s lifetime and unregistered once that process exits on
+ * its own.
+ *
+ * This is the whole of the disposal wiring a provider binding needs: compose
+ * it around the `spawn` function an adapter is given, and settlement reaches
+ * every process that function ever starts for this run, without the binding
+ * knowing anything about settlement itself.
+ * @param runId - the run each spawned handle's disposer is registered against.
+ * @param spawn - the underlying spawn function, called unchanged.
+ * @returns a spawn function with the same signature.
+ */
+disposableSpawn<Spec, Handle extends { readonly done: Promise<unknown>; terminate(): void }>( runId: RunId, spawn: (spec: Spec) => Handle, ): (spec: Spec) => Handle
+
+/**
  * Release every hold whose lease has passed and drop nonce records that can
  * no longer deny anything.
  *

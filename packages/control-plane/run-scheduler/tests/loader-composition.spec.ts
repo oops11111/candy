@@ -1326,6 +1326,138 @@ describe('a booted Candy scheduler', () => {
     expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toBeDefined()
   })
 
+  it('runs a run\'s registered disposer when it settles', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    const dispose = vi.fn()
+    ctx.runScheduler.registerDisposer(RunId('run-root'), dispose)
+
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('runs a child\'s disposer too, when its parent\'s tree closes around it', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, { runId: RunId('run-child'), parentRunId: RunId('run-root'), nonce: 'nonce-2', sessionId: CHILD_SESSION }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )
+    const dispose = vi.fn()
+    ctx.runScheduler.registerDisposer(RunId('run-child'), dispose)
+
+    // The child is never closed directly; its process is still live when the
+    // root closes the whole tree around it.
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('does not run a disposer once it has been unregistered', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    const dispose = vi.fn()
+    const unregister = ctx.runScheduler.registerDisposer(RunId('run-root'), dispose)
+    // The resource ended on its own before the run settled.
+    unregister()
+
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    expect(dispose).not.toHaveBeenCalled()
+  })
+
+  it('replaces an earlier disposer rather than accumulating one per call', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    const first = vi.fn()
+    const second = vi.fn()
+    ctx.runScheduler.registerDisposer(RunId('run-root'), first)
+    // A run's second sequential call registers over the first, whose process
+    // already exited — only the live one still needs releasing.
+    ctx.runScheduler.registerDisposer(RunId('run-root'), second)
+
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledOnce()
+  })
+
+  it('settles a run whose disposer fails, rather than leaving it open', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    ctx.runScheduler.registerDisposer(RunId('run-root'), () => { throw new Error('process would not die') })
+
+    const closed = await ctx.runScheduler.close(RunId('run-root'))
+
+    // The disposer's own failure is a log, not a reason to leave the run's
+    // accounting stuck open.
+    expect(closed.ok).toBe(true)
+    expect(ctx.runScheduler.ledger.get(RunId('run-root'))).toBeUndefined()
+  })
+
+  it('terminates a spawned process when its run settles for cause', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    const terminate = vi.fn()
+    let resolveDone!: () => void
+    const done = new Promise<void>((resolve) => { resolveDone = resolve })
+    const spawn = ctx.runScheduler.disposableSpawn(RunId('run-root'), (spec: { argv: string[] }) => {
+      expect(spec.argv).toEqual(['claude'])
+      return { done, terminate }
+    })
+
+    spawn({ argv: ['claude'] })
+    await revokeProviderAccount(ctx.controlPlaneStore, ALICE, ACCOUNT, now + 1)
+    await ctx.runScheduler.sweep(now + 1_000)
+
+    expect(terminate).toHaveBeenCalledOnce()
+    resolveDone()
+  })
+
+  it('never terminates a process that already exited on its own', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    const terminate = vi.fn()
+    const spawn = ctx.runScheduler.disposableSpawn(
+      RunId('run-root'),
+      (_spec: { argv: string[] }) => ({ done: Promise.resolve(), terminate }),
+    )
+
+    spawn({ argv: ['claude'] })
+    // Let the handle's own `done` settle and unregister its disposer before
+    // the run is settled for an unrelated reason.
+    await Promise.resolve().then(() => Promise.resolve())
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    expect(terminate).not.toHaveBeenCalled()
+  })
+
   it('keeps metering a call whose run still holds a usable account', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)

@@ -1446,6 +1446,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the settlement, or why it could not be closed.',
       },
       {
+        signature: 'registerDisposer(runId: RunId, dispose: () => void | Promise<void>): () => void',
+        description: 'Register a disposer to run once, when `runId` is settled.\n\nThe producer is whatever holds a live resource this run started and the ledger cannot reach: a spawned process, bound to the run at the moment it is created. Settlement ends the run\'s accounting whichever way it comes about — a normal finish, an expired lease, an account no longer able to authorize it, or an ancestor\'s tree closing around it — and this is what lets that same event reach the resource.\n\nAt most one disposer is held per run: a later registration replaces an earlier one rather than accumulating, which is correct for a run that makes several sequential calls, since only the live one still needs releasing. A caller whose resource already ended on its own unregisters with the returned function, so a stale disposer is never invoked for a process that already exited.',
+        parameters: [{ name: 'runId', description: 'the run whose settlement should trigger disposal.' }, { name: 'dispose', description: 'releases the resource; a rejection is logged and never allowed to fail the settlement that triggered it.' }],
+        returns: 'unregisters this disposer without invoking it.',
+      },
+      {
+        signature: 'disposableSpawn<Spec, Handle extends { readonly done: Promise<unknown>; terminate(): void }>( runId: RunId, spawn: (spec: Spec) => Handle, ): (spec: Spec) => Handle',
+        description: 'Wrap a process-spawning function so every handle it returns is registered against `runId`\'s lifetime and unregistered once that process exits on its own.\n\nThis is the whole of the disposal wiring a provider binding needs: compose it around the `spawn` function an adapter is given, and settlement reaches every process that function ever starts for this run, without the binding knowing anything about settlement itself.',
+        parameters: [{ name: 'runId', description: 'the run each spawned handle\'s disposer is registered against.' }, { name: 'spawn', description: 'the underlying spawn function, called unchanged.' }],
+        returns: 'a spawn function with the same signature.',
+      },
+      {
         signature: 'async sweep(now: number): Promise<readonly RunSettlement[]>',
         description: 'Release every hold whose lease has passed and drop nonce records that can no longer deny anything.\n\nThe clock calls this; a caller with its own decision timestamp may call it directly. Eviction changes no decision — `spend` already treats an expired record as absent — so this only bounds what the runtime holds.',
         parameters: [{ name: 'now', description: 'epoch milliseconds.' }],
