@@ -46,6 +46,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/control-plane/runtime-pool': 'The package only derives an isolation key and a directory path; nothing it produces reaches a model request.',
   'packages/control-plane/tenant-allowance': 'The package only does arithmetic over a tenant grant and its consumption; nothing it produces reaches a model request.',
   'packages/control-plane/tenant-preset-policy': 'The package only decides whether a tenant may compose a given preset, before any session exists to address a model; nothing it produces reaches a model request.',
+  'packages/control-plane/run-delegation': 'The package only mints and opens a run for a delegated child, before the child agent exists to address a model; nothing it produces reaches a model request.',
   'packages/util/brand': 'The package only constructs plain string values and registers nothing model-facing.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',

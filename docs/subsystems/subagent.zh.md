@@ -493,6 +493,27 @@ Named provider registry with one-shot runs, durable discovery, and continuable-c
 
 ```ts cordis-catalog
 /**
+ * Register a hook consulted by {@link prepareDelegatedChild} before every
+ * in-process one-shot child is created. Any hook may refuse by throwing.
+ * @param hook - async check; may throw or reject to refuse the delegation.
+ * @returns the disposer that unregisters the hook.
+ */
+onBeforeDelegate(hook: ChildDelegationHook): () => void
+
+/**
+ * Run every registered {@link onBeforeDelegate} hook, in registration
+ * order, before an in-process driver creates a child. Called once per
+ * delegation, before `ctx.agents.create()`, so a hook's asynchronous setup
+ * completes before the child exists to make its first request — and a
+ * hook that refuses leaves nothing to roll back, since no child was ever
+ * created.
+ * @param parent - the delegating parent agent.
+ * @param childId - the session id the child will be created with.
+ * @throws whatever the first hook that refuses throws or rejects with.
+ */
+async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<void>
+
+/**
  * Establish one durable continuable child and deliver its initial prompt.
  * Resolves when the child's inbox accepts that prompt, without waiting for the
  * turn to start or for the message to reach the Session log; any earlier

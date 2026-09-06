@@ -118,6 +118,14 @@ export async function startInProcessRun(
   // parent's future.
   const inherited = captureDelegatedPolicyOverrides(parent)
 
+  // Before the child exists at all: a registered hook's asynchronous setup —
+  // minting a run for the child, for instance — must complete before the
+  // child could possibly make its first request, and a hook that refuses
+  // must leave nothing published to roll back. `ctx.get` reads the global
+  // service store rather than requiring this shared driver function itself
+  // to be a declared injection.
+  await parent.ctx.get('subagents')?.prepareDelegatedChild(parent, childId)
+
   let structured: StructuredAttachment | undefined
   const setup = (childCtx: Context): void => {
     appendDelegatedPolicyOverrides((childCtx.agent as Agent).session, inherited)

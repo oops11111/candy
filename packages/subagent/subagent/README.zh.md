@@ -54,6 +54,27 @@ kind: "package-reference"
 
 需要所选提供方不具备的能力的请求会在启动时响亮失败，而不会被静默忽略。失败的子 agent 运行会返回停止原因，提供方后端还会附加安全诊断；被取消的请求以 `aborted` 结算。子 agent 相互隔离：崩溃或行为异常的子 agent 无法破坏父级会话。
 
+<a id="preparing-a-delegated-child-before-it-exists"></a>
+### 在一个受委派子会话存在之前为它做准备
+
+`SubagentRuntime.onBeforeDelegate(hook)` 注册一个异步检查，进程内一次性委派器会在创建一个子会话之前、按注册顺序等待它完成——委派器此时已经算出了子会话未来的会话 id，因此一个钩子可以在任何东西发布之前对它采取行动。一个抛出异常或拒绝的钩子会让这次委派彻底中止；因为此时还没有任何子会话存在，也就没有什么需要回滚：
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-subagent'
+
+declare const ctx: Context
+declare function recordDelegation(parentId: string, childId: string): Promise<void>
+
+const stop = ctx.subagents.onBeforeDelegate(async (parent, childId) => {
+  // parent is the delegating Agent; childId is the session id the driver
+  // will create the child with. Throw to refuse the delegation outright.
+  await recordDelegation(parent.id, childId)
+})
+```
+
+这个包不携带任何关于一个钩子会用这个时机做什么的概念——[`dsh-run-delegation`](../../control-plane/run-delegation/README.zh.md) 是 Candy 自有的消费方，它会在子会话可能发起第一次请求之前，为它铸造并开启一次有资金的运行。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -70,12 +91,13 @@ kind: "package-reference"
 - **两种子级形态。** 一次性运行在发布时转移所有权；可继续子级保留持久 Session，且同一时刻至多一个进程内 Activation。
 - **兑现即发布。** 提供方的 `start()` 只有在真实子 agent 存在后才兑现，因此调用方要么拥有一段在线运行，要么一无所有。
 - **同进程值可信。** 请求、描述符与结果按不可变约定借用；序列化与不可信输入校验属于进程与协议边界。
+- **发布前钩子不携带 Candy 概念。** `onBeforeDelegate()` 让一个消费方能在子会话存在之前采取行动——比如铸造一次运行——而这个包完全不携带这个消费方在做什么的概念；参见[在一个受委派子会话存在之前为它做准备](#preparing-a-delegated-child-before-it-exists)。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 服务入口：提供方注册表、启动与继续 API、生命周期事件 |
+| [`src/index.ts`](src/index.ts) | 服务入口：提供方注册表、启动与继续 API、生命周期事件、`onBeforeDelegate()`/`prepareDelegatedChild()` |
 | [`src/continuation.ts`](src/continuation.ts) | 可继续子级：身份预留、Activation 驻留、相邻消息、中断、结算 |
 | [`src/internal.ts`](src/internal.ts) | 供浏览器与 Team 消息协议使用的 host-only Queue 与 Steer 适配器 |
 | [`src/types.ts`](src/types.ts) | 公开的请求、结果与提供方约定 |
@@ -170,6 +192,7 @@ You are a delegated subagent: your permission scope was fixed when you were star
 - **不回放已接受但未记录的消息**——崩溃可能丢失从未写入子会话日志、已被接受的提示词；丢失的消息不会自动回放。
 - **没有持久化 parent mailbox**——child 到 parent 的消息要求驻留的可继续 child 与在线直接 parent，提供的是接受标识，不保证恰好一次投递。
 - **生命周期事件只供观察**——影响运行的 `subagent/end` 延续或决策接口仍需等待具体消费方。
+- **`onBeforeDelegate()` 只覆盖进程内一次性委派器**——可继续子级与进程外的产品提供方在委派时不会经过它，因为一个可继续子级的生命周期需求（在恢复时重新准备，而不只是在创建时）是一个尚未解决的独立问题。
 
 <a id="dev-note"></a>
 ### 开发备注

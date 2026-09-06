@@ -1743,6 +1743,28 @@ export interface Config {
 
 来源：[`packages/guard/repeat-tool-reminder/src/index.ts:28`](../packages/guard/repeat-tool-reminder/src/index.ts)
 
+<a id="deepseek-aidsh-run-delegation"></a>
+
+## `@deepseek-ai/dsh-run-delegation`
+
+需要：`subagents` · `runScheduler`
+
+```ts config-catalog
+/** The fixed allowance every delegated child is opened with. */
+export interface Config {
+  /**
+   * The fixed `RunBudget` requested for every delegated child, regardless of
+   * which tool or provider started the delegation. Refused, never clamped,
+   * when the parent's own remaining allowance is short in any dimension.
+   */
+  readonly childBudget: RunBudget
+}
+```
+
+依赖于：[`RunBudget`](subsystems/candy-control-plane.zh.md)
+
+来源：[`packages/control-plane/run-delegation/src/index.ts:38`](../packages/control-plane/run-delegation/src/index.ts)
+
 <a id="deepseek-aidsh-run-scheduler"></a>
 
 ## `@deepseek-ai/dsh-run-scheduler`

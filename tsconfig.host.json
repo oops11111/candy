@@ -186,6 +186,7 @@
     { "path": "./packages/control-plane/run-scheduler" },
     { "path": "./packages/control-plane/run-start" },
     { "path": "./packages/control-plane/tenant-preset-policy" },
+    { "path": "./packages/control-plane/run-delegation" },
     { "path": "./packages/session-query/tool-session-query" },
     { "path": "./packages/storage/storage" },
     { "path": "./packages/storage/storage-json" },

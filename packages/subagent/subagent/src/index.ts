@@ -31,7 +31,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { admitPromptContent } from '@deepseek-ai/dsh-attachment'
-import { scopeTarget } from '@deepseek-ai/dsh-scope'
+import { AnonymousEntries, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
@@ -187,6 +187,22 @@ interface BrowserPromptSource {
   readonly clientTimeZone?: string
 }
 
+/**
+ * Hook consulted before an in-process one-shot child is created, given its
+ * delegating parent and the session id the child will be created with.
+ *
+ * Async because a hook may need to complete setup — minting a run for the
+ * child, for instance — before the child can make its first request, and a
+ * hook may refuse the delegation entirely by throwing or rejecting. This
+ * package carries no notion of what a hook does with the parent or the
+ * child's future session id; a consumer that needs one (a tenant-aware
+ * control plane, for instance) registers it without teaching this
+ * general-purpose package a concept it does not otherwise need.
+ * @param parent - the delegating parent agent.
+ * @param childId - the session id the child will be created with.
+ */
+export type ChildDelegationHook = (parent: Agent, childId: SessionId) => Promise<void> | void
+
 /** Named provider registry with one-shot runs, durable discovery, and continuable-child operations. */
 export class SubagentRuntime extends TypertRemoteService {
   private providers = new Map<string, SubagentProvider>()
@@ -197,6 +213,12 @@ export class SubagentRuntime extends TypertRemoteService {
    * composes into the carrier.
    */
   private readonly emitLifecycle: LifecycleEmitter
+  /**
+   * Hooks consulted by {@link prepareDelegatedChild}, in registration order.
+   * Any hook may refuse a delegation by throwing; a refusal from one hook is
+   * not something a later hook can undo.
+   */
+  private readonly delegationHooks = new AnonymousEntries<ChildDelegationHook>()
 
   constructor(ctx: Context) {
     super(ctx, 'subagents')
@@ -216,6 +238,34 @@ export class SubagentRuntime extends TypertRemoteService {
       projectionCtx.sessionProjections.register(subagentTimingProjectionDefinition)
       projectionCtx.sessionProjections.register(subagentIdentityProjectionDefinition)
     })
+  }
+
+  /**
+   * Register a hook consulted by {@link prepareDelegatedChild} before every
+   * in-process one-shot child is created. Any hook may refuse by throwing.
+   * @param hook - async check; may throw or reject to refuse the delegation.
+   * @returns the disposer that unregisters the hook.
+   */
+  onBeforeDelegate(hook: ChildDelegationHook): () => void {
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+    return this.ctx.effect(() => this.delegationHooks.append(hook), 'subagents.onBeforeDelegate()')
+  }
+
+  /**
+   * Run every registered {@link onBeforeDelegate} hook, in registration
+   * order, before an in-process driver creates a child. Called once per
+   * delegation, before `ctx.agents.create()`, so a hook's asynchronous setup
+   * completes before the child exists to make its first request — and a
+   * hook that refuses leaves nothing to roll back, since no child was ever
+   * created.
+   * @param parent - the delegating parent agent.
+   * @param childId - the session id the child will be created with.
+   * @throws whatever the first hook that refuses throws or rejects with.
+   */
+  async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<void> {
+    for (const hook of this.delegationHooks.values()) {
+      await hook(parent, childId)
+    }
   }
 
   /**

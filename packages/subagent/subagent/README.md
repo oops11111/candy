@@ -54,6 +54,27 @@ Every exact live Agent can use `sendMessage()` with a direct continuable child; 
 
 Requests that need a capability the chosen provider lacks fail loudly at start rather than being silently ignored. A failed child run returns a stop reason, and provider backends add a safe diagnostic; a cancelled request settles as `aborted`. Children are isolated: a crashed or misbehaving child cannot corrupt the parent's session.
 
+<a id="preparing-a-delegated-child-before-it-exists"></a>
+### Preparing a delegated child before it exists
+
+`SubagentRuntime.onBeforeDelegate(hook)` registers an asynchronous check the in-process one-shot driver awaits, in registration order, before it creates a child — the driver already computes the child's future session id at that point, so a hook can act on it before anything is published. A hook that throws or rejects aborts the delegation entirely; since no child exists yet, there is nothing to roll back:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-subagent'
+
+declare const ctx: Context
+declare function recordDelegation(parentId: string, childId: string): Promise<void>
+
+const stop = ctx.subagents.onBeforeDelegate(async (parent, childId) => {
+  // parent is the delegating Agent; childId is the session id the driver
+  // will create the child with. Throw to refuse the delegation outright.
+  await recordDelegation(parent.id, childId)
+})
+```
+
+This package carries no notion of what a hook does with the moment it is given — [`dsh-run-delegation`](../../control-plane/run-delegation/README.md) is the Candy-owned consumer that mints and opens a funded run for the child before it can make its first request.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -70,12 +91,13 @@ This section explains how the service is built and where the observable behavior
 - **Two child shapes.** One-shot runs transfer ownership at publication; continuable children keep a durable Session and at most one process-local Activation.
 - **Fulfillment is publication.** A provider's `start()` fulfills only after a real child exists, so the caller always owns a live run or nothing.
 - **Trusted same-process values.** Requests, descriptors, and results are borrowed immutable; serialization and hostile-input validation belong at process and wire boundaries.
+- **Pre-publication hooks stay Candy-agnostic.** `onBeforeDelegate()` lets a consumer act before a child exists — minting a run, for instance — without this package carrying any notion of what that consumer does; see [Preparing a delegated child before it exists](#preparing-a-delegated-child-before-it-exists).
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Service entry: provider registry, start and continuation API, lifecycle events |
+| [`src/index.ts`](src/index.ts) | Service entry: provider registry, start and continuation API, lifecycle events, `onBeforeDelegate()`/`prepareDelegatedChild()` |
 | [`src/continuation.ts`](src/continuation.ts) | Continuable children: identity reservation, Activation residency, adjacent messaging, interrupt, settlement |
 | [`src/internal.ts`](src/internal.ts) | Host-only Queue and Steer adapters for browser and Team message protocols |
 | [`src/types.ts`](src/types.ts) | Public request, result, and provider contracts |
@@ -170,6 +192,7 @@ These limits define when the seam is a poor fit or needs special operational car
 - **No replay of accepted-but-unlogged messages** — a crash can lose an accepted prompt that never reached the child's session log; the lost message is not replayed automatically.
 - **No durable parent mailbox** — child-to-parent messages require a resident continuable child and live direct parent, and provide acceptance identity rather than exactly-once delivery.
 - **Lifecycle events are observe-only** — a run-affecting `subagent/end` continuation or decision API waits for a concrete consumer.
+- **`onBeforeDelegate()` covers the in-process one-shot driver only** — a continuable child and an out-of-process product provider delegate without it, since a continuable child's lifecycle needs (re-preparing on resume, not only at creation) are a separate, unaddressed question.
 
 <a id="dev-note"></a>
 ### Dev Note

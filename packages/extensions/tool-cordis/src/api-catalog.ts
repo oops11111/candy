@@ -2360,6 +2360,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Named provider registry with one-shot runs, durable discovery, and continuable-child operations.',
     methods: [
       {
+        signature: 'onBeforeDelegate(hook: ChildDelegationHook): () => void',
+        description: 'Register a hook consulted by prepareDelegatedChild before every in-process one-shot child is created. Any hook may refuse by throwing.',
+        parameters: [{ name: 'hook', description: 'async check; may throw or reject to refuse the delegation.' }],
+        returns: 'the disposer that unregisters the hook.',
+      },
+      {
+        signature: 'async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<void>',
+        description: 'Run every registered onBeforeDelegate hook, in registration order, before an in-process driver creates a child. Called once per delegation, before `ctx.agents.create()`, so a hook\'s asynchronous setup completes before the child exists to make its first request — and a hook that refuses leaves nothing to roll back, since no child was ever created.',
+        parameters: [{ name: 'parent', description: 'the delegating parent agent.' }, { name: 'childId', description: 'the session id the child will be created with.' }],
+        throws: ['whatever the first hook that refuses throws or rejects with.'],
+      },
+      {
         signature: 'async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>',
         description: 'Establish one durable continuable child and deliver its initial prompt. Resolves when the child\'s inbox accepts that prompt, without waiting for the turn to start or for the message to reach the Session log; any earlier failure rejects with no ids and rolls back the child entirely.',
         parameters: [{ name: 'spec', description: 'provider, delegation request, and caller cancellation.' }],
@@ -3809,6 +3821,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BudgetDimension',
     declaration: 'export type BudgetDimension = \'tokens\' | \'wallMs\' | \'costMicroUsd\' | \'children\';',
+  },
+  {
+    name: 'ChildDelegationHook',
+    declaration: 'export type ChildDelegationHook = (parent: Agent, childId: SessionId) => Promise<void> | void;',
   },
   {
     name: 'ChunkRow',
@@ -5840,7 +5856,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRuntime',
-    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    @Remote(\'list\')\n    async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>;\n    @Remote(\'prompt\')\n    async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>;\n    @Remote(\'interruptByParent\')\n    interruptByParent(childSessionId: SessionId, parentSessionId: SessionId, mode: \'continuable\'): SubagentInterruptReceipt;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
+    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    onBeforeDelegate(hook: ChildDelegationHook): () => void;\n    async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<void>;\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    @Remote(\'list\')\n    async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>;\n    @Remote(\'prompt\')\n    async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>;\n    @Remote(\'interruptByParent\')\n    interruptByParent(childSessionId: SessionId, parentSessionId: SessionId, mode: \'continuable\'): SubagentInterruptReceipt;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(n /* …truncated — full shape in source */',
   },
   {
     name: 'SubagentSendMessageOptions',
