@@ -31,6 +31,8 @@ import SubagentRuntime, { type SubagentStartRequest } from '@deepseek-ai/dsh-sub
 import * as SpawnInProcess from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { afterEach, describe, expect, it } from 'vitest'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+
+type MockAdapterScript = ConstructorParameters<typeof MockAdapter>[0]
 import * as RunDelegation from '../src/index.ts'
 import type { Config } from '../src/index.ts'
 
@@ -59,7 +61,7 @@ afterEach(async () => {
 })
 
 /** Boot storage, the control plane, the scheduler, a real subagent runtime, and the policy under test. */
-async function boot(at: string, config: Config, script: readonly ReturnType<typeof textResponse>[]): Promise<Context> {
+async function boot(at: string, config: Config, script: MockAdapterScript): Promise<Context> {
   process.env['CANDY_ASSERTION_SECRET'] = SECRET
   process.env['CANDY_CREDENTIAL_KEY'] = KEY
   await mkdir(join(at, 'pools'), { mode: 0o700, recursive: true })
@@ -185,6 +187,34 @@ describe('opening a run for a delegated child', () => {
 
     expect((await second.result).stopReason).toBe('completed')
     await second.dispose()
+  })
+
+  it('releases the child\'s run when a cancelled parent stops a running child', async () => {
+    // Cancelling the delegating turn reaches the child through the driver's
+    // abort bridge; the epoch it ends is the one holding the run.
+    root = await mkdtemp(join(tmpdir(), 'dsh-run-delegation-'))
+    const context = await boot(root, { childBudget: CHILD_BUDGET }, ['hang'])
+    const now = Date.now()
+    await provision(context, now)
+    const session = SessionId('sess-cancelled')
+    await openRootRun(context, session, RunId('run-parent-cancelled'), TENANT_GRANT, now)
+    const parent = await parentAgent(context, session)
+    const controller = new AbortController()
+
+    const run = await delegate(context, {
+      prompt: [{ type: 'text', text: 'do X' }],
+      parent,
+      signal: controller.signal,
+    })
+    expect(context.controlPlaneStore.runsOfSession(AUDIENCE, run.id)).toHaveLength(1)
+    // Let the child's turn start, then cancel the delegating turn.
+    await new Promise(resolve => setTimeout(resolve, 30))
+    controller.abort()
+    const result = await run.result
+    await run.dispose()
+
+    expect(result.stopReason).toBe('aborted')
+    expect(context.controlPlaneStore.runsOfSession(AUDIENCE, run.id)).toEqual([])
   })
 
   it('releases the child\'s run when the delegation never publishes a child', async () => {
