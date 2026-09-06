@@ -14,6 +14,8 @@ English | [中文](README.zh.md)
 
 Accounts are owned by `userId`. Listing, default selection, validation, revocation, and deletion all check ownership before touching the credential. An account id owned by another user is reported as `not-found`, so the API surface cannot be used to enumerate another tenant's metadata.
 
+One provider has at most one default per tenant. Revoking or deleting an account replaces the default only when the tenant has none left that can still authorize work: promoting beside a default the tenant still has would mark two accounts default for one provider, and whoever resolves "the default" would then get an arbitrary one of them.
+
 No runtime invariant companion is published; this module owns no event stream or mutable runtime data, and its ownership, default-selection, and scrubbing rules are enforced by unit tests.
 
 ## Table of Contents

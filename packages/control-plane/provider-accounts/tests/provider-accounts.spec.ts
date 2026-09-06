@@ -76,6 +76,48 @@ describe('provider accounts', () => {
     expect(await listProviderAccounts(store, ALICE, DEEPSEEK)).toMatchObject([{ id: ProviderAccountId('account-1') }])
   })
 
+  it('leaves the tenant\'s default alone when another account is revoked', async () => {
+    const store = memoryStore()
+    await create(store, 'a')
+    await create(store, 'b')
+    await create(store, 'c')
+
+    await revokeProviderAccount(store, ALICE, ProviderAccountId('b'), NOW + 1)
+
+    // Promoting beside a default the tenant still has would leave two marked
+    // default for one provider, and whoever resolves "the default" would get
+    // an arbitrary one of them.
+    const views = await listProviderAccounts(store, ALICE)
+    expect(views.filter(view => view.isDefault).map(view => view.id)).toEqual([ProviderAccountId('a')])
+  })
+
+  it('leaves the tenant\'s default alone when another account is deleted', async () => {
+    const store = memoryStore()
+    await create(store, 'a')
+    await create(store, 'b')
+    await create(store, 'c')
+
+    await deleteProviderAccount(store, ALICE, ProviderAccountId('b'), NOW + 1)
+
+    const views = await listProviderAccounts(store, ALICE)
+    expect(views.filter(view => view.isDefault).map(view => view.id)).toEqual([ProviderAccountId('a')])
+  })
+
+  it('keeps the chosen default when it is not the oldest account', async () => {
+    const store = memoryStore()
+    await create(store, 'a')
+    await create(store, 'b')
+    await create(store, 'c')
+    // The tenant picks a later account, so the default is not the first the
+    // store lists — the case where "promote the first usable one" is wrong.
+    await selectDefaultProviderAccount(store, ALICE, ProviderAccountId('c'), NOW + 1)
+
+    await revokeProviderAccount(store, ALICE, ProviderAccountId('b'), NOW + 2)
+
+    const views = await listProviderAccounts(store, ALICE)
+    expect(views.filter(view => view.isDefault).map(view => view.id)).toEqual([ProviderAccountId('c')])
+  })
+
   it('keeps one default per user and provider', async () => {
     const store = memoryStore()
     await create(store, 'account-1')

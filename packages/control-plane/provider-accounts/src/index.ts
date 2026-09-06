@@ -362,15 +362,15 @@ async function promoteReplacementDefault(
   provider: ProviderKind,
   now: number,
 ): Promise<void> {
-  const replacement = (await store.listByUser(userId))
-    .find(entry =>
-      entry.record.provider === provider
-      && entry.record.deletedAt === undefined
-      && entry.record.revokedAt === undefined
-      && !entry.record.isDefault)
-  if (replacement !== undefined) {
-    await store.save({ ...replacement, record: updateRecord(replacement.record, now, { isDefault: true }) })
-  }
+  const usable = (await store.listByUser(userId))
+    .filter(entry => entry.record.provider === provider && isProviderAccountUsable(entry.record))
+  // A default the tenant still has is the tenant's choice. Promoting beside it
+  // would leave two accounts marked default for one provider, and whoever
+  // resolves "the default" would then get an arbitrary one of them.
+  if (usable.some(entry => entry.record.isDefault)) return
+  const replacement = usable[0]
+  if (replacement === undefined) return
+  await store.save({ ...replacement, record: updateRecord(replacement.record, now, { isDefault: true }) })
 }
 
 function updateRecord(
