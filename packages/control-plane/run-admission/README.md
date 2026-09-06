@@ -126,6 +126,14 @@ Each part refuses a caller-named tenant on its own, and composing them could sti
 
 The `provider` in those claims is signed for the same reason. A provider account is provider-specific, so pairing one with another provider would place a run in a pool naming a combination the control plane never made.
 
+### Why the credential does not serialize
+
+Logging an admitted run is the first thing an operator does with one, and the run carries the tenant's decrypted provider key. A plain object put that key in the log a byte at a time: `JSON.stringify` of a successful start outcome contained the whole of it.
+
+`secret` is therefore non-enumerable, and the run has a `toJSON` that replaces it with `[redacted]`. The two cover different callers: `JSON.stringify` uses `toJSON`, while `console.log`, `util.inspect`, and every structured logger that walks own properties ignore it and would print the key from a plain property. Reading `run.secret` is unaffected, which is what a caller launching the provider does.
+
+The pool root stays readable. It is a path derived from a digest rather than a secret, an operator asking which pool a run landed in has a real question, and anyone who can read that directory on the host already has more than the path.
+
 </details>
 
 -----

@@ -8,6 +8,7 @@
 
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { inspect } from 'node:util'
 import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
@@ -997,6 +998,68 @@ describe('a booted Candy scheduler', () => {
       'refused/CREDENTIAL_REVOKED',
     ])
     expect(trail.at(-1)).toMatchObject({ count: 8 })
+  })
+
+  it('keeps secrets and other tenants out of what an operator reads', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await provisionBobby(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    // A denied attempt too: a token this runtime cannot verify names a tenant
+    // it may not believe, so its record must not reach that tenant's trail.
+    const denied = await ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, { userId: BOBBY, runId: RunId('run-x'), nonce: 'n-x' }),
+        Buffer.from('another-secret-at-least-32-bytes!', 'utf8'),
+      ),
+      undefined,
+      now,
+    )
+
+    const read = JSON.stringify({
+      tenantTrail: ctx.runScheduler.auditsOfTenant(ALICE),
+      runtimeTrail: ctx.runScheduler.auditsOfRuntime(),
+      deniedOutcome: denied,
+      ledgerRecord: ctx.runScheduler.ledger.get(RunId('run-root')),
+    })
+
+    expect(read).not.toContain('sk-ant-alice')
+    expect(read).not.toContain(SECRET)
+    expect(read).not.toContain(KEY)
+    expect(read).not.toContain(root)
+    expect(JSON.stringify(ctx.runScheduler.auditsOfTenant(ALICE))).not.toContain(BOBBY)
+  })
+
+  it('never serializes the credential an admitted run carries', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provisionBobby(ctx, now)
+
+    const started = await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now, {
+        userId: BOBBY, accountId: ProviderAccountId('account-2'), runId: RunId('run-2'), nonce: 'n-2',
+      }), Buffer.from(SECRET, 'utf8')),
+      undefined,
+      now,
+    )
+
+    // Logging the outcome is the first thing an operator does with one, and a
+    // plain object would put the decrypted provider key in that log byte by
+    // byte. Reading it is unaffected — that is what launches the provider.
+    const logged = JSON.stringify(started)
+    expect(logged).not.toContain(JSON.stringify([...Buffer.from('sk-ant-bobby', 'utf8')]).slice(1, -1))
+    expect(logged).toContain('[redacted]')
+    expect(started.started ? Buffer.from(started.value.run.secret).toString('utf8') : undefined)
+      .toBe('sk-ant-bobby')
+
+    // `console.log` and every structured logger that walks own properties
+    // ignore `toJSON`, so the credential is non-enumerable as well.
+    const run = started.started ? started.value.run : undefined
+    expect(Object.keys(run!)).not.toContain('secret')
+    expect(inspect(run, { depth: 4 })).not.toContain('sk-ant-bobby')
   })
 
   it('keeps metering a call whose run still holds a usable account', async () => {

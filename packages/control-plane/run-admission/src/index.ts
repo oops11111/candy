@@ -146,8 +146,23 @@ export interface RunAdmissionPolicy {
 export interface AdmittedRun {
   /** The verified assertion claims; the source of every identity below. */
   readonly claims: ExecutionAssertionClaims
-  /** The opened provider credential. The caller owns its lifetime. */
+  /**
+   * The opened provider credential. The caller owns its lifetime.
+   *
+   * It does not survive `JSON.stringify`: the property is not enumerable, and
+   * {@link AdmittedRun.toJSON} replaces it with a marker. Logging an admitted
+   * run is the first thing an operator does with one, and a plain object would
+   * put a tenant's decrypted provider key in that log a byte at a time.
+   * Reading `run.secret` is unaffected, which is what a caller launching the
+   * provider does.
+   */
   readonly secret: Uint8Array
+  /**
+   * The run without its credential, for anything that serializes it.
+   *
+   * @returns every other field, with `secret` replaced by a marker.
+   */
+  toJSON: () => Omit<AdmittedRun, 'secret' | 'toJSON'> & { secret: string }
   /** The pool this run's provider process belongs to. */
   readonly poolKey: RuntimePoolKey
   /** The one directory that pool owns. */
@@ -320,14 +335,38 @@ export async function admitRun(
   return {
     admitted: true,
     audits: [opened.audit],
-    run: {
+    run: admittedRun({
       claims,
       secret: opened.secret,
       poolKey,
       poolRoot: runtimePoolRoot(policy.poolBase, poolKey),
       budget,
-    },
+    }),
   }
+}
+
+/** Stands in for the credential wherever an admitted run is serialized. */
+const REDACTED_SECRET = '[redacted]'
+
+/**
+ * Build one admitted run whose credential does not serialize.
+ *
+ * `secret` is defined non-enumerably and `toJSON` replaces it, so neither
+ * `JSON.stringify` nor a spread of the run's own enumerable keys carries the
+ * tenant's decrypted provider key into a log. Every other field is an ordinary
+ * property, because they are what a diagnostic is for.
+ *
+ * @param fields - the run's fields, credential included.
+ * @returns the admitted run, with the credential readable but not serializable.
+ */
+function admittedRun(fields: Omit<AdmittedRun, 'toJSON'>): AdmittedRun {
+  const { secret, ...rest } = fields
+  const run = {
+    ...rest,
+    toJSON: () => ({ ...rest, secret: REDACTED_SECRET }),
+  } as AdmittedRun
+  Object.defineProperty(run, 'secret', { value: secret, enumerable: false })
+  return run
 }
 
 

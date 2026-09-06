@@ -3540,7 +3540,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AdmittedRun',
-    declaration: 'export interface AdmittedRun {\n    readonly claims: ExecutionAssertionClaims;\n    readonly secret: Uint8Array;\n    readonly poolKey: RuntimePoolKey;\n    readonly poolRoot: string;\n    readonly budget: RunBudget;\n}',
+    declaration: 'export interface AdmittedRun {\n    readonly claims: ExecutionAssertionClaims;\n    readonly secret: Uint8Array;\n    toJSON: () => Omit<AdmittedRun, \'secret\' | \'toJSON\'> & {\n        secret: string;\n    };\n    readonly poolKey: RuntimePoolKey;\n    readonly poolRoot: string;\n    readonly budget: RunBudget;\n}',
   },
   {
     name: 'Agent',
