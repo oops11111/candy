@@ -488,6 +488,22 @@ export class RunScheduler extends Service {
   }
 
   /**
+   * Persist one final route-policy refusal for a managed session.
+   *
+   * The write settles before this promise does and never rejects, matching
+   * metering refusal ordering: callers may report the denial only after the
+   * trail has it, while an unavailable trail cannot turn a refusal into an
+   * authorization success or a different failure.
+   * @param sessionId - session whose route was refused.
+   * @param code - stable policy failure code.
+   * @param message - refusal text used if the audit write must be logged.
+   */
+  recordRouteRefusal(sessionId: SessionId, code: string, message: string): Promise<void> {
+    const resolved = this.findSessionRun(sessionId)
+    return this.fileRefusal(resolved.ok ? resolved.run.record.runId : undefined, code, message, 'route')
+  }
+
+  /**
    * Meter one assembled request against the run whose session it names.
    *
    * A request with no session, or one naming no run this runtime has open,
@@ -724,6 +740,7 @@ export class RunScheduler extends Service {
             if (left) return { done: true, value: undefined }
             if (reader === undefined) {
               await ahead
+              // oxlint-disable-next-line typescript/no-unnecessary-condition -- return() may set left while the await is pending
               if (left) return { done: true, value: undefined }
               reader = start()
             }
@@ -1262,14 +1279,19 @@ export class RunScheduler extends Service {
    * @param message - the refusal text, for the log if the write fails.
    * @returns resolution once the record is written, or logged as unwritable.
    */
-  private fileRefusal(runId: RunId | undefined, code: string, message: string): Promise<void> {
+  private fileRefusal(
+    runId: RunId | undefined,
+    code: string,
+    message: string,
+    action: 'meter' | 'route' = 'meter',
+  ): Promise<void> {
     const run = runId === undefined ? undefined : this.ctx.controlPlaneStore.findRun(runId)
     const subject = run === undefined ? runtimeSubject(this.config.audience) : tenantSubject(run.userId)
     const record: RunAuditRecord = {
       at: Date.now(),
       ...run === undefined ? {} : { runId, ...lineage(run.record.parentRunId), userId: run.userId, accountId: run.accountId },
       event: 'refused',
-      action: 'meter',
+      action,
       outcome: code,
     }
     const retain = this.config.auditRetention ?? 200

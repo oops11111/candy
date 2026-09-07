@@ -119,7 +119,7 @@ export const unattributed = ctx.runScheduler.auditsOfRuntime()
 
 断言之后的每一个步骤都基于已验证的声明,因此它的记录会指名它所拒绝的租户、账户与运行。一份验证不通过的断言指名不出任何这个运行时可以相信的租户,因此那条记录去到 `auditsOfRuntime`,而不是进入某个租户的踪迹 —— 它是准入所能观察到的最清晰的攻击信号,而另一个选择是把它丢掉。两条踪迹都由 `auditRetention` 设上限。
 
-被拒绝的*调用*以同样方式归档,记在 `event: 'refused'` 与 `action: 'meter'` 之下,并以失败码作为其结果。
+被拒绝的*调用*以同样方式归档，记在 `event: 'refused'` 之下，并以失败码作为其结果。计量决定使用 `action: 'meter'`；`recordRouteRefusal()` 会在报告拒绝之前，把最终租户路由策略决定记录为 `action: 'route'`。
 
 关于某次运行的每一条记录,在该运行是从另一次运行委派而来时都带上 `parentRunId`。承载这一血缘的持久运行记录会在结算时被删除,因此没有它,一个委派型 agent 的运行树读回来就是同一租户下几次恰好重叠的、彼此无关的运行。
 

@@ -1483,6 +1483,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the run\'s tenant, or `undefined` when this runtime has no single open, usable run for that session.',
       },
       {
+        signature: 'recordRouteRefusal(sessionId: SessionId, code: string, message: string): Promise<void>',
+        description: 'Persist one final route-policy refusal for a managed session.\n\nThe write settles before this promise does and never rejects, matching metering refusal ordering: callers may report the denial only after the trail has it, while an unavailable trail cannot turn a refusal into an authorization success or a different failure.',
+        parameters: [{ name: 'sessionId', description: 'session whose route was refused.' }, { name: 'code', description: 'stable policy failure code.' }, { name: 'message', description: 'refusal text used if the audit write must be logged.' }],
+      },
+      {
         signature: 'meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>',
         description: 'Meter one provider stream against an open run.\n\nThis is where an allowance stops being an accounting figure. The call is refused before the provider is reached when the run has nothing left, cut when it outruns the wall time the run still had, and charged — durably — before its terminal chunk reaches the consumer, so the next call is admitted against a ledger that already knows about this one.\n\nA cut ends the call, not the run: the record stays open with what the call consumed, and whoever started the run decides what happens next.',
         parameters: [{ name: 'runId', description: 'the open run this call belongs to.' }, { name: 'source', description: 'the provider\'s stream for one call.' }],
@@ -4624,7 +4629,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmRouteGuard',
-    declaration: 'export type LlmRouteGuard = (selection: LlmRouteSelection) => LlmRouteRefusal | undefined;',
+    declaration: 'export type LlmRouteGuard = (selection: LlmRouteSelection) => LlmRouteRefusal | undefined | Promise<LlmRouteRefusal | undefined>;',
   },
   {
     name: 'LlmRouteRefusal',

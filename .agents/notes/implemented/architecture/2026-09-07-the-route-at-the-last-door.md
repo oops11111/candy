@@ -22,7 +22,7 @@ A request without a session, or one whose session has no uniquely resolvable Can
 
 Every in-process model-call path shares the same tenant route decision, including direct selection and future preset or UI changes. One tenant cannot inherit another's route. The generic Harness registry, discovery UI and adapters remain unchanged. Only the generic final-guard seam is added to Harness; it carries no tenant concept.
 
-The configuration is deliberately closed for managed tenants, so enabling the plugin requires an entry for every tenant that should run. Refusals are not yet persisted in the audit trail. Configuration also remains deployment state rather than control-plane state.
+The configuration is deliberately closed for managed tenants, so enabling the plugin requires an entry for every tenant that should run. A denial awaits `RunScheduler.recordRouteRefusal()` before it is returned, leaving a tenant-scoped `refused` record with `action: 'route'` and the policy code as outcome. Configuration remains deployment state rather than control-plane state.
 
 This decision does not manufacture fallback. A useful fallback must have a second route that can serve the request and, across providers, authority to use a second provider account. The current change supplies the whitelist half of routing policy; selection and account-authorized fallback remain separate work.
 

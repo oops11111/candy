@@ -36,7 +36,7 @@ Load the policy beside `dsh-llm` and `dsh-run-scheduler`:
           model: gpt-5.6-sol
 ```
 
-Both fields are exact, case-sensitive ids. An allowed pair reaches the normal Harness waterfall and adapter. Any other pair for that managed tenant returns one terminal `error` finish with code `TENANT_ROUTE_NOT_ALLOWED`; the adapter is never called. An empty list and a missing tenant entry both mean deny.
+Both fields are exact, case-sensitive ids. An allowed pair reaches the normal Harness waterfall and adapter. Any other pair for that managed tenant is durably audited as `refused/route/TENANT_ROUTE_NOT_ALLOWED`, then returns one terminal `error` finish with code `TENANT_ROUTE_NOT_ALLOWED`; the adapter is never called. An empty list and a missing tenant entry both mean deny.
 
 -----
 
@@ -57,7 +57,6 @@ The plugin registers one `LlmRuntime.guard()`. A session-aware prepared call inv
 
 - Allowlists are deployment configuration, not durable records with an admin API.
 - This package authorizes a requested route; it does not select a fallback. A safe cross-provider fallback also needs authority over the second provider account and a distinguishable usable route.
-- Route refusals are returned to the caller but are not yet written to Candy's durable audit trail.
 
 -----
 

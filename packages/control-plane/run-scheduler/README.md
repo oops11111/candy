@@ -119,7 +119,7 @@ export const unattributed = ctx.runScheduler.auditsOfRuntime()
 
 Every stage past the assertion works from verified claims, so its record names the tenant, account and run it refused. An assertion that fails to verify names none this runtime may believe, so `auditsOfRuntime` is where that record goes rather than into a tenant's trail — it is the clearest attack signal admission can observe, and dropping it was the alternative. Both trails are capped by `auditRetention`.
 
-A refused *call* is filed the same way, under `event: 'refused'` and `action: 'meter'`, with the failure code as its outcome.
+A refused *call* is filed the same way, under `event: 'refused'`, with the failure code as its outcome. Metering decisions use `action: 'meter'`; `recordRouteRefusal()` records a final tenant route-policy decision as `action: 'route'` before the denial is reported.
 
 Every record about a run carries `parentRunId` when that run was delegated from another. The durable run record holding the lineage is deleted at settlement, so without it a delegating agent's tree reads back as unrelated runs of one tenant that happened to overlap.
 

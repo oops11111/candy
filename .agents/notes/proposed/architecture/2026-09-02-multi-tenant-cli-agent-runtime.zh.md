@@ -130,7 +130,7 @@ R0 已交付为 [Candy 运行时边界](../../../../docs/candy-runtime-boundarie
 
 持久重放不再被该存储缝隙阻塞（[一个活过进程的 nonce](../../implemented/architecture/2026-09-07-a-nonce-that-survives-the-process.zh.md)）。`dsh-storage` 现在暴露可选 compare/exchange，SQLite 以事务实现它，而 `ControlPlaneStore` 拥有按过期时间界定、由重启和多个运行时进程共享的 nonce 记录。JSON 因无法给出同样保证而 fail closed。
 
-R3 的路由授权部分现在已由 [`dsh-tenant-route-policy`](../../../../packages/control-plane/tenant-route-policy) 实现（见[最后一道门上的路由](../../implemented/architecture/2026-09-07-the-route-at-the-last-door.zh.md)）。它在适配器准备前解析实时租户，并在最终分发时再次解析，然后要求精确的 provider/model 组合，对受管租户采用封闭默认值。这不会把整项路由工作标记为完成：能力匹配与经过账户授权的第二路由 fallback 仍需要两条真实且可互换的路由，而持久路由策略配置与拒绝审计仍是后续工作。
+R3 的路由授权部分现在已由 [`dsh-tenant-route-policy`](../../../../packages/control-plane/tenant-route-policy) 实现（见[最后一道门上的路由](../../implemented/architecture/2026-09-07-the-route-at-the-last-door.zh.md)）。它在适配器准备前解析实时租户，并在最终分发时再次解析，然后要求精确的 provider/model 组合，对受管租户采用封闭默认值。它会在拒绝到达调用方之前留下持久的租户审计记录。这不会把整项路由工作标记为完成：能力匹配与经过账户授权的第二路由 fallback 仍需要两条真实且可互换的路由，而持久路由策略配置仍是后续工作。
 
 ### R4 — Harness Web and account configuration
 

@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import Llm, { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as TenantRoutePolicy from '../src/index.ts'
 import { TENANT_ROUTE_NOT_ALLOWED, type Config } from '../src/index.ts'
 
@@ -25,15 +25,16 @@ afterEach(async () => {
 
 async function boot(config: Config, tenantOf: (id: SessionId) => string | undefined = id => (
   id === session ? 'tenant-alice' : undefined
-)): Promise<{ context: Context; adapter: RecordingAdapter }> {
+)): Promise<{ context: Context; adapter: RecordingAdapter; recordRouteRefusal: ReturnType<typeof vi.fn> }> {
   const context = new Context()
   ctx = context
   await context.plugin(Llm)
   const adapter = new RecordingAdapter()
   context.llm.registerAdapter(['claude-cli', 'codex-cli'], adapter)
-  Object.defineProperty(context, 'runScheduler', { value: { tenantOf }, configurable: true })
+  const recordRouteRefusal = vi.fn(() => Promise.resolve())
+  Object.defineProperty(context, 'runScheduler', { value: { tenantOf, recordRouteRefusal }, configurable: true })
   TenantRoutePolicy.apply(context, config)
-  return { context, adapter }
+  return { context, adapter, recordRouteRefusal }
 }
 
 async function call(context: Context, provider: string, model: string, sessionId: SessionId | null = session): Promise<StreamChunk[]> {
@@ -57,7 +58,7 @@ describe('tenant model-route policy', () => {
   })
 
   it('refuses another model on an otherwise-allowed provider before adapter selection', async () => {
-    const { context, adapter } = await boot({
+    const { context, adapter, recordRouteRefusal } = await boot({
       allowlists: { 'tenant-alice': [{ provider: 'claude-cli', model: 'sonnet' }] },
     })
 
@@ -74,6 +75,11 @@ describe('tenant model-route policy', () => {
       },
     }])
     expect(adapter.calls).toHaveLength(0)
+    expect(recordRouteRefusal).toHaveBeenCalledWith(
+      session,
+      TENANT_ROUTE_NOT_ALLOWED,
+      'tenant "tenant-alice" is not permitted to use route "claude-cli/opus"',
+    )
   })
 
   it('refuses another provider even when its model name matches', async () => {

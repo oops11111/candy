@@ -36,7 +36,7 @@ kind: "package-reference"
           model: gpt-5.6-sol
 ```
 
-两个字段都是区分大小写的精确 id。被允许的组合会进入正常的 Harness waterfall 与适配器。该受管租户的任何其他组合都会返回唯一一个终止 `error` 帧，错误码为 `TENANT_ROUTE_NOT_ALLOWED`；适配器不会被调用。空列表与缺少租户条目都表示拒绝。
+两个字段都是区分大小写的精确 id。被允许的组合会进入正常的 Harness waterfall 与适配器。该受管租户的任何其他组合都会先被持久审计为 `refused/route/TENANT_ROUTE_NOT_ALLOWED`，随后返回唯一一个终止 `error` 帧，错误码为 `TENANT_ROUTE_NOT_ALLOWED`；适配器不会被调用。空列表与缺少租户条目都表示拒绝。
 
 -----
 
@@ -57,7 +57,6 @@ kind: "package-reference"
 
 - 白名单是部署配置，不是带管理 API 的持久记录。
 - 本包授权一条已请求路由，不选择 fallback。安全的跨 provider fallback 还需要第二个 provider 账户的授权，以及一条可被区分的可用路由。
-- 路由拒绝会返回调用方，但尚未写入 Candy 的持久审计轨迹。
 
 -----
 

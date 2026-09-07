@@ -61,13 +61,15 @@ function permits(routes: readonly AllowedRoute[] | undefined, selection: LlmRout
  * @param config - exact per-tenant provider/model grants.
  */
 export function apply(ctx: Context, config: Config): void {
-  ctx.llm.guard((selection) => {
+  ctx.llm.guard(async (selection) => {
     if (selection.sessionId === undefined) return undefined
     const tenant = ctx.runScheduler.tenantOf(selection.sessionId)
     if (tenant === undefined || permits(config.allowlists[tenant], selection)) return undefined
+    const message = `tenant "${tenant}" is not permitted to use route "${selection.provider}/${selection.model}"`
+    await ctx.runScheduler.recordRouteRefusal(selection.sessionId, TENANT_ROUTE_NOT_ALLOWED, message)
     return {
       code: TENANT_ROUTE_NOT_ALLOWED,
-      message: `tenant "${tenant}" is not permitted to use route "${selection.provider}/${selection.model}"`,
+      message,
     }
   })
 }

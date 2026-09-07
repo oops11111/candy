@@ -884,6 +884,25 @@ describe('a booted Candy scheduler', () => {
     })
   })
 
+  it('records a route-policy refusal against the managed tenant before it is reported', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+    await ctx.runScheduler.recordRouteRefusal(SESSION, 'TENANT_ROUTE_NOT_ALLOWED', 'route denied')
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE).at(-1)).toMatchObject({
+      runId: RunId('run-root'),
+      userId: ALICE,
+      accountId: ACCOUNT,
+      event: 'refused',
+      action: 'route',
+      outcome: 'TENANT_ROUTE_NOT_ALLOWED',
+    })
+  })
+
   it('records a run that spent its allowance, so a quota violation has a reader', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)

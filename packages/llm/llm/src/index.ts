@@ -314,7 +314,9 @@ export type LlmRouteSelection = Pick<GenerateOptions, 'provider' | 'model' | 'se
  * Synchronous authorization check at the final adapter boundary.
  * Returning a refusal prevents adapter preparation and dispatch.
  */
-export type LlmRouteGuard = (selection: LlmRouteSelection) => LlmRouteRefusal | undefined
+export type LlmRouteGuard = (
+  selection: LlmRouteSelection,
+) => LlmRouteRefusal | undefined | Promise<LlmRouteRefusal | undefined>
 
 /**
  * A live configurable-provider registration, disposable and atomically
@@ -447,9 +449,9 @@ export class LlmRuntime extends TypertRemoteService {
   }
 
   /** Throw the first route refusal, preserving registration order. */
-  private assertRouteAllowed(selection: LlmRouteSelection): void {
+  private async assertRouteAllowed(selection: LlmRouteSelection): Promise<void> {
     for (const guard of this.guards) {
-      const refusal = guard(selection)
+      const refusal = await guard(selection)
       if (refusal !== undefined) throw new LlmError(refusal.message, refusal.code)
     }
   }
@@ -940,7 +942,7 @@ export class LlmRuntime extends TypertRemoteService {
     sessionId?: GenerateOptions['sessionId'],
   ): Promise<PreparedLlmCall> {
     const registration = this.registration(config.provider)
-    this.assertRouteAllowed({ ...config, ...sessionId === undefined ? {} : { sessionId } })
+    await this.assertRouteAllowed({ ...config, ...sessionId === undefined ? {} : { sessionId } })
     const adapterCall = await registration.adapter.prepareCall(config.provider, config.model, signal)
     const modelInfo = this.normalizeModelInfo(registration, config.model, adapterCall.model)
     const resolved = this.resolveCallWithInfo(config, modelInfo)
@@ -1019,7 +1021,7 @@ export class LlmRuntime extends TypertRemoteService {
   ): AsyncGenerator<StreamChunk> {
     let iterator: AsyncIterator<StreamChunk>
     try {
-      this.assertRouteAllowed(options)
+      await this.assertRouteAllowed(options)
       const registration = prepared?.registration ?? this.registration(options.provider)
       const adapter = registration.adapter
       let modelInfo: LlmResolvedModelInfo

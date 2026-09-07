@@ -413,6 +413,19 @@ charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>
 tenantOf(sessionId: SessionId): UserId | undefined
 
 /**
+ * Persist one final route-policy refusal for a managed session.
+ *
+ * The write settles before this promise does and never rejects, matching
+ * metering refusal ordering: callers may report the denial only after the
+ * trail has it, while an unavailable trail cannot turn a refusal into an
+ * authorization success or a different failure.
+ * @param sessionId - session whose route was refused.
+ * @param code - stable policy failure code.
+ * @param message - refusal text used if the audit write must be logged.
+ */
+recordRouteRefusal(sessionId: SessionId, code: string, message: string): Promise<void>
+
+/**
  * Meter one provider stream against an open run.
  *
  * This is where an allowance stops being an accounting figure. The call is
