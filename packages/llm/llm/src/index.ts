@@ -299,6 +299,23 @@ export interface AdapterRegistrationHandle {
   replace(providers: string[]): void
 }
 
+/** A final model-call refusal returned by an {@link LlmRouteGuard}. */
+export interface LlmRouteRefusal {
+  /** Stable machine code carried by the terminal error chunk. */
+  readonly code: string
+  /** Human-readable explanation of the policy decision. */
+  readonly message: string
+}
+
+/** Route identity available both before capability preparation and at dispatch. */
+export type LlmRouteSelection = Pick<GenerateOptions, 'provider' | 'model' | 'sessionId'>
+
+/**
+ * Synchronous authorization check at the final adapter boundary.
+ * Returning a refusal prevents adapter preparation and dispatch.
+ */
+export type LlmRouteGuard = (selection: LlmRouteSelection) => LlmRouteRefusal | undefined
+
 /**
  * A live configurable-provider registration, disposable and atomically
  * replaceable — the directory counterpart of {@link AdapterRegistrationHandle}.
@@ -326,6 +343,7 @@ export interface DirectoryRegistrationHandle {
  */
 export class LlmRuntime extends TypertRemoteService {
   private adapters = new Map<string, AdapterRegistration>()
+  private guards = new Set<LlmRouteGuard>()
   private directory = new Map<string, LlmConfigurableProvider>()
   private discoveries = new Map<
     string,
@@ -407,6 +425,33 @@ export class LlmRuntime extends TypertRemoteService {
       this.commitRoutes(owned, this.prepareRoutes(next, adapter, owned))
     }
     return handle
+  }
+
+  /**
+   * Register a monotonic final-boundary route guard. Every guard may refuse;
+   * no guard can force-allow a call another guard refused.
+   *
+   * A session-aware `prepareCall()` checks before adapter preparation. Final
+   * dispatch checks again after `llm/stream` routing has selected its pair,
+   * so middleware cannot rewrite an authorized request into another route.
+   * Guards are for authorization and invariants, not routing.
+   * @param guard - synchronous check returning a stable refusal or `undefined`.
+   * @returns disposer that unregisters this guard.
+   */
+  guard(guard: LlmRouteGuard): () => void {
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+    return this.ctx.effect(() => {
+      this.guards.add(guard)
+      return () => { this.guards.delete(guard) }
+    }, 'llm.guard()')
+  }
+
+  /** Throw the first route refusal, preserving registration order. */
+  private assertRouteAllowed(selection: LlmRouteSelection): void {
+    for (const guard of this.guards) {
+      const refusal = guard(selection)
+      if (refusal !== undefined) throw new LlmError(refusal.message, refusal.code)
+    }
   }
 
   /**
@@ -886,10 +931,16 @@ export class LlmRuntime extends TypertRemoteService {
    * so HMR cannot combine one adapter's capability result with another adapter.
    * @param config - provider/model route and optional request controls.
    * @param signal - optional cancellation for adapter-owned capability lookup.
+   * @param sessionId - optional session identity for route guards before adapter preparation.
    * @returns a prepared config and its registration-bound stream entry point.
    */
-  async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall> {
+  async prepareCall(
+    config: LlmCallConfig,
+    signal?: AbortSignal,
+    sessionId?: GenerateOptions['sessionId'],
+  ): Promise<PreparedLlmCall> {
     const registration = this.registration(config.provider)
+    this.assertRouteAllowed({ ...config, ...sessionId === undefined ? {} : { sessionId } })
     const adapterCall = await registration.adapter.prepareCall(config.provider, config.model, signal)
     const modelInfo = this.normalizeModelInfo(registration, config.model, adapterCall.model)
     const resolved = this.resolveCallWithInfo(config, modelInfo)
@@ -968,6 +1019,7 @@ export class LlmRuntime extends TypertRemoteService {
   ): AsyncGenerator<StreamChunk> {
     let iterator: AsyncIterator<StreamChunk>
     try {
+      this.assertRouteAllowed(options)
       const registration = prepared?.registration ?? this.registration(options.provider)
       const adapter = registration.adapter
       let modelInfo: LlmResolvedModelInfo

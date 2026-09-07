@@ -1134,6 +1134,54 @@ describe('LlmRuntime', () => {
     expect(adapter.lastOptions?.provider).toBe('routed')
   })
 
+  it('runs disposable route guards after waterfall routing and before adapter dispatch', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const adapter = new RecordingAdapter(SCRIPT)
+    ctx.llm.registerAdapter(['routed'], adapter)
+    ctx.on('llm/stream', (options, next) => {
+      options.provider = 'routed'
+      options.model = 'blocked-model'
+      return next()
+    })
+    const dispose = ctx.llm.guard(options => options.model === 'blocked-model'
+      ? { code: 'ROUTE_REFUSED', message: 'route refused by test policy' }
+      : undefined)
+
+    const refused: StreamChunk[] = []
+    for await (const chunk of ctx.llm.stream({ provider: 'initial', model: 'initial', messages: [] })) refused.push(chunk)
+
+    expect(refused.at(-1)).toMatchObject({
+      type: 'finish', reason: { kind: 'error', failure: { code: 'ROUTE_REFUSED' } },
+    })
+    expect(adapter.lastOptions).toBeUndefined()
+
+    dispose()
+    for await (const _chunk of ctx.llm.stream({ provider: 'initial', model: 'initial', messages: [] })) { /* drain */ }
+    expect(adapter.lastOptions?.model).toBe('blocked-model')
+  })
+
+  it('runs route guards before a session-aware prepared call touches its adapter', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    let preparations = 0
+    const adapter = new class extends RecordingAdapter {
+      override async prepareCall(provider: string, model: string, signal?: AbortSignal) {
+        preparations++
+        return super.prepareCall(provider, model, signal)
+      }
+    }(SCRIPT)
+    ctx.llm.registerAdapter(['route'], adapter)
+    const managed = 'session-managed' as NonNullable<GenerateOptions['sessionId']>
+    ctx.llm.guard(selection => selection.sessionId === managed
+      ? { code: 'ROUTE_REFUSED', message: 'route refused before preparation' }
+      : undefined)
+
+    await expect(ctx.llm.prepareCall({ provider: 'route', model: 'model' }, undefined, managed))
+      .rejects.toMatchObject({ code: 'ROUTE_REFUSED' })
+    expect(preparations).toBe(0)
+  })
+
   it('keeps replay state when historical and target providers belong to the same adapter instance', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)

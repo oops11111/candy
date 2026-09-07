@@ -1818,7 +1818,7 @@ export interface RetiredCredentialKey {
 }
 ```
 
-来源：[`packages/control-plane/run-scheduler/src/index.ts:81`](../packages/control-plane/run-scheduler/src/index.ts)
+来源：[`packages/control-plane/run-scheduler/src/index.ts:80`](../packages/control-plane/run-scheduler/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-local"></a>
 
@@ -2666,6 +2666,30 @@ export interface Config {
 ```
 
 来源：[`packages/control-plane/tenant-preset-policy/src/index.ts:33`](../packages/control-plane/tenant-preset-policy/src/index.ts)
+
+<a id="deepseek-aidsh-tenant-route-policy"></a>
+
+## `@deepseek-ai/dsh-tenant-route-policy`
+
+需要：`llm` · `runScheduler`
+
+```ts config-catalog
+/** Per-tenant route grants enforced by this deployment. */
+export interface Config {
+  /** Exact provider/model routes keyed by tenant id. Missing tenants are denied. */
+  readonly allowlists: Readonly<Record<string, readonly AllowedRoute[]>>
+}
+
+/** One exact provider/model route a tenant may call. */
+export interface AllowedRoute {
+  /** Registered provider id selecting the adapter. */
+  readonly provider: string
+  /** Exact model id accepted by that provider route. */
+  readonly model: string
+}
+```
+
+来源：[`packages/control-plane/tenant-route-policy/src/index.ts:32`](../packages/control-plane/tenant-route-policy/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 

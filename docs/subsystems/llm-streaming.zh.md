@@ -899,6 +899,19 @@ The abstract `llm` service: an adapter registry plus a streaming model-call API,
 registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle
 
 /**
+ * Register a monotonic final-boundary route guard. Every guard may refuse;
+ * no guard can force-allow a call another guard refused.
+ *
+ * A session-aware `prepareCall()` checks before adapter preparation. Final
+ * dispatch checks again after `llm/stream` routing has selected its pair,
+ * so middleware cannot rewrite an authorized request into another route.
+ * Guards are for authorization and invariants, not routing.
+ * @param guard - synchronous check returning a stable refusal or `undefined`.
+ * @returns disposer that unregisters this guard.
+ */
+guard(guard: LlmRouteGuard): () => void
+
+/**
  * Describe provider routes with a registered adapter.
  * @returns detached provider metadata in registration order.
  */
@@ -1009,9 +1022,10 @@ async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<Ll
  * so HMR cannot combine one adapter's capability result with another adapter.
  * @param config - provider/model route and optional request controls.
  * @param signal - optional cancellation for adapter-owned capability lookup.
+ * @param sessionId - optional session identity for route guards before adapter preparation.
  * @returns a prepared config and its registration-bound stream entry point.
  */
-async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>
+async prepareCall( config: LlmCallConfig, signal?: AbortSignal, sessionId?: GenerateOptions['sessionId'], ): Promise<PreparedLlmCall>
 
 /**
  * Stream one model call as raw chunks (token-level deltas). Replay state is

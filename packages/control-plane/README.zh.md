@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-control-plane 组为每个未来的 Candy 租户感知包提供一套共享且互不可替换的词汇，命名控制平面唯一拥有权威的实体：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`，以及记录某次运行父级的 `RunLineage`。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义，本组从不重新定义它。本组目前有十八个包：身份词汇及其持久化存储、按运行凭据与保管它的保险库、拥有用户可见提供方账户元数据的账户管理器、委派树预算与结算被遗弃占用的账本、为运行时状态分区的池键、组合运行授权的准入调用、`dsh-run-scheduler`——唯一正在运行的 Cordis 服务，拥有一个运行时自己的实时账本与重放存储——把一次被准入的运行变成受限、可处置启动的 Claude CLI 绑定与按会话路由、按租户收窄一份原本共享的 `dsh-agent-presets` 名册的那个租户 preset 策略，以及在一个子代理受委派的子会话存在之前为其开启一次有资金运行的那个委派插件。[已接受的运行时边界页面](../../docs/candy-runtime-boundaries.zh.md) 与 [提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 所描述的控制平面 OAuth、设备配对与多运行时部署尚未落地。本页是本组的映射；包 README 负责细节。
+control-plane 组为每个未来的 Candy 租户感知包提供一套共享且互不可替换的词汇，命名控制平面唯一拥有权威的实体：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`，以及记录某次运行父级的 `RunLineage`。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义，本组从不重新定义它。本组目前有二十个包：身份词汇及其持久化存储、按运行凭据与保管它的保险库、拥有用户可见提供方账户元数据的账户管理器、委派树预算与结算被遗弃占用的账本、为运行时状态分区的池键、组合运行授权的准入调用、`dsh-run-scheduler`——唯一正在运行的 Cordis 服务，拥有一个运行时自己的实时账本与重放存储——把一次被准入的运行变成受限、可处置启动的 Claude CLI 绑定与按会话路由、按租户收窄一份原本共享的 `dsh-agent-presets` 名册的租户 preset 策略、在最终模型调用边界强制执行精确 provider/model 授权的租户路由策略，以及在一个子代理受委派的子会话存在之前为其开启一次有资金运行的那个委派插件。[已接受的运行时边界页面](../../docs/candy-runtime-boundaries.zh.md) 与 [提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 所描述的控制平面 OAuth、设备配对与多运行时部署尚未落地。本页是本组的映射；包 README 负责细节。
 
 上面的调度器描述沿用了最初的所有权简称。重放决定现在持久存在 `ControlPlaneStore` 中；调度器只拥有实时账本，并组合该持久 nonce 端口。
 
@@ -42,6 +42,7 @@ control-plane 组为每个未来的 Candy 租户感知包提供一套共享且�
 | [`claude-cli-binding`](claude-cli-binding/README.zh.md) | 把一次被准入的运行变成将其限制在该租户之内的 Claude CLI 启动事实 |
 | [`claude-cli-route`](claude-cli-route/README.zh.md) | 一条按调用重新解析、指向驱动该请求所属会话之运行的 Claude CLI `dsh-llm` 路由,处置与该运行的结算绑定在一起 |
 | [`tenant-preset-policy`](tenant-preset-policy/README.zh.md) | 把一个租户限制在一份原本共享的 `dsh-agent-presets` 名册的一个已配置子集内 |
+| [`tenant-route-policy`](tenant-route-policy/README.zh.md) | 在适配器准备与最终分发前强制执行精确的按租户 provider/model 白名单 |
 | [`run-delegation`](run-delegation/README.zh.md) | 在一个子代理受委派的进程内子会话存在之前，为其开启一次有资金的 Candy 运行，并在父运行无力资助时拒绝这次委派 |
 
 <a id="related-documentation"></a>

@@ -130,6 +130,8 @@ R0 已交付为 [Candy 运行时边界](../../../../docs/candy-runtime-boundarie
 
 持久重放不再被该存储缝隙阻塞（[一个活过进程的 nonce](../../implemented/architecture/2026-09-07-a-nonce-that-survives-the-process.zh.md)）。`dsh-storage` 现在暴露可选 compare/exchange，SQLite 以事务实现它，而 `ControlPlaneStore` 拥有按过期时间界定、由重启和多个运行时进程共享的 nonce 记录。JSON 因无法给出同样保证而 fail closed。
 
+R3 的路由授权部分现在已由 [`dsh-tenant-route-policy`](../../../../packages/control-plane/tenant-route-policy) 实现（见[最后一道门上的路由](../../implemented/architecture/2026-09-07-the-route-at-the-last-door.zh.md)）。它在适配器准备前解析实时租户，并在最终分发时再次解析，然后要求精确的 provider/model 组合，对受管租户采用封闭默认值。这不会把整项路由工作标记为完成：能力匹配与经过账户授权的第二路由 fallback 仍需要两条真实且可互换的路由，而持久路由策略配置与拒绝审计仍是后续工作。
+
 ### R4 — Harness Web and account configuration
 
 - [x] 增加提供方账户列表、创建、验证、默认选择、撤销和删除 API，并执行所有权检查（[`dsh-provider-accounts`](../../implemented/architecture/2026-09-03-provider-account-management.zh.md)）；Web controller 与各提供方验证探测仍未构建。每个租户与提供方之下只有一个默认，现在是一个不变量而不再只是一个意图（[两个被标为默认的账户](../../implemented/architecture/2026-09-06-two-accounts-marked-default.zh.md)）:撤销或删除账户时会无条件提升一个替补，于是移除一个非默认账户会留下两个被标为默认的账户,而解析默认项的一方拿到的是其中任意一个。
