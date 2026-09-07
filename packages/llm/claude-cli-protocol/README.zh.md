@@ -11,7 +11,7 @@ kind: "package-library"
 
 `dsh-claude-cli-protocol` 回答两件事:Claude CLI 的 `--output-format stream-json` 输出意味着什么,以及一次调用必须说什么。它解码 CLI 以行分隔的 stdout,把这些帧翻译成 harness 的 [`StreamChunk`](../llm/README.zh.md) 词汇表,并组装出参数向量与环境覆盖层,使一次运行成为一个纯粹的流式模型端点,且只花费某一个租户的密钥。本包不启动任何进程:运行 CLI 的适配器提供进程,因此这里的一切都可以针对已录制的输出来测试,不需要凭据、网络或子进程。
 
-这些行为是从 `claude` 2.1.259 及随其分发的 `@anthropic-ai/claude-agent-sdk` 声明中实测得出的,而非来自文档;两份测试夹具都是真实录制的运行。其中三项发现是关键且无法靠猜测得到的,记录在[理解实现](#understand-the-implementation)一节。
+这些行为是从 `claude` 2.1.259 及随其分发的 `@anthropic-ai/claude-agent-sdk` 声明中实测得出的,而非来自文档;每一份测试夹具都是真实录制的运行。其中三项发现是关键且无法靠猜测得到的,记录在[理解实现](#understand-the-implementation)一节。
 
 ## 目录
 
@@ -87,7 +87,7 @@ CLI 会在其 `system`/`init` 帧中声明自己用哪一个凭据完成了认�
 |---|---|
 | [`src/lines.ts`](src/lines.ts) | `ClaudeCliLineDecoder` 与 `ClaudeCliProtocolError`:从 stdout 文本到帧 |
 | [`src/frames.ts`](src/frames.ts) | `ClaudeCliFrameTranslator`、`mapUsage`、`mapFinish`:从帧到 `StreamChunk` |
-| [`src/launch.ts`](src/launch.ts) | `claudeCliArguments`、`claudeCliEnvironment`、`isCredentialIsolated`、`SCRUBBED_ROUTING_VARIABLES` |
+| [`src/launch.ts`](src/launch.ts) | `claudeCliArguments`、`claudeCliEnvironment`、`isCredentialIsolated`、`SCRUBBED_ROUTING_VARIABLES`、`SCRUBBED_STATE_VARIABLES` |
 | [`src/types.ts`](src/types.ts) | CLI 帧联合体中本包实际处理的那个子集 |
 | — | 不发布运行时不变量伴生模块;本纯模块不拥有事件流或可变运行时数据,其翻译由针对已录制运行的单元测试保障。 |
 
@@ -104,6 +104,18 @@ CLI 会在其 `system`/`init` 帧中声明自己用哪一个凭据完成了认�
 没有它,CLI 会回退到宿主机上任何现成的登录态。一次在开发机上录制的运行正是如此:它通过宿主的 OAuth 会话完成认证,并报告 `apiKeySource: "none"` —— 在多租户运行时里,这就是一个租户的请求记在了宿主账上。`--bare` 把 Anthropic 认证限制为 `ANTHROPIC_API_KEY`,这就是它在这里并非可选项的原因。
 
 `--bare` 并不管 CLI 与*哪个提供方*通信,因此单靠它并不够。环境中现成的 `CLAUDE_CODE_USE_BEDROCK`、`CLAUDE_CODE_USE_VERTEX` 或 `ANTHROPIC_BASE_URL` 会把运行重定向到一个用宿主自己的云凭据认证的端点,完全绕开租户密钥。`SCRUBBED_ROUTING_VARIABLES` 为每一项设置墓碑;与 `--bare` 合在一起,注入的密钥才成为该运行唯一能触及的凭据。
+
+### 固定的 `HOME` 只有在没有任何变量指向其外部目录时才是隔离
+
+`claudeCliEnvironment` 靠给每个子进程各自的 `HOME` 来区分两个租户,调用方把它设为该租户的运行时池根目录。这种区分是间接的:它成立,是因为子进程的配置、缓存和账户状态都是*相对于* `HOME` 定位的。一个直接指名其中某个目录的变量会在不碰 `HOME` 的情况下破坏这种推导,于是环境看上去仍然是隔离的。`CLAUDE_CONFIG_DIR` 会把 CLI 自己的配置和账户状态迁走,而 XDG 基础目录则指名缓存、配置、数据和状态的根目录。从运维人员的 shell 启动的服务器——或从另一个导出了这类变量的智能体启动的服务器——会把同一个目录交给每个租户读写。
+
+`SCRUBBED_STATE_VARIABLES` 为它们设置墓碑。这份清单覆盖标准的状态目录变量,而不只是已知某个 CLI 版本会读取的那些,因为两种错误并不对称:被设置墓碑而 CLI 又忽略的名字不会改变任何事,因为回退位置正是本就想要的、固定 `HOME` 之下的位置;而漏掉的名字则是两个租户共享的一个目录。
+
+### 从 stdin 送入的对话会被逐轮回答,而不是被重放
+
+`--input-format stream-json` 看上去像是一条把整段对话交给 CLI 的通道,但它不是。一次录制的运行依次喂入一条 user 消息、一条 assistant 消息和第二条 user 消息,结果开出了*两个*会话、产出了*两个*终止帧:每条 user 消息各自成为一个轮次、各自计费,而那条 assistant 消息被接收后直接丢弃,没有任何一帧报告它。CLI 没有任何输入通道能让此前的 assistant 内容到达模型。
+
+这一点在此处要紧,是因为翻译器在见到第一个终止帧时就已定案。重放该录制可以看到调用方实际会收到什么:对话*第一条*消息的回复,而对最后一条消息——真正被问的那条——的回复在付过费之后被丢弃。`injected-history.jsonl` 夹具就是这次运行,也正是 [`dsh-llm-claude-cli`](../llm-claude-cli/README.zh.md) 拒绝多消息请求、而不把它压平到这条输入上的原因。
 
 ### 帧处理默认是开放的
 
@@ -168,10 +180,10 @@ CLI 报告的计数本身就是互不重叠的 —— `input_tokens` 不含两�
 - **没有进程** —— 这里不启动、不取消、不回收 CLI。本包提供适配器读取与表达所需的东西;运行 CLI、把 harness 请求投影到它那个唯一的位置参数提示词上、以及遵守 `options.signal`,都属于消费它的 [`dsh-llm-claude-cli`](../llm-claude-cli/README.zh.md)。
 - **只有单条提示词,而非一段对话** —— `claudeCliArguments` 组装的是一条位置参数提示词。回放多轮 harness 历史需要 CLI 的 `--input-format stream-json`,本包没有为其输入消息格式建模。
 - **没有工具往返** —— 工具调用块会被翻译,但调用是以 `--tools ""` 组装的,因为工具由 harness 自己执行。把工具结果送回 CLI 属于上面那条对话缺口。
-- **成本被丢弃** —— 终止帧携带 `total_cost_usd` 与按模型统计的总量(其中包含 CLI 自身的辅助调用),而 `TokenUsage` 没有对应字段。因此仅凭翻译出的 chunk 无法还原一个租户的账单。
+- **只携带调用总额，不携带它的构成** —— `total_cost_usd` 会抵达 `TokenUsage.costMicroUsd`,但终止帧中按模型统计的 `modelUsage` 总量被丢弃。租户的账单是可以还原的;哪个模型挣走了其中哪一部分则不能。
 - **隔离结论只报告,不强制** —— `isCredentialIsolated` 读取 CLI 的声明;这里不会让结论为 `false` 的运行失败,因为本包从不拥有可供失败的进程。
 - **锁定在一个 CLI 版本上** —— 夹具与帧词汇表来自 `claude` 2.1.259。帧联合体是开放的,所以更新的 CLI 新增帧不成问题;但若它重命名了本包处理的某个字段则不然,那会表现为翻译悄悄不再看到内容。
-- **重新录制夹具需要可用的 CLI 与密钥** —— 两份夹具都是真实录制的运行，因此刷新它们是一个手工步骤：用 `claudeCliArguments` 构造的那组参数运行，然后规范化会话 id、uuid、宿主路径与账户遥测数据，并清空被忽略帧的载荷。`text-turn.jsonl` 是有意在*不加* `--bare` 的情况下录制的，因此它固定了本包正是为检测而存在的那个未隔离的 `apiKeySource`；用 `--bare` 重新录制会悄悄让这项覆盖失效。
+- **重新录制夹具需要可用的 CLI 与密钥** —— 每一份夹具都是真实录制的运行，因此刷新它们是一个手工步骤：用 `claudeCliArguments` 构造的那组参数运行，然后规范化会话 id、uuid、宿主路径与账户遥测数据，并清空被忽略帧的载荷。`text-turn.jsonl` 是有意在*不加* `--bare` 的情况下录制的，因此它固定了本包正是为检测而存在的那个未隔离的 `apiKeySource`；用 `--bare` 重新录制会悄悄让这项覆盖失效。
 
 <a id="dev-note"></a>
 ### 开发备注

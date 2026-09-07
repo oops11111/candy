@@ -12,8 +12,10 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { DSH_ENV_PREFIX } from './types.ts'
 import type { SubprocessHandle, SubprocessSpawnSpec } from './types.ts'
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from './types.ts'
+import type { SubprocessLaunchKind } from './events.ts'
 
 export { DSH_ENV_PREFIX } from './types.ts'
+export type { SubprocessLaunched, SubprocessLaunchKind } from './events.ts'
 export type {
   CollectedOutput,
   DshEnvironment,
@@ -127,7 +129,23 @@ export abstract class SubprocessRuntime extends Service {
    * @param spec - argv, directory, stdio dispositions, grace, cancellation, and environment.
    * @returns the live process handle (streams/readers, signalling, outcome promise).
    */
-  abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
+  spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+    // `argv[0]` is the program: the spec's own contract, not a value to default.
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- the comment above states the invariant
+    return this.announce(this.spawnProcess(spec), spec.argv[0]!, spec.cwd, 'process')
+  }
+
+  /**
+   * Start one managed child process; the implementation's half of
+   * {@link spawn}.
+   *
+   * Implementations override this rather than `spawn`, so a launch record is
+   * emitted for every spawner without each one reporting for itself. The
+   * contract is `spawn`'s in full: this seam applies no defaults.
+   * @param spec - argv, directory, stdio dispositions, grace, cancellation, and environment.
+   * @returns the live process handle (streams/readers, signalling, outcome promise).
+   */
+  protected abstract spawnProcess(spec: SubprocessSpawnSpec): SubprocessHandle
 
   /**
    * Allocate a real terminal and start one owned process session. This is the
@@ -136,7 +154,44 @@ export abstract class SubprocessRuntime extends Service {
    * @param spec - fully specified argv, cwd, environment, dimensions, grace, and allocation cancellation.
    * @returns the live terminal handle after allocation succeeds.
    */
-  abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
+  async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- `argv[0]` is the program, as in `spawn`
+    return this.announce(await this.spawnTerminalSession(spec), spec.argv[0]!, spec.cwd, 'terminal')
+  }
+
+  /**
+   * Allocate a terminal and start one owned process session; the
+   * implementation's half of {@link spawnTerminal}.
+   *
+   * Implementations override this rather than `spawnTerminal`, for the reason
+   * {@link spawnProcess} exists. The contract is `spawnTerminal`'s in full.
+   * @param spec - fully specified argv, cwd, environment, dimensions, grace, and allocation cancellation.
+   * @returns the live terminal handle after allocation succeeds.
+   */
+  protected abstract spawnTerminalSession(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
+
+  /**
+   * Announce one started child, and hand its handle back unchanged.
+   *
+   * The record is emitted here rather than in each implementation so that
+   * every spawner in a deployment is covered by the seam they all route
+   * through. A listener that throws is contained by cordis' own dispatch;
+   * nothing about the launch depends on anyone listening.
+   * @param handle - the started child, returned to the caller as it is.
+   * @param executable - `argv[0]` as the caller supplied it.
+   * @param cwd - the directory the child was started in.
+   * @param kind - whether the child owns a terminal or a set of pipes.
+   * @returns the handle it was given.
+   */
+  private announce<T extends { readonly pid: number }>(
+    handle: T,
+    executable: string,
+    cwd: string,
+    kind: SubprocessLaunchKind,
+  ): T {
+    this.ctx.emit('subprocess/launched', { executable, cwd, pid: handle.pid, kind })
+    return handle
+  }
 }
 
 export default SubprocessRuntime

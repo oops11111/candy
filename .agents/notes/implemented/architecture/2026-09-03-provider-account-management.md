@@ -20,6 +20,8 @@ Each user has at most one default account per provider. Creating the first activ
 
 R4 now has the backend account lifecycle it needs before a Web controller exists. The remaining Web work is thinner: authenticate the user, call these functions through a durable store, and project the existing Harness settings UI onto the returned views.
 
+A deleted account's id is refused forever, not merely while nothing has claimed it: `createProviderAccount` checked only whether the existing row was undeleted, so a caller could recreate an account under a deleted id and silently overwrite the very record deletion promises to retain — undetected because no test exercised that path, only the two branches a plain duplicate-id check needs. The check now refuses any existing row, deleted or not.
+
 The package is deliberately not a validator registry or Web service. Provider probes remain provider-specific, because DeepSeek API keys, Claude CLI homes, and Codex CLI homes do not share one validation protocol. The package's validator port exists so those probes can be plugged in without letting their raw diagnostics, tokens, paths, or environment values become part of the account API.
 
 ## Alternatives considered
@@ -28,4 +30,4 @@ The package is deliberately not a validator registry or Web service. Provider pr
 
 **Store provider diagnostics with the account.** Rejected: raw diagnostics can contain endpoint details, token echoes, filesystem paths, or another tenant's metadata. The account layer stores only `validatedAt`; operators can record richer diagnostics through a separate redacted audit trail.
 
-**Delete account records physically.** Rejected for the control-plane core. Soft deletion keeps enough metadata for audit and idempotency while hiding deleted accounts from user-facing lists.
+**Delete account records physically.** Rejected for the control-plane core. Soft deletion keeps enough metadata for audit while hiding deleted accounts from user-facing lists, and it is what lets `createProviderAccount` refuse to reuse a deleted id — a physically deleted row leaves nothing to check against, and a fresh account could silently take over a stranger's retained history.

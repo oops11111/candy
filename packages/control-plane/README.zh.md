@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-control-plane 组为每个未来的 Candy 租户感知包提供一套共享且互不可替换的词汇，命名控制平面唯一拥有权威的实体：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`，以及记录某次运行父级的 `RunLineage`。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义，本组从不重新定义它。本组目前有六个包——一套身份词汇、携带它的按运行凭据、保管租户提供方密钥的保险库、拥有用户可见提供方账户元数据的账户管理器、为运行时状态分区的池键，以及组合运行授权的准入调用——且没有正在运行的 Cordis 服务，因为 [已接受的运行时边界页面](../../docs/candy-runtime-boundaries.zh.md) 与 [提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 所描述的控制平面 OAuth、设备配对和持久账户存储尚未落地。本页是本组的映射；包 README 负责细节。
+control-plane 组为每个未来的 Candy 租户感知包提供一套共享且互不可替换的词汇，命名控制平面唯一拥有权威的实体：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`，以及记录某次运行父级的 `RunLineage`。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义，本组从不重新定义它。本组目前有十八个包：身份词汇及其持久化存储、按运行凭据与保管它的保险库、拥有用户可见提供方账户元数据的账户管理器、委派树预算与结算被遗弃占用的账本、为运行时状态分区的池键、组合运行授权的准入调用、`dsh-run-scheduler`——唯一正在运行的 Cordis 服务，拥有一个运行时自己的实时账本与重放存储——把一次被准入的运行变成受限、可处置启动的 Claude CLI 绑定与按会话路由、按租户收窄一份原本共享的 `dsh-agent-presets` 名册的那个租户 preset 策略，以及在一个子代理受委派的子会话存在之前为其开启一次有资金运行的那个委派插件。[已接受的运行时边界页面](../../docs/candy-runtime-boundaries.zh.md) 与 [提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 所描述的控制平面 OAuth、设备配对与多运行时部署尚未落地。本页是本组的映射；包 README 负责细节。
 
 ## 目录
 
@@ -27,12 +27,25 @@ control-plane 组为每个未来的 Candy 租户感知包提供一套共享且�
 | [`credential-vault`](credential-vault/README.zh.md) | 封装租户的提供方账户密钥、轮换其密钥、吊销它,并记录每一次访问 |
 | [`provider-accounts`](provider-accounts/README.zh.md) | 拥有租户提供方账户元数据、加密凭据生命周期、默认选择与不含密钥的账户视图 |
 | [`run-budget`](run-budget/README.zh.md) | 通过让每个子运行的额度从父运行那里扣除，为委派树的 token、时间、金额与并发设界 |
+| [`workspace-grant`](workspace-grant/README.zh.md) | 把断言所指名的工作区授权 id 解析成一次运行所持有的根目录与文件效应上限,并拒绝指名了任何其他授权的子代 |
+| [`run-ledger`](run-ledger/README.zh.md) | 记录每次开启中的运行持有什么、花掉了什么，并精确而非估算地结算被遗弃的占用 |
+| [`run-replay`](run-replay/README.zh.md) | 以一个不可分割的步骤把断言的 nonce 记为已消费，并恰好在该断言仍可被准入期间保留它 |
+| [`tenant-allowance`](tenant-allowance/README.zh.md) | 把租户的授予额度与其已结算运行的消耗并排持有，使一份授予额度只为一个租户拨款，而不是为它启动的每一次运行拨款 |
+| [`run-metering`](run-metering/README.zh.md) | 把一次提供方流按一次开启中的运行来计量，拒绝它负担不起的调用，并切断跑过其挂钟时间的调用 |
+| [`run-start`](run-start/README.zh.md) | 按既定顺序准入、拨款并放置一次运行，并在放置被拒时把父运行的占用还回去 |
+| [`control-plane-store`](control-plane-store/README.zh.md) | 持久保存提供方账户与租户额度，回答准入所要求的凭据与预算查找 |
+| [`run-scheduler`](run-scheduler/README.zh.md) | 拥有一个运行时的账本与重放存储，从断言启动一次运行，并驱动释放被遗弃占用的那个时钟 |
 | [`runtime-pool`](runtime-pool/README.zh.md) | 推导隔离键,以及租户的提供方运行时所拥有的那一个目录 |
 | [`run-admission`](run-admission/README.zh.md) | 唯一的调度调用:断言、nonce、凭据与池一并解析 |
+| [`claude-cli-binding`](claude-cli-binding/README.zh.md) | 把一次被准入的运行变成将其限制在该租户之内的 Claude CLI 启动事实 |
+| [`claude-cli-route`](claude-cli-route/README.zh.md) | 一条按调用重新解析、指向驱动该请求所属会话之运行的 Claude CLI `dsh-llm` 路由,处置与该运行的结算绑定在一起 |
+| [`tenant-preset-policy`](tenant-preset-policy/README.zh.md) | 把一个租户限制在一份原本共享的 `dsh-agent-presets` 名册的一个已配置子集内 |
+| [`run-delegation`](run-delegation/README.zh.md) | 在一个子代理受委派的进程内子会话存在之前，为其开启一次有资金的 Candy 运行，并在父运行无力资助时拒绝这次委派 |
 
 <a id="related-documentation"></a>
 ## 相关文档
 
+- [Candy 控制平面](../../docs/subsystems/candy-control-plane.zh.md)——这些包如何组合成一次运行、部署方必须提供什么，以及为什么这个顺序就是契约。
 - [Candy 运行时边界](../../docs/candy-runtime-boundaries.zh.md)——本组 id 所要命名的、已接受的信任边界与滥用场景。
 - [多租户 CLI 代理运行时](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md)——本组首个包所开启的提议交付计划（R1）。
 - [core session 子系统](../core/README.zh.md)——`SessionId` 的拥有者；本组的 id 引用它但从不重新定义它。

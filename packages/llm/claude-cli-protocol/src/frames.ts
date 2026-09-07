@@ -74,6 +74,23 @@ function closeBlock(block: OpenBlock): ContentBlock {
 }
 
 /**
+ * Convert the CLI's dollar figure to the harness's integer micro-USD.
+ *
+ * Rounding happens once, here, where the float arrives. A cost is refused
+ * rather than clamped when it is not a finite non-negative number or would
+ * round past safe integer range, because a repaired figure would be charged to
+ * a tenant as though the CLI had reported it.
+ */
+function costMicroUsd(totalCostUsd: number | undefined): number | undefined {
+  if (totalCostUsd === undefined || !Number.isFinite(totalCostUsd) || totalCostUsd < 0) return undefined
+  const micro = Math.round(totalCostUsd * MICRO_USD_PER_USD)
+  return Number.isSafeInteger(micro) ? micro : undefined
+}
+
+/** Micro-USD in one US dollar; the CLI reports dollars, the harness carries micro-USD. */
+const MICRO_USD_PER_USD = 1_000_000
+
+/**
  * Map the CLI's token counts to harness `TokenUsage`.
  *
  * The counts arrive already disjoint — `input_tokens` excludes both cache
@@ -81,10 +98,17 @@ function closeBlock(block: OpenBlock): ContentBlock {
  * subtracts. `totalTokens` is the sum of the three billed input counts and the
  * output count, present only when every contributing counter is a safe
  * non-negative integer.
+ *
+ * `total_cost_usd` is the CLI's own billed total for the whole invocation, so
+ * it covers the auxiliary models the CLI ran for itself as well as the model
+ * the caller asked for. That is what the tenant is charged, which is why it is
+ * carried rather than recomputed from the counts beside it.
  * @param usage - wire counts from a `message_delta` or `result` frame.
- * @returns disjoint harness counts.
+ * @param totalCostUsd - the terminal frame's `total_cost_usd`, when one was
+ *   reported; a `message_delta` carries none.
+ * @returns disjoint harness counts, with the reported cost when there is one.
  */
-export function mapUsage(usage: WireUsage): TokenUsage {
+export function mapUsage(usage: WireUsage, totalCostUsd?: number): TokenUsage {
   const input = usage.input_tokens ?? 0
   const output = usage.output_tokens ?? 0
   const cacheRead = validCount(usage.cache_read_input_tokens)
@@ -93,6 +117,7 @@ export function mapUsage(usage: WireUsage): TokenUsage {
   const parts = [input, output, cacheRead ?? 0, cacheWrite ?? 0]
   const total = parts.reduce((sum, part) => sum + part, 0)
   const exact = parts.every(part => Number.isSafeInteger(part) && part >= 0) && Number.isSafeInteger(total)
+  const cost = costMicroUsd(totalCostUsd)
   return {
     inputTokens: validCount(input) ?? 0,
     outputTokens: validCount(output) ?? 0,
@@ -100,6 +125,7 @@ export function mapUsage(usage: WireUsage): TokenUsage {
     ...cacheRead === undefined ? {} : { cacheReadTokens: cacheRead },
     ...cacheWrite === undefined ? {} : { cacheWriteTokens: cacheWrite },
     ...reasoning === undefined ? {} : { reasoningTokens: reasoning },
+    ...cost === undefined ? {} : { costMicroUsd: cost },
   }
 }
 
@@ -156,6 +182,8 @@ export function mapFinish(result: WireResult): FinishReason {
 export class ClaudeCliFrameTranslator {
   private readonly open = new Map<number, OpenBlock>()
   private latestUsage: WireUsage | undefined
+  /** Set only by a `result` frame: no earlier frame reports what the run cost. */
+  private latestCostUsd: number | undefined
   private finished = false
 
   /**
@@ -186,7 +214,9 @@ export class ClaudeCliFrameTranslator {
 
   /** The latest usage as a chunk, or nothing when the run reported none. */
   private usageChunk(): StreamChunk[] {
-    return this.latestUsage === undefined ? [] : [{ type: 'usage', usage: mapUsage(this.latestUsage) }]
+    return this.latestUsage === undefined
+      ? []
+      : [{ type: 'usage', usage: mapUsage(this.latestUsage, this.latestCostUsd) }]
   }
 
   /** Translate one Messages API streaming event. */
@@ -267,6 +297,7 @@ export class ClaudeCliFrameTranslator {
   private result(result: WireResult): StreamChunk[] {
     this.finished = true
     if (result.usage !== undefined) this.latestUsage = result.usage
+    this.latestCostUsd = result.total_cost_usd
     return [...this.usageChunk(), { type: 'finish', reason: mapFinish(result) }]
   }
 }

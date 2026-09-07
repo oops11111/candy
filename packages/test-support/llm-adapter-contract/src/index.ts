@@ -70,6 +70,22 @@ export interface LlmAdapterContractSubject {
    *   so it may report the release on a later tick — closing a socket does.
    */
   readonly openRun: () => LlmAdapterOpenRun
+  /**
+   * Start one failing run whose provider quotes {@link secret} back in the
+   * text the adapter turns into a failure.
+   *
+   * `failingRun` proves nothing about redaction on its own: a fixture recorded
+   * from a well-behaved provider contains no credential, so the assertion
+   * passes whether or not the adapter removes one. This run supplies the
+   * credential in the provider's own output, so the same assertion measures
+   * the adapter instead of the fixture.
+   *
+   * Script it the way that provider would leak — an error body quoting the
+   * rejected key, a diagnostic echoing the environment — not by injecting the
+   * secret somewhere the adapter never reads.
+   * @returns the stream from `LlmRuntime.stream()` for the leaking run.
+   */
+  readonly leakingRun: () => AsyncIterable<StreamChunk>
 }
 
 /** One assertion the suite makes; satisfied by vitest's `expect` return value. */
@@ -211,6 +227,15 @@ export function testLlmAdapterContract(
       // request, and the request carried the credential.
       const chunks = await drain(subject.failingRun())
 
+      expect(searchableText(chunks).includes(subject.secret)).toBe(false)
+    })
+
+    it('removes the secret from a failure that quotes it', async () => {
+      // The provider's own text carries the credential here, so this measures
+      // the adapter rather than the fixture it was recorded from.
+      const chunks = await drain(subject.leakingRun())
+
+      expect(chunks.length).toBeGreaterThan(0)
       expect(searchableText(chunks).includes(subject.secret)).toBe(false)
     })
 

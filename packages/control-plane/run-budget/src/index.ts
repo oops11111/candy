@@ -10,9 +10,10 @@
  * takes *from* its parent rather than alongside it.
  *
  * The one rule everything here serves: a subtree can never spend more than the
- * run that delegated it had left. A child's allowance is subtracted from its
- * parent at reservation, so the parent cannot hand out more than it holds, and
- * an unspent remainder returns only when the child settles.
+ * run that delegated it had left. A child's allowance is taken out of its
+ * parent's at reservation, so the parent cannot hand out more than it holds.
+ * Holding those reservations and returning an unspent remainder needs records
+ * of live runs, which is `dsh-run-ledger`'s and not this module's.
  *
  * Money is integer micro-USD. A budget compared or decremented in floating
  * point drifts, and a spend limit that drifts is not a limit.
@@ -79,11 +80,6 @@ export type ChildReservation =
   }
   | { readonly reserved: false; readonly denial: RunBudgetDenial }
 
-/** The outcome of charging a run for what it consumed. */
-export type RunCharge =
-  | { readonly charged: true; readonly remaining: RunBudget }
-  | { readonly charged: false; readonly denial: RunBudgetDenial }
-
 /** Require one field to be a non-negative safe integer. */
 function requireCount(value: number, field: string): void {
   if (!Number.isSafeInteger(value) || value < 0) {
@@ -133,8 +129,18 @@ function shortfall(available: RunBudget, requested: RunBudget): RunBudgetDenial 
  *
  * The subtraction is the enforcement: after this returns, the parent holds
  * only what it did not delegate, so it cannot promise the same tokens twice
- * however many children it starts. One child slot is held for the duration and
- * returned by {@link settleChild}.
+ * however many children it starts. The held slots come back when the child
+ * settles.
+ *
+ * A child costs its parent one slot for itself plus every slot it may hand
+ * down, so `children` counts the runs that may be live anywhere in a subtree
+ * rather than only its top level. Charging one slot per child would leave the
+ * dimension unbounded across a tree: a run granted four slots could seed four
+ * children each granted four of their own, and nothing at any level would have
+ * paid for the ones below. That contradicts the parent-subset rule
+ * ([Candy Runtime Boundaries](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/candy-runtime-boundaries.md)),
+ * under which a child may use only the concurrency authority its parent
+ * already had.
  *
  * A request is refused, not clamped. Silently shrinking it would start a child
  * under a budget its caller never chose, and a subagent that stops mid-task
@@ -142,7 +148,7 @@ function shortfall(available: RunBudget, requested: RunBudget): RunBudgetDenial 
  * diagnose than one that was refused.
  * @param parent - the delegating run's remaining allowance.
  * @param request - the allowance asked for the child; its `children` is the
- *   grandchild concurrency the child may itself delegate.
+ *   concurrency the child may itself delegate, and the parent pays for it.
  * @returns the child's allowance and the parent's reduced remainder, or the
  *   one dimension that was insufficient.
  * @throws RangeError when either argument is not made of non-negative safe integers.
@@ -150,12 +156,7 @@ function shortfall(available: RunBudget, requested: RunBudget): RunBudgetDenial 
 export function reserveChild(parent: RunBudget, request: RunBudget): ChildReservation {
   assertRunBudget(parent, 'parent')
   assertRunBudget(request, 'request')
-  if (parent.children < 1) {
-    return { reserved: false, denial: { dimension: 'children', requested: 1, available: parent.children } }
-  }
-  // The requested grandchild concurrency is the child's own to spend and is
-  // not taken from the parent's slots; only the one slot this child occupies is.
-  const consumable = { ...request, children: 0 }
+  const consumable = { ...request, children: request.children + 1 }
   const denial = shortfall(parent, consumable)
   if (denial !== undefined) return { reserved: false, denial }
   return {
@@ -165,61 +166,7 @@ export function reserveChild(parent: RunBudget, request: RunBudget): ChildReserv
       tokens: parent.tokens - request.tokens,
       wallMs: parent.wallMs - request.wallMs,
       costMicroUsd: parent.costMicroUsd - request.costMicroUsd,
-      children: parent.children - 1,
-    },
-  }
-}
-
-/**
- * Return a finished child's unspent allowance to its parent.
- *
- * Only the genuinely unused remainder returns. A child that consumed more than
- * it reserved has already cost the tenant that money, so crediting the
- * difference would invent budget; the overspend is prevented during the run by
- * {@link chargeRun}, not corrected here.
- * @param parent - the parent's remaining allowance, as {@link reserveChild} left it.
- * @param reserved - the allowance that child was started with.
- * @param spent - what the child actually consumed.
- * @returns the parent's allowance with the unused remainder and the child slot restored.
- * @throws RangeError when any argument is not made of non-negative safe integers.
- */
-export function settleChild(parent: RunBudget, reserved: RunBudget, spent: RunSpend): RunBudget {
-  assertRunBudget(parent, 'parent')
-  assertRunBudget(reserved, 'reserved')
-  assertRunSpend(spent, 'spent')
-  const settled = {
-    tokens: parent.tokens + Math.max(0, reserved.tokens - spent.tokens),
-    wallMs: parent.wallMs + Math.max(0, reserved.wallMs - spent.wallMs),
-    costMicroUsd: parent.costMicroUsd + Math.max(0, reserved.costMicroUsd - spent.costMicroUsd),
-    children: parent.children + 1,
-  }
-  assertRunBudget(settled, 'settled')
-  return settled
-}
-
-/**
- * Charge one run for what it consumed.
- *
- * A charge that would overdraw any dimension is refused and nothing is
- * deducted, so a caller that stops the run on a denial never leaves a budget
- * partially spent by a charge it rejected.
- * @param budget - the run's remaining allowance.
- * @param spend - what it consumed since the last charge.
- * @returns the remaining allowance, or the dimension it would have overdrawn.
- * @throws RangeError when either argument is not made of non-negative safe integers.
- */
-export function chargeRun(budget: RunBudget, spend: RunSpend): RunCharge {
-  assertRunBudget(budget, 'budget')
-  assertRunSpend(spend, 'spend')
-  const denial = shortfall(budget, { ...spend, children: 0 })
-  if (denial !== undefined) return { charged: false, denial }
-  return {
-    charged: true,
-    remaining: {
-      tokens: budget.tokens - spend.tokens,
-      wallMs: budget.wallMs - spend.wallMs,
-      costMicroUsd: budget.costMicroUsd - spend.costMicroUsd,
-      children: budget.children,
+      children: parent.children - consumable.children,
     },
   }
 }

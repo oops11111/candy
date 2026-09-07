@@ -36,6 +36,8 @@ Extending the signed claim set without minting `v2` is deliberate: nothing has p
 
 **Collect audit records into a sink port too.** Rejected for now: the vault already returns its record and the caller owns the store, so a third port would add a parameter without adding an obligation the type system enforces. It is named as a limitation instead.
 
+That reasoning held, but the limitation as first written did not: it said a denial returns no audit record at all, and treated that as a boundary rather than a defect. `openCredential` returns a record on its failing branch as well as its succeeding one, and this module discarded the failing one — losing precisely the cross-tenant access attempt the vault had just detected. Every outcome now carries `audits` ([run-admission audits every outcome](2026-09-03-run-admission-audits-every-outcome.md)).
+
 ## Consequences
 
 The four R1 packages now have a consumer, and their fit is a test rather than an assumption: unit coverage pins a token becoming a credential and a pool, the provider deciding which pool, two providers separating for one tenant and account, a denial before any store is touched, a replayed token on second use, the nonce being spent before the credential is read, a missing credential, a revoked credential, another tenant's envelope, and an envelope relabelled to match the caller.

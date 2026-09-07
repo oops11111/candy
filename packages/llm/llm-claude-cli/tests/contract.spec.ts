@@ -54,6 +54,8 @@ function adapterOver(handle: SubprocessHandle): ClaudeCliAdapter {
     cwd: '/workspace',
     isolation: { home: '/srv/candy/pools/abc', apiKey: SECRET },
     graceMs: 5_000,
+    maxOutputBytes: 1_000_000,
+    maxStderrBytes: 8_192,
     spawn: () => handle,
     requireCredentialIsolation: false,
   })
@@ -96,6 +98,15 @@ testLlmAdapterContract({
   failingRun: (): AsyncIterable<StreamChunk> => {
     // A real recorded run whose every request failed authentication.
     const { handle } = scripted(Readable.from([recorded('auth-failure.jsonl')]), { exitCode: 1, signal: null })
+    return viaSeam(adapterOver(handle))
+  },
+  leakingRun: (): AsyncIterable<StreamChunk> => {
+    // A CLI that quotes the injected key back in its terminal frame.
+    const frames = [
+      JSON.stringify({ type: 'system', subtype: 'init', apiKeySource: 'ANTHROPIC_API_KEY' }),
+      JSON.stringify({ type: 'result', is_error: true, result: `authentication failed for ${SECRET}`, terminal_reason: 'auth' }),
+    ].join('\n')
+    const { handle } = scripted(Readable.from([frames]), { exitCode: 1, signal: null })
     return viaSeam(adapterOver(handle))
   },
   openRun: () => {

@@ -317,6 +317,28 @@ export type Config = LocalConfig
 
 来源：[`packages/shell/bash-sandbox/src/index.ts:35`](../packages/shell/bash-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-claude-cli-route"></a>
+
+## `@deepseek-ai/dsh-claude-cli-route`
+
+需要：`llm` · `subprocess` · `runScheduler`
+
+```ts config-catalog
+/** Deployment-varying facts for this host's Claude CLI, the same for every tenant it runs. */
+export interface Config {
+  /** Absolute path to the `claude` executable; defaults to `claude` on PATH. */
+  executable?: string
+  /** Process-tree termination grace in milliseconds. */
+  graceMs?: number
+  /** Most stdout bytes one run may write before it is failed and reaped. */
+  maxOutputBytes?: number
+  /** Most stderr bytes to keep from one run, as that stream's tail. */
+  maxStderrBytes?: number
+}
+```
+
+来源：[`packages/control-plane/claude-cli-route/src/index.ts:49`](../packages/control-plane/claude-cli-route/src/index.ts)
+
 <a id="deepseek-aidsh-client-connection"></a>
 
 ## `@deepseek-ai/dsh-client-connection`
@@ -960,6 +982,10 @@ export interface Config {
   maxBudgetUsd?: number
   /** Fail a run the CLI authenticated with another credential; defaults to true. */
   requireCredentialIsolation?: boolean
+  /** Most stdout bytes one run may write before it is failed; defaults to 16 MiB. */
+  maxOutputBytes?: number
+  /** Most stderr bytes to keep from one run, as that stream's tail; defaults to 8 KiB. */
+  maxStderrBytes?: number
 }
 ```
 
@@ -1716,6 +1742,83 @@ export interface Config {
 ```
 
 来源：[`packages/guard/repeat-tool-reminder/src/index.ts:28`](../packages/guard/repeat-tool-reminder/src/index.ts)
+
+<a id="deepseek-aidsh-run-delegation"></a>
+
+## `@deepseek-ai/dsh-run-delegation`
+
+需要：`subagents` · `runScheduler`
+
+```ts config-catalog
+/** The fixed allowance every delegated child is opened with. */
+export interface Config {
+  /**
+   * The fixed `RunBudget` requested for every delegated child, regardless of
+   * which tool or provider started the delegation. Refused, never clamped,
+   * when the parent's own remaining allowance is short in any dimension.
+   */
+  readonly childBudget: RunBudget
+}
+```
+
+依赖于：[`RunBudget`](subsystems/candy-control-plane.zh.md)
+
+来源：[`packages/control-plane/run-delegation/src/index.ts:38`](../packages/control-plane/run-delegation/src/index.ts)
+
+<a id="deepseek-aidsh-run-scheduler"></a>
+
+## `@deepseek-ai/dsh-run-scheduler`
+
+需要：`controlPlaneStore` · `timer`
+
+```ts config-catalog
+/** Deployment-varying facts for one Candy runtime's scheduler. */
+export interface Config {
+  /** Control plane whose assertions this runtime admits. */
+  issuer: string
+  /** This runtime's own audience identifier; an assertion for another is refused. */
+  audience: string
+  /** Longest issued-to-expiry span this runtime admits, in milliseconds. */
+  maxLifetimeMs?: number
+  /** Environment variable holding the assertion HMAC secret, at least 32 bytes. */
+  assertionSecretEnv?: string
+  /** Environment variable holding the credential key, exactly 32 bytes. */
+  credentialKeyEnv?: string
+  /** Keyring version the credential key is registered under. */
+  credentialKeyVersion: string
+  /**
+   * Key versions this runtime still opens, beside the current one.
+   *
+   * A rotation changes `credentialKeyVersion` and the key behind it, and every
+   * envelope already sealed names the version it was sealed under. Without the
+   * retired key the runtime cannot open any of them: each tenant is locked out
+   * of the account it configured until the old value is put back. Retaining
+   * the old version is what makes a rotation a migration rather than an
+   * outage — a retired key is dropped once every envelope has been rewrapped.
+   */
+  retiredCredentialKeys?: RetiredCredentialKey[]
+  /** Absolute directory holding every runtime pool's root; the deployment provisions it. */
+  poolBase: string
+  /** How long an unsettled run holds its allowance before `expire` releases it. */
+  leaseMs?: number
+  /** How often the clock releases expired holds and drops spent-nonce records. */
+  sweepMs?: number
+  /** How many ended sessions this runtime remembers, so their calls stay refused. */
+  endedSessionMemory?: number
+  /** Most audit records kept per tenant, and per runtime for attempts that named none. */
+  auditRetention?: number
+}
+
+/** One key version a rotation left behind, and where its key is read from. */
+export interface RetiredCredentialKey {
+  /** Version the envelopes sealed under this key name. */
+  version: string
+  /** Environment variable holding that key, exactly 32 bytes. */
+  env: string
+}
+```
+
+来源：[`packages/control-plane/run-scheduler/src/index.ts:81`](../packages/control-plane/run-scheduler/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-local"></a>
 
@@ -2544,6 +2647,25 @@ export interface Config {
 ```
 
 来源：[`packages/core/system-prompt/src/index.ts:237`](../packages/core/system-prompt/src/index.ts)
+
+<a id="deepseek-aidsh-tenant-preset-policy"></a>
+
+## `@deepseek-ai/dsh-tenant-preset-policy`
+
+需要：`agentPresets` · `runScheduler`
+
+```ts config-catalog
+/** Per-tenant preset allowlists this deployment enforces. */
+export interface Config {
+  /**
+   * Preset ids each named tenant may mount or switch to, keyed by tenant id.
+   * A tenant absent from this map is unrestricted.
+   */
+  readonly allowlists: Readonly<Record<string, readonly string[]>>
+}
+```
+
+来源：[`packages/control-plane/tenant-preset-policy/src/index.ts:33`](../packages/control-plane/tenant-preset-policy/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3410,6 +3532,7 @@ export interface Config {
 - `@deepseek-ai/dsh-command-feedback` — 需要 `commands`（[`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts)）
 - `@deepseek-ai/dsh-command-goal` — 需要 `commands` · `goals`（[`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts)）
 - `@deepseek-ai/dsh-commands`（[`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts)）
+- `@deepseek-ai/dsh-control-plane-store` — 需要 `storageDomain`（[`packages/control-plane/control-plane-store/src/index.ts`](../packages/control-plane/control-plane-store/src/index.ts)）
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
 - `@deepseek-ai/dsh-deepseek-llm-api-extensions`（[`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-client-ui-agent-team`（[`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts)）
@@ -3470,6 +3593,7 @@ export interface Config {
 - `@deepseek-ai/dsh-atomic-write`（[`packages/util/atomic-write/src/index.ts`](../packages/util/atomic-write/src/index.ts)）
 - `@deepseek-ai/dsh-base`（[`packages/bundle/base/src/index.ts`](../packages/bundle/base/src/index.ts)）
 - `@deepseek-ai/dsh-brand`（[`packages/util/brand/src/index.ts`](../packages/util/brand/src/index.ts)）
+- `@deepseek-ai/dsh-claude-cli-binding`（[`packages/control-plane/claude-cli-binding/src/index.ts`](../packages/control-plane/claude-cli-binding/src/index.ts)）
 - `@deepseek-ai/dsh-claude-cli-protocol`（[`packages/llm/claude-cli-protocol/src/index.ts`](../packages/llm/claude-cli-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-client-store`（[`packages/client/store/src/index.ts`](../packages/client/store/src/index.ts)）
 - `@deepseek-ai/dsh-client-test-runtime`（[`packages/test-support/client-runtime/src/index.ts`](../packages/test-support/client-runtime/src/index.ts)）
@@ -3493,8 +3617,13 @@ export interface Config {
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
+- `@deepseek-ai/dsh-provider-accounts`（[`packages/control-plane/provider-accounts/src/index.ts`](../packages/control-plane/provider-accounts/src/index.ts)）
 - `@deepseek-ai/dsh-run-admission`（[`packages/control-plane/run-admission/src/index.ts`](../packages/control-plane/run-admission/src/index.ts)）
 - `@deepseek-ai/dsh-run-budget`（[`packages/control-plane/run-budget/src/index.ts`](../packages/control-plane/run-budget/src/index.ts)）
+- `@deepseek-ai/dsh-run-ledger`（[`packages/control-plane/run-ledger/src/index.ts`](../packages/control-plane/run-ledger/src/index.ts)）
+- `@deepseek-ai/dsh-run-metering`（[`packages/control-plane/run-metering/src/index.ts`](../packages/control-plane/run-metering/src/index.ts)）
+- `@deepseek-ai/dsh-run-replay`（[`packages/control-plane/run-replay/src/index.ts`](../packages/control-plane/run-replay/src/index.ts)）
+- `@deepseek-ai/dsh-run-start`（[`packages/control-plane/run-start/src/index.ts`](../packages/control-plane/run-start/src/index.ts)）
 - `@deepseek-ai/dsh-runtime-pool`（[`packages/control-plane/runtime-pool/src/index.ts`](../packages/control-plane/runtime-pool/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
@@ -3505,6 +3634,7 @@ export interface Config {
 - `@deepseek-ai/dsh-session-telemetry`（[`packages/session/session-telemetry/src/index.ts`](../packages/session/session-telemetry/src/index.ts)）
 - `@deepseek-ai/dsh-session-title-llm`（[`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts)）
 - `@deepseek-ai/dsh-subagent-in-process-driver`（[`packages/subagent/subagent-in-process-driver/src/index.ts`](../packages/subagent/subagent-in-process-driver/src/index.ts)）
+- `@deepseek-ai/dsh-tenant-allowance`（[`packages/control-plane/tenant-allowance/src/index.ts`](../packages/control-plane/tenant-allowance/src/index.ts)）
 - `@deepseek-ai/dsh-timeout`（[`packages/util/timeout/src/index.ts`](../packages/util/timeout/src/index.ts)）
 - `@deepseek-ai/dsh-typert-generator`（[`packages/typert/generator/src/index.ts`](../packages/typert/generator/src/index.ts)）
 - `@deepseek-ai/dsh-typert-protocol`（[`packages/typert/protocol/src/index.ts`](../packages/typert/protocol/src/index.ts)）
@@ -3514,3 +3644,4 @@ export interface Config {
 - `@deepseek-ai/dsh-util-values`（[`packages/util/values/src/index.ts`](../packages/util/values/src/index.ts)）
 - `@deepseek-ai/dsh-util-workspace-path`（[`packages/util/workspace-path/src/index.ts`](../packages/util/workspace-path/src/index.ts)）
 - `@deepseek-ai/dsh-win32-process`（[`packages/subprocess/win32-process/src/index.ts`](../packages/subprocess/win32-process/src/index.ts)）
+- `@deepseek-ai/dsh-workspace-grant`（[`packages/control-plane/workspace-grant/src/index.ts`](../packages/control-plane/workspace-grant/src/index.ts)）

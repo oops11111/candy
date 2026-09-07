@@ -1,0 +1,28 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../workspace-grant" },
+    { "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../run-admission" },
+    { "path": "../run-budget" },
+    { "path": "../run-ledger" },
+    { "path": "../runtime-pool" },
+    { "path": "../credential-vault" },
+    { "path": "../execution-assertion" },
+    { "path": "../control-plane" },
+    { "path": "../../llm/llm-claude-cli" },
+    { "path": "../../llm/llm" },
+    { "path": "../../core/session" },
+    { "path": "../../subprocess/subprocess" },
+    { "path": "../../subprocess/subprocess-local" },
+    { "path": "../../util/brand" }
+  ]
+}

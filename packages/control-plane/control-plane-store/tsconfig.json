@@ -1,0 +1,24 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    { "path": "../workspace-grant" },
+    { "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../control-plane" },
+    { "path": "../credential-vault" },
+    { "path": "../provider-accounts" },
+    { "path": "../../util/brand" },
+    { "path": "../run-budget" },
+    { "path": "../run-ledger" },
+    { "path": "../tenant-allowance" },
+    { "path": "../../storage/storage-domain" },
+    { "path": "../../core/session" }
+  ]
+}

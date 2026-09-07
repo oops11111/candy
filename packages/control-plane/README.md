@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The control-plane group gives every future Candy tenant-aware package one shared, non-interchangeable vocabulary for the entities the control plane is the sole authority for: `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, and `ConversationId`, plus a `RunLineage` record naming a run's parent. `SessionId` is reused unchanged from [`dsh-session`](../core/session/README.md), never redefined here. The group has six packages today — an identity vocabulary, the per-run credential that carries it, the vault holding a tenant's provider secrets, the account manager that owns user-visible provider-account metadata, the pool key partitioning runtime state, and the admission call composing run authority — and no running Cordis service, because the control plane's OAuth, device pairing, and persistent account store described in [the accepted runtime-boundaries page](../../docs/candy-runtime-boundaries.md) and [the proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md) have not shipped yet. This page maps the group; the package README owns the details.
+The control-plane group gives every future Candy tenant-aware package one shared, non-interchangeable vocabulary for the entities the control plane is the sole authority for: `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, and `ConversationId`, plus a `RunLineage` record naming a run's parent. `SessionId` is reused unchanged from [`dsh-session`](../core/session/README.md), never redefined here. The group has eighteen packages today: the identity vocabulary and its durable store, the per-run credential and the vault holding it, the account manager owning user-visible provider-account metadata, the delegation-tree budget and the ledger that settles an abandoned hold, the pool key partitioning runtime state, the admission call composing run authority, `dsh-run-scheduler` — the one running Cordis service, owning one runtime's live ledger and replay store — the Claude CLI binding and per-session route that turn an admitted run into a confined, disposable launch, the tenant preset policy that narrows an otherwise-shared `dsh-agent-presets` roster per tenant, and the run delegation plugin that opens a funded run for a subagent's delegated child before it exists. The control plane's OAuth, device pairing, and multi-runtime deployment described in [the accepted runtime-boundaries page](../../docs/candy-runtime-boundaries.md) and [the proposed multi-tenant runtime plan](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md) have not shipped yet. This page maps the group; the package README owns the details.
 
 ## Table of Contents
 
@@ -27,12 +27,25 @@ The control-plane group gives every future Candy tenant-aware package one shared
 | [`credential-vault`](credential-vault/README.md) | Seals a tenant's provider-account secret, rotates its key, revokes it, and records every access |
 | [`provider-accounts`](provider-accounts/README.md) | Owns tenant provider-account metadata, encrypted credential lifecycle, default selection, and secret-free account views |
 | [`run-budget`](run-budget/README.md) | Bounds a delegation tree's tokens, time, money, and concurrency by drawing each child's allowance out of its parent's |
+| [`workspace-grant`](workspace-grant/README.md) | Resolves the workspace-grant id an assertion names into the roots and file-effect ceiling a run holds, and refuses a child that names any other |
+| [`run-ledger`](run-ledger/README.md) | Records what each open run holds and has spent, and settles an abandoned hold exactly rather than by estimate |
+| [`run-replay`](run-replay/README.md) | Records an assertion's nonce as spent in one indivisible step, retained exactly while that assertion stays admissible |
+| [`tenant-allowance`](tenant-allowance/README.md) | Holds a tenant's grant beside what its settled runs consumed, so one grant funds one tenant rather than every run it starts |
+| [`run-metering`](run-metering/README.md) | Meters one provider stream against an open run, refusing a call it cannot afford and cutting one that outruns its wall time |
+| [`run-start`](run-start/README.md) | Admits, funds and places one run in the documented order, returning a parent's hold when the placement refuses |
+| [`control-plane-store`](control-plane-store/README.md) | Holds provider accounts and tenant allowances durably, answering the credential and budget lookups admission requires |
+| [`run-scheduler`](run-scheduler/README.md) | Owns one runtime's ledger and replay store, starts a run from an assertion, and drives the clock that releases an abandoned hold |
 | [`runtime-pool`](runtime-pool/README.md) | Derives the isolation key and the one directory a tenant's provider runtime owns |
 | [`run-admission`](run-admission/README.md) | The one scheduling call: assertion, nonce, credential, and pool resolved together |
+| [`claude-cli-binding`](claude-cli-binding/README.md) | Turns an admitted run into the Claude CLI launch facts that confine it to that tenant |
+| [`claude-cli-route`](claude-cli-route/README.md) | A Claude CLI `dsh-llm` route resolved per call to the run driving the request's session, with disposal tied to that run's settlement |
+| [`tenant-preset-policy`](tenant-preset-policy/README.md) | Restricts a tenant to a configured subset of an otherwise-shared `dsh-agent-presets` roster |
+| [`run-delegation`](run-delegation/README.md) | Opens a funded Candy run for a subagent's in-process delegated child before it exists, refusing delegation the parent's run cannot fund |
 
 <a id="related-documentation"></a>
 ## Related documentation
 
+- [Candy control plane](../../docs/subsystems/candy-control-plane.md) — how these packages compose into one run, what a deployment must supply, and why the order is the contract.
 - [Candy Runtime Boundaries](../../docs/candy-runtime-boundaries.md) — the accepted trust boundaries and abuse cases this group's ids exist to name.
 - [Multi-tenant CLI agent runtime](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.md) — the proposed delivery plan this group's first package (R1) starts.
 - [Core session subsystem](../core/README.md) — the owner of `SessionId`, which this group's ids reference but never redefine.

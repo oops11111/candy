@@ -32,6 +32,12 @@ export async function mockServer(script: {
   body?: string
   delayMs?: number
   headers?: Record<string, string>
+  /**
+   * Write `events`, then leave the connection open instead of ending it: a
+   * provider still streaming. Only the client can end such a request, so
+   * `closedResponses` counts exactly the releases the client performed.
+   */
+  hold?: true
 }[]): Promise<MockServer> {
   const paths: string[] = []
   const requests: unknown[] = []
@@ -64,7 +70,10 @@ export async function mockServer(script: {
       let index = 0
       const writeNext = (): void => {
         const event = behavior.events?.[index++]
-        if (event === undefined) { response.end(); return }
+        if (event === undefined) {
+          if (behavior.hold !== true) response.end()
+          return
+        }
         response.write(`data: ${event}\n\n`)
         if (behavior.delayMs === undefined) writeNext()
         else setTimeout(writeNext, behavior.delayMs)

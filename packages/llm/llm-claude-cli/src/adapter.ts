@@ -27,6 +27,7 @@ import {
   type LlmProviderInfo,
   type LlmResolvedModelInfo,
   type ReasoningEffortId,
+  redactChunkApiKey,
   type StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -57,6 +58,39 @@ export interface ClaudeCliAdapterOptions {
   /** Per-invocation spend ceiling in US dollars, when the deployment sets one. */
   readonly maxBudgetUsd?: number | undefined
   /**
+   * Most stdout bytes one run may write before it is failed and its process
+   * terminated.
+   *
+   * The seam hands this route the raw stream — `stdout: 'pipe'` is documented
+   * as the caller's to decode and therefore the caller's to bound — and every
+   * byte read is accumulated, into a partial line while one is open and into a
+   * content block once its frames parse. Without a ceiling one run's output
+   * exhausts a runtime that other tenants share, and this route has no other
+   * bound on response length: the CLI has no output-token flag, so
+   * {@link projectRequest} refuses `maxTokens` rather than passing it on.
+   *
+   * Exceeding it fails the run instead of truncating. Truncation is right for
+   * a tool result a model reads and wrong for a protocol stream: a half-written
+   * frame does not parse, and a response cut short would otherwise be delivered
+   * as though it were complete.
+   */
+  readonly maxOutputBytes: number
+  /**
+   * Most stderr bytes to retain from one run, as the tail of that stream.
+   *
+   * The CLI writes its diagnostics here — an unusable executable, a rejected
+   * flag, an unhandled failure — and they are the only account of a run that
+   * ends without a terminal frame. The stream is collected rather than
+   * inherited so this adapter can hand that account back with the credential
+   * redacted, which makes the ceiling the amount of one tenant's stderr a
+   * runtime holds while its run is alive.
+   *
+   * Overflow keeps the tail and discards the head, which is the opposite of
+   * the stdout ceiling and right for the same reason: a diagnostic ends with
+   * what failed, while a protocol stream cannot survive a gap at all.
+   */
+  readonly maxStderrBytes: number
+  /**
    * Fail a run whose CLI reports authenticating with anything but the injected
    * key. A multi-tenant deployment sets this: a run that reached another
    * credential is spending someone other than the tenant, and finishing it
@@ -69,12 +103,32 @@ export interface ClaudeCliAdapterOptions {
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
 /** Classify a process that ended without its terminal frame. */
-function exitFailure(outcome: { exitCode: number | null; signal: NodeJS.Signals | null }): FinishReason {
+/**
+ * The diagnostic tail one CLI process wrote, bounded by the collect ceiling.
+ *
+ * The text goes into a failure the caller reads, and every chunk leaving this
+ * adapter passes the credential redaction in `runProcess`, so the tail is
+ * covered there rather than rewritten twice here.
+ *
+ * @param child - the process, whose stderr this adapter spawned in collect mode.
+ * @returns the retained tail with surrounding whitespace removed, or an empty
+ *   string when the process wrote nothing or the implementation collected none.
+ */
+function stderrTail(child: SubprocessHandle): string {
+  const collected = child.collected.stderr
+  return collected === undefined ? '' : collected.readFrom(0).text.trim()
+}
+
+function exitFailure(
+  outcome: { exitCode: number | null; signal: NodeJS.Signals | null },
+  diagnostics: string,
+): FinishReason {
   const cause = outcome.signal === null ? `exit code ${String(outcome.exitCode)}` : `signal ${outcome.signal}`
+  const said = diagnostics.length === 0 ? '' : `: ${diagnostics}`
   return {
     kind: 'error',
     failure: {
-      message: `claude CLI ended without finishing its run (${cause})`,
+      message: `claude CLI ended without finishing its run (${cause})${said}`,
       code: CLI_EXIT_CODE,
     },
   }
@@ -146,7 +200,14 @@ export class ClaudeCliAdapter extends LlmAdapter {
       cwd: this.options.cwd,
       // The prompt is a command-line argument, so the child needs no input; an
       // open stdin makes the CLI wait several seconds for one that never comes.
-      stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'inherit' },
+      // Collected rather than inherited, and never spilled. The CLI quotes the
+      // request it failed on, and that request carried the tenant's key, so an
+      // inherited stderr writes the credential straight to the host's own
+      // stream where this adapter — the one place that still knows which
+      // secret to look for — cannot redact it. Collecting keeps the tail this
+      // adapter can hand back through `exitFailure`, which the redaction in
+      // `runProcess` then covers.
+      stdio: { stdin: 'ignore', stdout: 'pipe', stderr: { maxBytes: this.options.maxStderrBytes } },
       graceMs: this.options.graceMs,
       signal,
       env: claudeCliEnvironment(this.options.isolation),
@@ -159,7 +220,7 @@ export class ClaudeCliAdapter extends LlmAdapter {
     try {
       const stdout = child.stdout
       if (stdout === undefined) throw new LlmError('claude CLI stdout was not piped', CLI_EXIT_CODE)
-      yield* this.readRun(child, stdout, signal)
+      for await (const chunk of this.readRun(child, stdout, signal)) yield redactChunkApiKey(chunk, this.options.isolation.apiKey)
       completed = true
     } finally {
       if (!completed) child.terminate()
@@ -189,9 +250,26 @@ export class ClaudeCliAdapter extends LlmAdapter {
     }
 
     let finished = false
+    let bytes = 0
     stdout.setEncoding('utf8')
     for await (const chunk of stdout) {
-      const batch = consume(decoder.push(chunk as string))
+      const text = chunk as string
+      // Bytes, not code units: the ceiling bounds what the runtime holds.
+      bytes += Buffer.byteLength(text, 'utf8')
+      if (bytes > this.options.maxOutputBytes) {
+        // Nothing else reaps the child here: this generator returns normally,
+        // so `runProcess` treats the run as completed and leaves it alone.
+        child.terminate()
+        yield* translator.end({
+          kind: 'error',
+          failure: {
+            message: `claude CLI wrote more than ${String(this.options.maxOutputBytes)} bytes of stdout`,
+            code: 'OUTPUT_LIMIT',
+          },
+        })
+        return
+      }
+      const batch = consume(decoder.push(text))
       finished = finished || batch.finished
       yield* batch.chunks
     }
@@ -213,7 +291,7 @@ export class ClaudeCliAdapter extends LlmAdapter {
       return
     }
     // Otherwise the process died on its own, and its exit facts say how.
-    yield* translator.end(exitFailure(await child.done))
+    yield* translator.end(exitFailure(await child.done, stderrTail(child)))
   }
 
   /**

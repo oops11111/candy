@@ -1,7 +1,12 @@
+import { chmod, mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { ProviderAccountId, UserId } from '@deepseek-ai/dsh-control-plane'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   RUNTIME_POOL_KEY_LENGTH,
+  RUNTIME_POOL_ROOT_MODE,
+  openRuntimePool,
   parseRuntimePoolKey,
   runtimePoolKey,
   runtimePoolRoot,
@@ -105,8 +110,115 @@ describe('runtimePoolRoot', () => {
     expect(root).not.toContain('..')
   })
 
-  it('refuses a base that is not absolute', () => {
-    expect(() => runtimePoolRoot('pools', runtimePoolKey(identity())))
-      .toThrow(/must be an absolute path, got 'pools'/)
+  it('joins a Windows base in Windows syntax, wherever it runs', () => {
+    const key = runtimePoolKey(identity())
+
+    // A control plane on Linux resolves a Windows host's pool root, so the
+    // base's own syntax decides the separator rather than this platform's.
+    expect(runtimePoolRoot('C:\\candy\\pools', key)).toBe(`C:\\candy\\pools\\${key}`)
+  })
+
+  it.each([['pools'], ['./pools'], ['pools/candy'], ['C:pools']])('refuses the base %s, absolute in neither syntax', (base) => {
+    expect(() => runtimePoolRoot(base, runtimePoolKey(identity())))
+      .toThrow(/must be an absolute path/)
+  })
+})
+
+describe('openRuntimePool', () => {
+  let base: string
+
+  beforeEach(async () => {
+    base = await mkdtemp(join(tmpdir(), 'dsh-runtime-pool-'))
+  })
+
+  afterEach(async () => {
+    await rm(base, { recursive: true, force: true })
+  })
+
+  /** The pool root's POSIX permission bits, as the filesystem holds them. */
+  async function modeOf(path: string): Promise<number> {
+    return (await stat(path)).mode & 0o777
+  }
+
+  it('creates the pool root private to this account', async () => {
+    const key = runtimePoolKey(identity())
+
+    const root = await openRuntimePool(base, key)
+
+    expect(root).toBe(runtimePoolRoot(base, key))
+    expect(await modeOf(root)).toBe(RUNTIME_POOL_ROOT_MODE)
+  })
+
+  it('makes an existing pool root private instead of trusting its permissions', async () => {
+    // The root an earlier run, an operator, or a different umask left behind
+    // is the one `mkdir` never applies a mode to, and the provider's
+    // credential file is written inside it.
+    const key = runtimePoolKey(identity())
+    const root = runtimePoolRoot(base, key)
+    await mkdir(root, { mode: 0o755 })
+    await chmod(root, 0o755)
+
+    await openRuntimePool(base, key)
+
+    expect(await modeOf(root)).toBe(RUNTIME_POOL_ROOT_MODE)
+  })
+
+  it('keeps what an existing pool holds, so a second run joins it', async () => {
+    const key = runtimePoolKey(identity())
+    const root = await openRuntimePool(base, key)
+    await writeFile(join(root, '.credentials.json'), 'kept', 'utf8')
+
+    await openRuntimePool(base, key)
+
+    expect(await modeOf(root)).toBe(RUNTIME_POOL_ROOT_MODE)
+    expect((await stat(join(root, '.credentials.json'))).size).toBe(4)
+  })
+
+  it('separates two tenants into two directories', async () => {
+    const alice = await openRuntimePool(base, runtimePoolKey(identity()))
+    const bobby = await openRuntimePool(base, runtimePoolKey(identity({ userId: UserId('user-2') })))
+
+    expect(alice).not.toBe(bobby)
+    expect(await modeOf(bobby)).toBe(RUNTIME_POOL_ROOT_MODE)
+  })
+
+  it('refuses a symlink planted where the pool root goes', async () => {
+    // `chmod` follows a link, so this would send the mode to the target and
+    // hand the tenant that target as a home. A link to another tenant's pool
+    // root is owned by the same account, so nothing else would refuse it.
+    const key = runtimePoolKey(identity())
+    const other = join(base, 'another-tenants-pool')
+    await mkdir(other, { mode: 0o755 })
+    await symlink(other, runtimePoolRoot(base, key))
+
+    await expect(openRuntimePool(base, key)).rejects.toThrow(/exists and is not a directory/)
+    expect(await modeOf(other)).toBe(0o755)
+  })
+
+  it('refuses a file where the pool root goes', async () => {
+    const key = runtimePoolKey(identity())
+    await writeFile(runtimePoolRoot(base, key), 'not a pool', 'utf8')
+
+    await expect(openRuntimePool(base, key)).rejects.toThrow(/exists and is not a directory/)
+  })
+
+  it('refuses a pool base the deployment never provisioned', async () => {
+    // Creating the whole tree would place a tenant's home under a mistyped
+    // path with whatever permissions its ancestors imply.
+    await expect(openRuntimePool(join(base, 'unprovisioned'), runtimePoolKey(identity())))
+      .rejects.toThrow(/pool base '.*unprovisioned' does not exist/)
+  })
+
+  it('refuses a relative pool base before touching the filesystem', async () => {
+    await expect(openRuntimePool('pools', runtimePoolKey(identity())))
+      .rejects.toThrow(RangeError)
+  })
+
+  it('reports a failure that is not a missing base or an existing pool', async () => {
+    const blocked = join(base, 'file')
+    await writeFile(blocked, 'not a directory', 'utf8')
+
+    await expect(openRuntimePool(blocked, runtimePoolKey(identity())))
+      .rejects.toThrow(/ENOTDIR/)
   })
 })

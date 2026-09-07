@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-02-candy-run-admission.md
-2026-09-02-candy-run-admission.md: eeeed578d5b1ad3a3c2d9ab30f4ef25d8bbb3cc8
-2026-09-02-candy-run-admission.zh.md: 22f50d3c4eaf0a6f07d9edc1f7da495fdac574f9
+2026-09-02-candy-run-admission.md: 5a1fd9b742d5a720dcef35a90569a185eee283df
+2026-09-02-candy-run-admission.zh.md: d15961e8941564fd615b3aace2f370a521cbfeb3

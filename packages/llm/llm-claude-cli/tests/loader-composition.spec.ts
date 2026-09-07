@@ -37,11 +37,11 @@ class RecordedSubprocess extends SubprocessRuntime {
 
   override resolveExecutable(command: string): Promise<string> { return Promise.resolve(command) }
 
-  override spawnTerminal(): Promise<never> {
+  protected override spawnTerminalSession(): Promise<never> {
     throw new Error('llm-claude-cli spawns pipes, never terminals')
   }
 
-  override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+  protected override spawnProcess(spec: SubprocessSpawnSpec): SubprocessHandle {
     RecordedSubprocess.spawns.push(spec)
     return {
       pid: 1234,
@@ -120,6 +120,7 @@ async function loadComposition(config: readonly string[] = [], apiKey = 'sk-ant-
     // reports an ambient credential. The default refuses exactly that; the
     // test below asserts the refusal, so the runs that need output opt out.
     '    requireCredentialIsolation: false',
+    '    maxStderrBytes: 4096',
     ...config,
     '',
   ].join('\n'))
@@ -164,6 +165,14 @@ describe('a booted claude-cli composition', () => {
     const spec = RecordedSubprocess.spawns[0]
     expect(spec?.argv[0]).toBe('claude')
     expect(spec?.env).toMatchObject({ HOME: join(root!, 'pool'), ANTHROPIC_API_KEY: 'sk-ant-tenant' })
+    // The pinned home is only isolation while nothing names a state directory
+    // outside it. The seam removes an ambient entry an overlay tombstones.
+    expect(spec?.env).toHaveProperty('CLAUDE_CONFIG_DIR', undefined)
+    expect(spec?.env).toHaveProperty('XDG_CONFIG_HOME', undefined)
+    // Collected under the configured ceiling, never inherited: an inherited
+    // stderr writes the CLI's diagnostics — which quote the tenant's key — to
+    // the host's own descriptor, past the adapter that could redact them.
+    expect(spec?.stdio.stderr).toEqual({ maxBytes: 4_096 })
   })
 
   it('refuses a run the CLI did not authenticate with the injected key, by default', async () => {

@@ -21,7 +21,8 @@
  */
 
 import { createHash } from 'node:crypto'
-import { isAbsolute, join, posix } from 'node:path'
+import { chmod, lstat, mkdir } from 'node:fs/promises'
+import { posix, win32 } from 'node:path'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { ProviderAccountId, ProviderKind, UserId } from '@deepseek-ai/dsh-control-plane'
 
@@ -86,18 +87,96 @@ export function parseRuntimePoolKey(value: string): RuntimePoolKey | undefined {
  * shared package caches live outside it, which is what the boundaries page
  * permits pools to share.
  *
- * @param base - absolute directory holding every pool's root.
+ * The base's own syntax decides how the path is joined, not the platform this
+ * runs on: a control plane on Linux resolves a Windows host's pool root, and
+ * `path.join` on that host would produce the other separator. POSIX is tried
+ * first because the Win32 rules also accept a leading slash.
+ *
+ * @param base - absolute directory holding every pool's root, in POSIX or Win32 syntax.
  * @param key - the pool's key.
- * @returns the pool's own directory, always directly under `base`.
- * @throws RangeError when `base` is not absolute, since a pool root resolved against a working directory is a deployment error.
+ * @returns the pool's own directory, always directly under `base`, in the base's own syntax.
+ * @throws RangeError when `base` is absolute in neither syntax, since a pool root
+ *   resolved against a working directory is a deployment error.
  */
 export function runtimePoolRoot(base: string, key: RuntimePoolKey): string {
-  if (!isAbsolute(base)) {
-    throw new RangeError(`dsh-runtime-pool: the pool base must be an absolute path, got '${base}'`)
-  }
-  if (base.startsWith('/')) return posix.join(base, key)
-  return join(base, key)
+  if (posix.isAbsolute(base)) return posix.join(base, key)
+  if (win32.isAbsolute(base)) return win32.join(base, key)
+  throw new RangeError(`dsh-runtime-pool: the pool base must be an absolute path, got '${base}'`)
 }
 
 /** How many characters a key is spelled with, for callers sizing a column or a path budget. */
 export const RUNTIME_POOL_KEY_LENGTH = KEY_LENGTH
+
+/**
+ * Permissions a pool root carries: readable, writable, and traversable by the
+ * account this runtime runs as, and by nobody else. The pool root is the
+ * provider's authenticated home, so another local account that can read it can
+ * read the tenant's credential file. This is a security invariant, not a
+ * deployment choice.
+ */
+const POOL_ROOT_MODE = 0o700
+
+/**
+ * Create one pool's root directory, private to the account this runtime runs as.
+ *
+ * The permissions are applied rather than requested. `mkdir` sets a mode only
+ * on a directory it creates, so a pool root left behind by an earlier run, an
+ * operator, or a different umask keeps whatever permissions it already had —
+ * and the next run writes the tenant's provider credential into it. The
+ * explicit change afterwards is what makes the mode true of the directory this
+ * returns rather than only of a directory this call happened to create.
+ *
+ * The base is not created. A pool base that does not exist means the
+ * deployment never provisioned its storage, and inventing the whole tree —
+ * under a mistyped path, with whatever permissions its ancestors imply — hides
+ * that instead of reporting it. Provisioning the base, and deciding who may
+ * write inside it, stays with the deployment: this call cannot make a pool
+ * private to its tenant if any other local account can create directories
+ * beside it.
+ *
+ * Calling this for a pool that already exists is how a second run joins it, so
+ * the call is idempotent.
+ *
+ * What already exists in the pool's place must be a real directory. A symlink
+ * there would take the mode change to its target and hand this tenant that
+ * target as a home, and a link to another tenant's pool root is owned by the
+ * same account, so no permission check would catch it.
+ *
+ * @param base - absolute directory holding every pool's root; it must already exist.
+ * @param key - the pool's key.
+ * @returns the pool's own directory, created and private.
+ * @throws RangeError when `base` is not absolute, or when it does not exist.
+ * @throws Error when the pool's path exists and is not a directory.
+ */
+export async function openRuntimePool(base: string, key: RuntimePoolKey): Promise<string> {
+  const root = runtimePoolRoot(base, key)
+  try {
+    await mkdir(root, { mode: POOL_ROOT_MODE })
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') {
+      throw new RangeError(
+        `dsh-runtime-pool: the pool base '${base}' does not exist; a deployment provisions it before a run is placed in a pool`,
+      )
+    }
+    // Only an existing pool is tolerated: a second run joining it is the
+    // normal case, and its permissions are corrected below.
+    if (code !== 'EEXIST') throw error
+  }
+  // What already exists must be a directory and not a link to one. `chmod`
+  // follows a symlink, so a link planted where this pool root goes would send
+  // the mode to its target and hand this tenant that target as a home — and a
+  // link to another pool root is owned by the same account, so nothing else
+  // would refuse it. `lstat` describes the entry itself, so the link is seen.
+  const entry = await lstat(root)
+  if (!entry.isDirectory()) {
+    throw new Error(
+      `dsh-runtime-pool: '${root}' exists and is not a directory, so it is not this pool's root`,
+    )
+  }
+  await chmod(root, POOL_ROOT_MODE)
+  return root
+}
+
+/** The permissions {@link openRuntimePool} gives a pool root, for a caller asserting them. */
+export const RUNTIME_POOL_ROOT_MODE = POOL_ROOT_MODE

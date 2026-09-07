@@ -41,6 +41,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'agent-preset/read-only': { readonly agentPreset: string; readonly reason: string }
     /** The session's conversation has started, so its composition is fixed. */
     'agent-preset/locked': { readonly sessionId: SessionId; readonly agentPreset: string }
+    /** A registered guard refused this preset for the composing agent. */
+    'agent-preset/refused': { readonly agentPreset: string; readonly reason: string }
   }
 }
 

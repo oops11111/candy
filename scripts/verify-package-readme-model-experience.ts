@@ -31,13 +31,23 @@ interface SentenceContract {
  */
 const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/core/scope': 'The package is a model-agnostic registration and lifecycle primitive; model-facing consumers own any context selection.',
+  'packages/control-plane/claude-cli-binding': 'The package only assembles launch facts for a provider process; nothing it produces reaches a model request.',
   'packages/control-plane/control-plane': 'The package only brands plain string ids and records run ancestry; model-facing consumers own any rendered use.',
   'packages/control-plane/credential-vault': 'The package only seals and opens stored secrets; nothing it produces reaches a model request.',
   'packages/control-plane/execution-assertion': 'The package only mints and checks a run credential; nothing it produces reaches a model request.',
   'packages/control-plane/provider-accounts': 'The package only manages provider-account records and sealed credentials; model-facing consumers own any rendered use.',
   'packages/control-plane/run-admission': 'The package only decides whether a run may start; nothing it produces reaches a model request.',
   'packages/control-plane/run-budget': 'The package only does arithmetic over allowances; nothing it produces reaches a model request.',
+  'packages/control-plane/workspace-grant': 'The package only decides whether a run may hold a filesystem grant; nothing it produces reaches a model request.',
+  'packages/control-plane/run-ledger': 'The package only records what open runs hold and have spent; nothing it produces reaches a model request.',
+  'packages/control-plane/run-replay': 'The package only records which nonces were spent; nothing it produces reaches a model request.',
+  'packages/control-plane/run-start': 'The package composes admission, funding and placement; nothing it produces reaches a model request.',
+  'packages/control-plane/control-plane-store': 'The package stores accounts and tenant allowances; nothing it produces reaches a model request.',
+  'packages/control-plane/run-scheduler': 'The package starts and settles runs; nothing it produces reaches a model request.',
   'packages/control-plane/runtime-pool': 'The package only derives an isolation key and a directory path; nothing it produces reaches a model request.',
+  'packages/control-plane/tenant-allowance': 'The package only does arithmetic over a tenant grant and its consumption; nothing it produces reaches a model request.',
+  'packages/control-plane/tenant-preset-policy': 'The package only decides whether a tenant may compose a given preset, before any session exists to address a model; nothing it produces reaches a model request.',
+  'packages/control-plane/run-delegation': 'The package only mints and opens a run for a delegated child, before the child agent exists to address a model; nothing it produces reaches a model request.',
   'packages/util/brand': 'The package only constructs plain string values and registers nothing model-facing.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
@@ -51,6 +61,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/control-plane/claude-cli-route': { kind: 'indirect', reason: 'The route resolves which tenant credential and pool one call authenticates with; dsh-llm-claude-cli owns every prompt, response, and token effect it delegates to.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },

@@ -54,6 +54,31 @@ Every exact live Agent can use `sendMessage()` with a direct continuable child; 
 
 Requests that need a capability the chosen provider lacks fail loudly at start rather than being silently ignored. A failed child run returns a stop reason, and provider backends add a safe diagnostic; a cancelled request settles as `aborted`. Children are isolated: a crashed or misbehaving child cannot corrupt the parent's session.
 
+<a id="preparing-a-delegated-child-before-it-exists"></a>
+### Preparing a delegated child before it exists
+
+`SubagentRuntime.onBeforeDelegate(hook)` registers an asynchronous check awaited, in registration order, before a child agent is created — the child's future session id already exists at that point, so a hook can act on it before anything is published. A hook that throws or rejects aborts the delegation entirely, and no child is ever created:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-subagent'
+
+declare const ctx: Context
+declare function recordDelegation(parentId: string, childId: string): Promise<void>
+
+const stop = ctx.subagents.onBeforeDelegate(async (parent, childId) => {
+  // parent is the delegating Agent; childId is the session id the driver
+  // will create the child with. Throw to refuse the delegation outright.
+  await recordDelegation(parent.id, childId)
+})
+```
+
+One-shot children are prepared once. A continuable child is prepared once per residency epoch — its fresh creation, and again on every cold resume — because a dormant child released whatever a hook gave it when it settled; a hook that must not repeat work checks for its own prior effect rather than assuming one call per child.
+
+A hook whose setup outlives the call returns the function that undoes it. Publication is this seam's boundary, so setup made before it belongs to the creation transaction: an epoch that never publishes — a cancelled signal, a failed creation, a later hook that refuses — runs those rollbacks in reverse registration order, and a hook that returns nothing is understood to own nothing.
+
+This package carries no notion of what a hook does with the moment it is given — [`dsh-run-delegation`](../../control-plane/run-delegation/README.md) is the Candy-owned consumer that mints and opens a funded run for the child before it can make its first request.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -70,12 +95,13 @@ This section explains how the service is built and where the observable behavior
 - **Two child shapes.** One-shot runs transfer ownership at publication; continuable children keep a durable Session and at most one process-local Activation.
 - **Fulfillment is publication.** A provider's `start()` fulfills only after a real child exists, so the caller always owns a live run or nothing.
 - **Trusted same-process values.** Requests, descriptors, and results are borrowed immutable; serialization and hostile-input validation belong at process and wire boundaries.
+- **Pre-publication hooks stay Candy-agnostic.** `onBeforeDelegate()` lets a consumer act before a child exists — minting a run, for instance — without this package carrying any notion of what that consumer does; see [Preparing a delegated child before it exists](#preparing-a-delegated-child-before-it-exists).
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Service entry: provider registry, start and continuation API, lifecycle events |
+| [`src/index.ts`](src/index.ts) | Service entry: provider registry, start and continuation API, lifecycle events, `onBeforeDelegate()`/`prepareDelegatedChild()` |
 | [`src/continuation.ts`](src/continuation.ts) | Continuable children: identity reservation, Activation residency, adjacent messaging, interrupt, settlement |
 | [`src/internal.ts`](src/internal.ts) | Host-only Queue and Steer adapters for browser and Team message protocols |
 | [`src/types.ts`](src/types.ts) | Public request, result, and provider contracts |
@@ -170,6 +196,7 @@ These limits define when the seam is a poor fit or needs special operational car
 - **No replay of accepted-but-unlogged messages** — a crash can lose an accepted prompt that never reached the child's session log; the lost message is not replayed automatically.
 - **No durable parent mailbox** — child-to-parent messages require a resident continuable child and live direct parent, and provide acceptance identity rather than exactly-once delivery.
 - **Lifecycle events are observe-only** — a run-affecting `subagent/end` continuation or decision API waits for a concrete consumer.
+- **`onBeforeDelegate()` covers in-process children only** — the one-shot driver and the continuation manager both consult it, but an out-of-process product provider delegates without it, so a consumer that funds or authorizes a child sees nothing for those.
 
 <a id="dev-note"></a>
 ### Dev Note

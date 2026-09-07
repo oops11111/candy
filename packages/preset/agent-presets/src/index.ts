@@ -26,7 +26,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { evaluate } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
+import { AnonymousEntries, bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -71,6 +71,23 @@ export interface AgentPresetSettings {
 export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
   default: z.string(),
 })
+
+/**
+ * Synchronous check consulted before an agent composes or re-links to a
+ * preset. A returned string refuses the preset with that reason; `undefined`
+ * defers to the next guard.
+ *
+ * Synchronous because the operation it guards — {@link AgentPresets.mount}
+ * and {@link AgentPresets.recompose} — already resolves everything else about
+ * the preset synchronously once discovery has answered; a consumer whose own
+ * check needs an await resolves it before registering the guard, the same way
+ * `dsh-tools`' `ToolGuard` does for tool dispatch.
+ * @param agentCtx - the agent's scope context, carrying `agentCtx.agent` once
+ *   the Agent is constructed (both call sites pass an Agent's own `ctx`).
+ * @param id - the preset id about to be composed.
+ * @returns the refusal reason, or `undefined` to allow.
+ */
+export type AgentPresetGuard = (agentCtx: Context, id: string) => string | undefined
 
 export { COMPOSITION_FILE, discoverPresets, scanRoot, SHIPPED_PRESET_ROOT } from './discovery.ts'
 export {
@@ -159,6 +176,14 @@ export class AgentPresets extends TypertRemoteService {
    * off the untraced original (the `jobs-local` selfCtx precedent).
    */
   private readonly selfCtx: Context
+
+  /**
+   * Guards consulted by {@link resolveMountable}, in registration order. Any
+   * guard may refuse; no guard can force-allow a preset another guard
+   * refused — the same monotonic rule `dsh-tools`' `ToolRuntime.guard()`
+   * applies to tool dispatch, over the same `dsh-scope` entry table.
+   */
+  private readonly guards = new AnonymousEntries<AgentPresetGuard>()
 
   constructor(ctx: Context, public config: Config) {
     super(ctx, 'agentPresets')
@@ -357,15 +382,22 @@ export class AgentPresets extends TypertRemoteService {
 
   /**
    * Resolve one preset that is about to compose an agent, refusing a broken
-   * one with its discovery-reported reason. Failing here rather than inside
-   * the loader keeps the answer the same for every unloadable shape — ghost
-   * directory, unparsable YAML, rowless list — and spends no mount attempt
-   * on a composition discovery already read as unusable.
+   * one with its discovery-reported reason, then any registered {@link guard}
+   * a bound agent's context fails. Failing here rather than inside the loader
+   * keeps the answer the same for every unloadable shape — ghost directory,
+   * unparsable YAML, rowless list — and spends no mount attempt on a
+   * composition discovery already read as unusable; failing guards here too
+   * is what makes them unbypassable, since `mount()` and `recompose()` are
+   * the only two operations that ever install an agent's binding.
+   * @param agentCtx - the agent's scope context, or `undefined` for a
+   *   context-free resolution ({@link standingKeyFor}'s cold read), which no
+   *   guard sees since it starts no agent and no session.
    * @param id - the preset id, or `undefined` for {@link defaultId}.
    * @returns the resolved, mountable preset.
-   * @throws when the preset is unknown or discovery reports it broken.
+   * @throws when the preset is unknown, discovery reports it broken, or a
+   *   guard refuses it.
    */
-  private async resolveMountable(id?: string): Promise<AgentPreset> {
+  private async resolveMountable(agentCtx: Context | undefined, id?: string): Promise<AgentPreset> {
     const preset = await this.resolve(id)
     if (preset.broken !== undefined) {
       throw new RemoteError(
@@ -374,7 +406,31 @@ export class AgentPresets extends TypertRemoteService {
         { agentPreset: preset.id, reason: preset.broken },
       )
     }
+    if (agentCtx !== undefined) {
+      for (const guard of this.guards.values()) {
+        const reason = guard(agentCtx, preset.id)
+        if (reason !== undefined) {
+          throw new RemoteError(
+            'agent-preset/refused',
+            `agent-presets: preset "${preset.id}" refused: ${reason}`,
+            { agentPreset: preset.id, reason },
+          )
+        }
+      }
+    }
     return preset
+  }
+
+  /**
+   * Register a guard consulted by {@link resolveMountable} before every
+   * `mount()` and `recompose()`. Any guard may refuse by returning a reason;
+   * no guard can force-allow a preset another guard refused.
+   * @param guard - synchronous check; a returned string refuses the preset.
+   * @returns the disposer that unregisters the guard.
+   */
+  guard(guard: AgentPresetGuard): () => void {
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+    return this.ctx.effect(() => this.guards.append(guard), 'agentPresets.guard()')
   }
 
   /**
@@ -416,7 +472,7 @@ export class AgentPresets extends TypertRemoteService {
     if (agentKey === undefined) {
       throw new Error('agent-presets: refusing to compose an unscoped context; the scope key is what joins an agent to its preset')
     }
-    const preset = await this.resolveMountable(id)
+    const preset = await this.resolveMountable(agentCtx, id)
     const standing = await this.ensureStanding(preset)
     // The one bind of this agent's ancestry. The binding is the only re-link
     // authority, held privately so nothing outside this roster can move a
@@ -652,7 +708,7 @@ export class AgentPresets extends TypertRemoteService {
     if (agentKey === undefined) {
       throw new Error('agent-presets: refusing to recompose an unscoped context')
     }
-    const preset = await this.resolveMountable(id)
+    const preset = await this.resolveMountable(agentCtx, id)
     const standing = await this.ensureStanding(preset)
     const binding = this.bindings.get(agentKey)
     if (binding === undefined) {
@@ -739,7 +795,7 @@ export class AgentPresets extends TypertRemoteService {
    * @throws when the preset is unknown or its composition is unusable.
    */
   async standingKeyFor(id?: string): Promise<ScopeKey> {
-    const preset = await this.resolveMountable(id)
+    const preset = await this.resolveMountable(undefined, id)
     return (await this.ensureStanding(preset)).key
   }
 

@@ -49,8 +49,9 @@ function claims(overrides: Partial<ExecutionAssertionClaims> = {}): ExecutionAss
 }
 
 /** Sign payload text the way a control plane holding `secret` would. */
-function sign(payload: string, secret: Buffer): string {
-  return createHmac('sha256', secret).update(payload, 'utf8').digest().toString('base64url')
+/** Sign as the module does: over the version and the payload together. */
+function sign(payload: string, secret: Buffer, version = 'v1'): string {
+  return createHmac('sha256', secret).update(`${version}.${payload}`, 'utf8').digest().toString('base64url')
 }
 
 /** Build a correctly signed token carrying an arbitrary payload object. */
@@ -100,6 +101,29 @@ describe('admitExecutionAssertion', () => {
   })
 
   it.each([
+    ['not a number', Number.NaN],
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['beyond the safe integer range', Number.MAX_SAFE_INTEGER + 2],
+  ])('refuses a lifetime ceiling that is %s', (_case, maxLifetimeMs) => {
+    const token = mintExecutionAssertion(claims(), SECRET)
+
+    expect(() => admitExecutionAssertion(token, SECRET, { ...EXPECTATION, maxLifetimeMs }, ISSUED_AT))
+      .toThrow(/maxLifetimeMs must be a positive safe integer/)
+  })
+
+  it('never admits an unbounded lifetime under a NaN ceiling', () => {
+    const forever = mintExecutionAssertion(
+      claims({ expiresAt: ISSUED_AT + LIFETIME * 1_000_000 }), SECRET,
+    )
+
+    expect(() => admitExecutionAssertion(
+      forever, SECRET, { ...EXPECTATION, maxLifetimeMs: Number.NaN }, ISSUED_AT,
+    )).toThrow(RangeError)
+  })
+
+  it.each([
     ['no separators', 'not-a-token'],
     ['two parts', 'v1.payload'],
     ['four parts', 'v1.a.b.c'],
@@ -138,14 +162,53 @@ describe('admitExecutionAssertion', () => {
       .toEqual({ admitted: false, rejection: 'signature' })
   })
 
-  it('rejects a tampered tenant even when every other claim is untouched', () => {
+  it.each([
+    ['tenant', { userId: UserId('user-2') }],
+    ['device', { deviceId: DeviceId('device-2') }],
+    ['account', { accountId: ProviderAccountId('account-2') }],
+    ['provider', { provider: 'claude-cli' } as const],
+    ['workspace grant', { workspaceGrantId: WorkspaceGrantId('grant-2') }],
+    ['conversation', { conversationId: ConversationId('conversation-2') }],
+    ['session', { sessionId: brandString<SessionId>('session-2') }],
+    ['run', { runId: RunId('run-2') }],
+    ['parent run', { parentRunId: RunId('run-0') }],
+    ['nonce', { nonce: 'nonce-2' }],
+    ['issuer', { issuer: 'another-control-plane' }],
+    ['audience', { audience: 'another-runtime' }],
+    ['issued instant', { issuedAt: ISSUED_AT - 1 }],
+    ['expiry', { expiresAt: ISSUED_AT + LIFETIME + 1 }],
+  ])('rejects a forged %s while every other claim is untouched', (_claim, overrides) => {
+    // Every claim is inside the MAC, so none of them can be swapped under a
+    // signature the control plane produced. A claim moved out of the signed
+    // payload would keep the tenant case passing while becoming forgeable, so
+    // the whole set is pinned rather than one member of it.
     const [version, , signature] = mintExecutionAssertion(claims(), SECRET).split('.')
-    const forged = Buffer.from(JSON.stringify(claims({ userId: UserId('user-2') })), 'utf8')
-      .toString('base64url')
+    const forged = Buffer.from(JSON.stringify(claims(overrides)), 'utf8').toString('base64url')
 
     expect(admitExecutionAssertion(
       `${String(version)}.${forged}.${String(signature)}`, SECRET, EXPECTATION, ISSUED_AT,
     )).toEqual({ admitted: false, rejection: 'signature' })
+  })
+
+  it('rejects a signature that covers the payload without its version', () => {
+    // The version decides how the payload is read, so it is inside the MAC. A
+    // signature over the payload alone would verify under any prefix, and a
+    // later claim set's token relabelled `v1` would then be decoded by the
+    // `v1` reader — the reinterpretation the version exists to prevent.
+    const [, payload] = mintExecutionAssertion(claims(), SECRET).split('.')
+    const overPayloadOnly = createHmac('sha256', SECRET).update(payload!, 'utf8').digest().toString('base64url')
+
+    expect(admitExecutionAssertion(
+      `v1.${String(payload)}.${overPayloadOnly}`, SECRET, EXPECTATION, ISSUED_AT,
+    )).toEqual({ admitted: false, rejection: 'signature' })
+  })
+
+  it('rejects a token whose version segment was swapped after signing', () => {
+    const [, payload, signature] = mintExecutionAssertion(claims(), SECRET).split('.')
+
+    expect(admitExecutionAssertion(
+      `v2.${String(payload)}.${String(signature)}`, SECRET, EXPECTATION, ISSUED_AT,
+    )).toEqual({ admitted: false, rejection: 'unsupported-version' })
   })
 
   it('rejects a payload that is not canonical base64url', () => {

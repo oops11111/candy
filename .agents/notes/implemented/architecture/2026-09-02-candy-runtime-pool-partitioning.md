@@ -10,7 +10,7 @@ English | [中文](2026-09-02-candy-runtime-pool-partitioning.zh.md)
 
 ## Decision
 
-`@deepseek-ai/dsh-runtime-pool` (`packages/control-plane/runtime-pool`) owns the key and the directory. `runtimePoolKey` digests the identity triple into 64 lowercase hex characters; `runtimePoolRoot` places a pool directly under an absolute base. The digest's inputs are length-prefixed, so `('ab', 'c')` and `('a', 'bc')` cannot collide by shifting a field boundary, and hex has none of the traversal, length, or case-folding properties that make raw ids unsafe as path segments.
+`@deepseek-ai/dsh-runtime-pool` (`packages/control-plane/runtime-pool`) owns the key and the directory. `runtimePoolKey` digests the identity triple into 64 lowercase hex characters; `runtimePoolRoot` places a pool directly under an absolute base, joining it in the base's own POSIX or Win32 syntax so a control plane resolves a pool root for a host whose separator is not its own. The digest's inputs are length-prefixed, so `('ab', 'c')` and `('a', 'bc')` cannot collide by shifting a field boundary, and hex has none of the traversal, length, or case-folding properties that make raw ids unsafe as path segments.
 
 `RuntimePoolKey` has no free-form constructor. The only ways to hold one are `runtimePoolKey`, which mints it, and `parseRuntimePoolKey`, which checks the grammar before re-admitting a stored key. Containment is therefore a property of the type rather than a check each call site repeats: `runtimePoolRoot` cannot be handed a key that escapes its base. Unlike the opaque ids in `dsh-control-plane`, validating here is founded rather than invented, because the grammar is this package's own digest.
 

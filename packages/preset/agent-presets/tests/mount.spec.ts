@@ -668,6 +668,80 @@ describe('replacing a composition', () => {
   })
 })
 
+describe('a registered guard', () => {
+  it('refuses a preset mount and rolls the agent back', async () => {
+    const stop = ctx.agentPresets.guard((_agentCtx, id) => id === 'standard' ? 'tenant not permitted' : undefined)
+
+    await expect(agentOn(ctx, 'sess-guarded', 'standard'))
+      .rejects.toMatchObject({ code: 'agent-preset/refused' })
+    await expect(agentOn(ctx, 'sess-guarded-2', 'standard')).rejects.toThrow(/tenant not permitted/)
+    expect(ctx.agents.get(SessionId('sess-guarded'))).toBeUndefined()
+
+    stop()
+  })
+
+  it('sees the constructing agent\'s own identity, not a bare scope', async () => {
+    const seen: Array<{ agentId: string | undefined; id: string }> = []
+    const stop = ctx.agentPresets.guard((agentCtx, id) => {
+      seen.push({ agentId: agentCtx.agent?.id, id })
+      return undefined
+    })
+
+    await agentOn(ctx, 'sess-guard-sees', 'minimal')
+
+    expect(seen).toEqual([{ agentId: 'sess-guard-sees', id: 'minimal' }])
+    stop()
+  })
+
+  it('stops being consulted once its disposer runs, idempotently', async () => {
+    const stop = ctx.agentPresets.guard(() => 'refused')
+    await expect(agentOn(ctx, 'sess-guard-lifted', 'standard')).rejects.toThrow(/refused/)
+
+    stop()
+    stop() // Already removed: a second call is a harmless no-op, not a double-remove.
+
+    const agent = await agentOn(ctx, 'sess-guard-lifted-2', 'standard')
+    expect(agent.id).toBe(SessionId('sess-guard-lifted-2'))
+  })
+
+  it('also gates a switch, not only the first mount', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('sess-guard-recompose'),
+      setup: async (agentCtx: Context) => void await ctx.agentPresets.mount(agentCtx, 'standard'),
+    })
+    const stop = ctx.agentPresets.guard((_agentCtx, id) => id === 'minimal' ? 'switch refused' : undefined)
+
+    await expect(ctx.agentPresets.recompose(handle.agent.ctx, 'minimal'))
+      .rejects.toMatchObject({ code: 'agent-preset/refused' })
+    // A refused switch is a no-op: the agent keeps running its prior preset.
+    expect(toolNames(ctx, handle.agent)).toEqual(['alpha'])
+
+    stop()
+  })
+
+  it('is monotonic: one refusal wins even when another guard would allow', async () => {
+    const stopAllow = ctx.agentPresets.guard(() => undefined)
+    const stopDeny = ctx.agentPresets.guard(() => 'no')
+
+    await expect(agentOn(ctx, 'sess-guard-monotonic', 'standard'))
+      .rejects.toMatchObject({ code: 'agent-preset/refused' })
+
+    stopAllow()
+    stopDeny()
+  })
+
+  it('is not consulted by a cold reader resolving a standing key', async () => {
+    // `standingKeyFor` starts no agent and no session; a guard keyed off
+    // `agentCtx.agent` has nothing to decide about, so this path stays
+    // ungated by design (see the `resolveMountable` doc comment).
+    const stop = ctx.agentPresets.guard(() => 'refused')
+
+    await expect(ctx.agentPresets.standingKeyFor('standard')).resolves.toBeDefined()
+
+    stop()
+  })
+})
+
 describe('editing a composition file', () => {
   /** One-row composition whose single tool is named `tool`. */
   const rowFor = (tool: string): string =>

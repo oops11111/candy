@@ -504,3 +504,89 @@ describe('dsh-subagent-spawn-in-process', () => {
     expect(published).toEqual([])
   })
 })
+
+describe('a registered onBeforeDelegate hook', () => {
+  it('runs before the child is created, seeing the parent and the child\'s future id', async () => {
+    const { ctx, parent } = await setup([textResponse('child answer')])
+    const seen: Array<{ parentId: string | undefined; childId: string; childrenAtCall: number }> = []
+    const stop = ctx.subagents.onBeforeDelegate((seenParent, childId) => {
+      seen.push({ parentId: seenParent.id, childId, childrenAtCall: ctx.agents.list().length })
+    })
+
+    const before = ctx.agents.list().length
+    const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'do X' }], parent })
+
+    expect(seen).toEqual([{ parentId: parent.id, childId: run.id, childrenAtCall: before }])
+    await run.result
+    await run.dispose()
+    stop()
+  })
+
+  it('runs multiple hooks in registration order', async () => {
+    const { ctx, parent } = await setup([textResponse('child answer')])
+    const order: number[] = []
+    const stopFirst = ctx.subagents.onBeforeDelegate(() => void order.push(1))
+    const stopSecond = ctx.subagents.onBeforeDelegate(() => void order.push(2))
+
+    const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'do X' }], parent })
+
+    expect(order).toEqual([1, 2])
+    await run.result
+    await run.dispose()
+    stopFirst()
+    stopSecond()
+  })
+
+  it('a hook that rejects refuses the delegation with no orphaned child', async () => {
+    const { ctx, parent } = await setup([])
+    const stop = ctx.subagents.onBeforeDelegate(() => {
+      throw new Error('delegation not authorized')
+    })
+    const before = ctx.agents.list().length
+
+    await expect(start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'do X' }], parent }))
+      .rejects.toThrow(/delegation not authorized/)
+    expect(ctx.agents.list().length).toBe(before)
+
+    stop()
+  })
+
+  it('rolls back a hook\'s setup when cancellation stops the child from publishing', async () => {
+    // A signal aborted after the hooks ran leaves the creation transaction
+    // unpublished, so what a hook set up for that child must come back.
+    const { ctx, parent } = await setup([])
+    const controller = new AbortController()
+    const undone: string[] = []
+    const stop = ctx.subagents.onBeforeDelegate(() => {
+      // Abort once the setup exists: creation is what must now fail.
+      controller.abort()
+      return () => void undone.push('rolled back')
+    })
+    const before = ctx.agents.list().length
+
+    await expect(start(ctx, 'spawn', {
+      prompt: [{ type: 'text', text: 'do X' }],
+      parent,
+      signal: controller.signal,
+    })).rejects.toThrow()
+
+    expect(undone).toEqual(['rolled back'])
+    expect(ctx.agents.list().length).toBe(before)
+    stop()
+  })
+
+  it('stops being consulted once its disposer runs, idempotently', async () => {
+    const { ctx, parent } = await setup([textResponse('child answer')])
+    let calls = 0
+    const stop = ctx.subagents.onBeforeDelegate(() => void calls++)
+
+    stop()
+    stop() // Already removed: a second call is a harmless no-op, not a double-remove.
+
+    const run = await start(ctx, 'spawn', { prompt: [{ type: 'text', text: 'do X' }], parent })
+    await run.result
+    await run.dispose()
+
+    expect(calls).toBe(0)
+  })
+})
