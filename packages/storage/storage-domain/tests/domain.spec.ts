@@ -260,6 +260,14 @@ describe('table and snapshot reads', () => {
 })
 
 describe('KvTable writes', () => {
+  it('fails loud when its backend cannot compare and exchange across processes', async () => {
+    const { facility } = await harness()
+    const table = (await facility.open(spec)).table('items')
+
+    await expect(table.compareExchange('nonce', undefined, { label: 'claim', count: 1 }))
+      .rejects.toMatchObject({ code: 'facet-unsupported' })
+  })
+
   it('serializes concurrent updates on one key without losing increments', async () => {
     const { facility } = await harness()
     const table = (await facility.open(spec)).table('items')

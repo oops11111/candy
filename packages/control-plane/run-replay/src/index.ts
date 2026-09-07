@@ -31,8 +31,10 @@ import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assert
  * pair of values can forge the boundary between them: both are opaque strings
  * this package does not constrain, and `('ab', 'c')` must not collide with
  * `('a', 'bc')`.
+ * @param claims - The verified tenant and nonce to partition.
+ * @returns the collision-safe tenant-and-nonce key.
  */
-function replayKey(claims: ExecutionAssertionClaims): string {
+export function replayKey(claims: ExecutionAssertionClaims): string {
   return `${String(claims.userId.length)}:${claims.userId}${String(claims.nonce.length)}:${claims.nonce}`
 }
 

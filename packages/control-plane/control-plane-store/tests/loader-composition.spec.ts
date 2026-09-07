@@ -25,6 +25,7 @@ import {
 import type { ProviderAccountEntry } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import type { WorkspaceGrantRecord } from '@deepseek-ai/dsh-workspace-grant'
+import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
@@ -125,7 +126,40 @@ function account(userId = ALICE, id = ACCOUNT): ProviderAccountEntry {
   }
 }
 
+function assertion(nonce = 'nonce-1'): ExecutionAssertionClaims {
+  return {
+    issuer: 'candy-control-plane',
+    audience: 'candy-runtime-debian-1',
+    userId: ALICE,
+    deviceId: DEVICE,
+    accountId: ACCOUNT,
+    provider: 'claude-cli',
+    workspaceGrantId: WORKSPACE_GRANT,
+    conversationId: CONVERSATION,
+    sessionId: SESSION,
+    runId: RunId('run-1'),
+    parentRunId: undefined,
+    nonce,
+    issuedAt: NOW,
+    expiresAt: NOW + 60_000,
+  }
+}
+
 describe('a booted control-plane store', () => {
+  it('retains a spent nonce across a runtime restart and releases it after expiry', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+
+    expect(await first.controlPlaneStore.spendNonce(assertion(), NOW)).toBe(true)
+    expect(await first.controlPlaneStore.spendNonce(assertion(), NOW)).toBe(false)
+    await first.fiber.dispose()
+    context = undefined
+
+    const restarted = await boot(root)
+    expect(await restarted.controlPlaneStore.spendNonce(assertion(), NOW + 1)).toBe(false)
+    expect(await restarted.controlPlaneStore.spendNonce(assertion(), NOW + 60_000)).toBe(true)
+  })
+
   it('registers on the context once the domain is open', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
 

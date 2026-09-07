@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-run-scheduler",
-  "description": "One Candy runtime's live run state: the ledger and replay store a run is admitted against, the composition that starts it, and the clock that releases an abandoned hold",
+  "description": "One Candy runtime's live run ledger, durable admission composition, and the clock that releases an abandoned hold",
   "version": "0.1.2-alpha.5",
   "publishConfig": {
     "access": "public"
@@ -39,7 +39,6 @@
     "@deepseek-ai/dsh-run-ledger": "workspace:^",
     "@deepseek-ai/dsh-provider-accounts": "workspace:^",
     "@deepseek-ai/dsh-run-metering": "workspace:^",
-    "@deepseek-ai/dsh-run-replay": "workspace:^",
     "@deepseek-ai/dsh-run-start": "workspace:^",
     "@deepseek-ai/dsh-runtime-pool": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
@@ -64,7 +63,6 @@
     "@deepseek-ai/dsh-run-ledger": "workspace:^",
     "@deepseek-ai/dsh-provider-accounts": "workspace:^",
     "@deepseek-ai/dsh-run-metering": "workspace:^",
-    "@deepseek-ai/dsh-run-replay": "workspace:^",
     "@deepseek-ai/dsh-run-start": "workspace:^",
     "@deepseek-ai/dsh-runtime-pool": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",

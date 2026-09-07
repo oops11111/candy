@@ -177,7 +177,7 @@ These are current package constraints, not a task backlog.
 - **The trail records what the control plane observes** — scheduling attempts and vault operations. Routing, delegation, tool authorization and terminal state are not in it, because nothing in this repository produces those records yet.
 - **No period** — an allowance runs from its grant until an operator changes it, and `setTenantGrant` deliberately keeps what was consumed. Nothing here starts a new billing period, because nothing in the repository decides when one begins.
 - **`listByUser` scans** — the domain keeps every record in memory and this filters them, which is right at one deployment's account count and would not be at a directory's.
-- **No replay store, and this domain cannot host one** — the nonce port is [`dsh-run-replay`](../run-replay/README.md), which is in-process by design. A durable single-use nonce needs a write that fails when the key already exists, and the storage seam has none: `KvTable.get` answers from the snapshot loaded at open, `update` is atomic only within one process, and `putRecord` is an unconditional upsert. A deployment running more than one runtime process needs a conditional-write primitive on `dsh-storage` first.
+- **Durable replay requires SQLite** — `spent_nonces` uses the storage seam's optional compare/exchange operation, so two runtime processes and a restart share one single-use decision. SQLite implements that operation transactionally. JSON layouts deliberately do not pretend that an open-time snapshot plus a file rewrite is cross-process atomic; an admission routed there fails loud with `facet-unsupported`.
 
 <a id="dev-note"></a>
 ## Dev Note

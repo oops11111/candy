@@ -15,6 +15,10 @@ import { recordTableName } from './schema.ts'
 /** Prepared statements for one declared table. */
 interface TableStatements {
   upsert: StatementSync
+  insertAbsent: StatementSync
+  replaceValue: StatementSync
+  deleteValue: StatementSync
+  selectOne: StatementSync
   remove: StatementSync
   selectAll: StatementSync
 }
@@ -36,7 +40,7 @@ export class SqliteKvUnit implements KvUnit {
    * @param onClose - Backend callback releasing this unit's open-name slot.
    */
   constructor(
-    db: DatabaseSync,
+    private readonly db: DatabaseSync,
     private readonly descriptor: KvUnitDescriptor,
     private readonly onClose: () => void,
   ) {
@@ -48,6 +52,12 @@ export class SqliteKvUnit implements KvUnit {
         upsert: db.prepare(
           `INSERT INTO "${physical}" (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
         ),
+        insertAbsent: db.prepare(
+          `INSERT INTO "${physical}" (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`,
+        ),
+        replaceValue: db.prepare(`UPDATE "${physical}" SET value = ? WHERE key = ? AND value = ?`),
+        deleteValue: db.prepare(`DELETE FROM "${physical}" WHERE key = ? AND value = ?`),
+        selectOne: db.prepare(`SELECT value FROM "${physical}" WHERE key = ?`),
         remove: db.prepare(`DELETE FROM "${physical}" WHERE key = ?`),
         selectAll: db.prepare(`SELECT key, value FROM "${physical}"`),
       })
@@ -99,6 +109,45 @@ export class SqliteKvUnit implements KvUnit {
   putRecord(table: string, key: string, value: unknown): Promise<void> {
     return this.settle(() => {
       this.statementsFor(table).upsert.run(key, JSON.stringify(value))
+    })
+  }
+
+  compareExchangeRecord(
+    table: string,
+    key: string,
+    expected: unknown | undefined,
+    replacement: unknown | undefined,
+  ): Promise<{ exchanged: boolean; current: unknown | undefined }> {
+    return this.settle(() => {
+      const statements = this.statementsFor(table)
+      this.db.exec('BEGIN IMMEDIATE')
+      try {
+        let changes: number | bigint
+        if (expected === undefined) {
+          if (replacement === undefined) {
+            throw new TypeError('compareExchangeRecord cannot exchange absence for absence')
+          }
+          changes = statements.insertAbsent.run(key, JSON.stringify(replacement)).changes
+        } else if (replacement === undefined) {
+          changes = statements.deleteValue.run(key, JSON.stringify(expected)).changes
+        } else {
+          changes = statements.replaceValue.run(
+            JSON.stringify(replacement),
+            key,
+            JSON.stringify(expected),
+          ).changes
+        }
+        const exchanged = changes !== 0 && changes !== 0n
+        const row = statements.selectOne.get(key) as { value: string } | undefined
+        const current = row === undefined
+          ? undefined
+          : this.parseValue(row.value, `table '${table}' key '${key}'`)
+        this.db.exec('COMMIT')
+        return { exchanged, current }
+      } catch (error) {
+        this.db.exec('ROLLBACK')
+        throw error
+      }
     })
   }
 

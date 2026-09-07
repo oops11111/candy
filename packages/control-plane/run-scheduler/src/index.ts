@@ -3,8 +3,8 @@
  * state and performs the control-plane order for a request.
  *
  * Everything it composes already existed as a library. What did not exist was
- * an owner: the ledger and the replay store are per-runtime objects nothing
- * held, admission's ports had to be assembled by hand at every call site, and
+ * an owner: the ledger was a per-runtime object nothing held, admission's
+ * ports had to be assembled by hand at every call site, and
  * `RunLedger.expire` was a call no clock made — a run abandoned without
  * settling held its parent's allowance until someone thought to reclaim it.
  *
@@ -59,7 +59,6 @@ import { CREDENTIAL_REVOKED, meterRun, refusedCall, RUN_NOT_OPEN } from '@deepse
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger, type RunChargeResult, type RunLedgerResult, type RunRecord, type RunSettlement } from '@deepseek-ai/dsh-run-ledger'
-import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 import { startRun, type RunStartOutcome, type RunStartRejection } from '@deepseek-ai/dsh-run-start'
 import { remainingAllowance } from '@deepseek-ai/dsh-tenant-allowance'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
@@ -217,18 +216,15 @@ function requireSecret(environment: Readonly<Record<string, string | undefined>>
 /**
  * Live run state for one Candy runtime, and the composition that starts a run.
  *
- * One instance owns one ledger and one replay store, so every run this runtime
- * admits is accounted against the same delegation trees and the same spent
- * nonces. Two instances would each believe they held the whole allowance.
+ * One instance owns one ledger, so every run this runtime admits is accounted
+ * against the same delegation trees. Spent nonces instead belong to the
+ * durable control-plane store and are shared across runtime processes.
  */
 export class RunScheduler extends Service {
   static inject = ['controlPlaneStore', 'timer']
 
   /** Open runs and their holds, for every tree this runtime is running. */
   readonly ledger: RunLedger = new RunLedger()
-
-  /** Nonces spent by assertions still admissible here. */
-  readonly replay: RunReplayStore = new RunReplayStore()
 
   /**
    * The one chain every decision this runtime acts on queues behind.
@@ -900,7 +896,7 @@ export class RunScheduler extends Service {
       const outcome = await this.queue(() => this.settle(record.runId, revoked ? 'revoked' : 'expired'))
       if (outcome.ok) settled.push(outcome.value)
     }
-    this.replay.evict(now)
+    await this.ctx.controlPlaneStore.evictNonces(now)
     return settled
   }
 
@@ -954,7 +950,7 @@ export class RunScheduler extends Service {
       assertionSecret: this.assertionSecret,
       keyring: this.keyring,
       poolBase: this.config.poolBase,
-      spendNonce: (claims: ExecutionAssertionClaims) => Promise.resolve(this.replay.spend(claims, Date.now())),
+      spendNonce: (claims: ExecutionAssertionClaims) => this.ctx.controlPlaneStore.spendNonce(claims, Date.now()),
       // A session driven by two runs at once is spend nobody can attribute, so
       // the second run is refused where the conflict is created.
       findSessionRun: (claims: ExecutionAssertionClaims) => Promise.resolve(

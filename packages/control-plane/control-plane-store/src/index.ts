@@ -16,12 +16,15 @@
  * @module @deepseek-ai/dsh-control-plane-store
  */
 
+import { createHash } from 'node:crypto'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountRecord, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
+import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
+import { replayKey } from '@deepseek-ai/dsh-run-replay'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { consumeAllowance, openAllowance, type TenantAllowance } from '@deepseek-ai/dsh-tenant-allowance'
 import type { WorkspaceGrantRecord, WorkspaceGrantStore } from '@deepseek-ai/dsh-workspace-grant'
@@ -130,6 +133,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
   private audits!: KvTable<AuditSubject, StoredAuditTrail>
   private grants!: KvTable<WorkspaceGrantId, StoredWorkspaceGrant>
   private managedSessions!: KvTable<SessionId, { runtime: string }>
+  private spentNonces!: KvTable<string, { expiresAt: number }>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -145,6 +149,51 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     this.audits = domain.table('audits')
     this.grants = domain.table('grants')
     this.managedSessions = domain.table('managed_sessions')
+    this.spentNonces = domain.table('spent_nonces')
+  }
+
+  /**
+   * Atomically consume one tenant-scoped assertion nonce on the durable
+   * medium. A digest keeps the per-record JSON layout's path-safe key contract
+   * without weakening the collision boundary held by `replayKey`.
+   *
+   * @param claims - The verified tenant, nonce, and assertion expiry.
+   * @param now - The admission decision's epoch-millisecond timestamp.
+   * @returns true only for the first admissible use.
+   */
+  async spendNonce(
+    claims: ExecutionAssertionClaims,
+    now: number,
+  ): Promise<boolean> {
+    const key = createHash('sha256').update(replayKey(claims)).digest('hex')
+    const replacement = { expiresAt: claims.expiresAt }
+    let expected = this.spentNonces.get(key)
+    // A failed exchange returns the medium's current value, so each retry
+    // advances rather than spinning on this process's open-time snapshot.
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      if (expected !== undefined && expected.expiresAt > now) return false
+      const result = await this.spentNonces.compareExchange(key, expected, replacement)
+      if (result.exchanged) return true
+      expected = result.current
+    }
+    return false
+  }
+
+  /**
+   * Remove locally known nonce records after their assertions expire. The
+   * compare/exchange prevents one process from deleting a newer reservation
+   * another process installed under the same key.
+   * @param now - Epoch milliseconds used as the expiry boundary.
+   * @returns the number of records this process removed.
+   */
+  async evictNonces(now: number): Promise<number> {
+    let dropped = 0
+    for (const [key, record] of this.spentNonces.entries()) {
+      if (record.expiresAt > now) continue
+      const result = await this.spentNonces.compareExchange(key, record, undefined)
+      if (result.exchanged) dropped += 1
+    }
+    return dropped
   }
 
   /**

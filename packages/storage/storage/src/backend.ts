@@ -102,6 +102,29 @@ export interface KvUnit {
   putRecord(table: string, key: string, value: unknown): Promise<void>
 
   /**
+   * Atomically replace one record only when its current value equals the
+   * caller's expectation. `undefined` means the key is absent, both for the
+   * expectation and for a deletion replacement. The returned `current` value
+   * is read in the same backend operation, so a caller can retry a failed
+   * exchange without trusting an open-time snapshot.
+   *
+   * Backends that cannot coordinate this decision across processes omit the
+   * member. Security-sensitive consumers must reject that backend rather than
+   * emulate the operation with `loadAll` plus `putRecord`.
+   * @param table - Declared table name.
+   * @param key - Record key.
+   * @param expected - Current value required, or `undefined` for absence.
+   * @param replacement - Next value, or `undefined` to delete.
+   * @returns whether the exchange landed and the value current at its decision.
+   */
+  compareExchangeRecord?(
+    table: string,
+    key: string,
+    expected: unknown | undefined,
+    replacement: unknown | undefined,
+  ): Promise<{ exchanged: boolean; current: unknown | undefined }>
+
+  /**
    * Delete one record durably. Idempotent: a missing key is a no-op.
    * @param table - Declared table name.
    * @param key - Record key.

@@ -78,6 +78,26 @@ Reads are synchronous against the domain's in-memory state and are exposed as pr
 
 ```ts cordis-catalog
 /**
+ * Atomically consume one tenant-scoped assertion nonce on the durable
+ * medium. A digest keeps the per-record JSON layout's path-safe key contract
+ * without weakening the collision boundary held by `replayKey`.
+ *
+ * @param claims - The verified tenant, nonce, and assertion expiry.
+ * @param now - The admission decision's epoch-millisecond timestamp.
+ * @returns true only for the first admissible use.
+ */
+async spendNonce( claims: ExecutionAssertionClaims, now: number, ): Promise<boolean>
+
+/**
+ * Remove locally known nonce records after their assertions expire. The
+ * compare/exchange prevents one process from deleting a newer reservation
+ * another process installed under the same key.
+ * @param now - Epoch milliseconds used as the expiry boundary.
+ * @returns the number of records this process removed.
+ */
+async evictNonces(now: number): Promise<number>
+
+/**
  * Every account one tenant owns, deleted ones included.
  *
  * A deleted account is retained rather than removed: `dsh-provider-accounts`
@@ -352,7 +372,7 @@ Source: [`packages/control-plane/control-plane-store/src/index.ts`](../../packag
 
 Live run state for one Candy runtime, and the composition that starts a run.
 
-One instance owns one ledger and one replay store, so every run this runtime admits is accounted against the same delegation trees and the same spent nonces. Two instances would each believe they held the whole allowance.
+One instance owns one ledger, so every run this runtime admits is accounted against the same delegation trees. Spent nonces instead belong to the durable control-plane store and are shared across runtime processes.
 
 ```ts cordis-catalog
 /**

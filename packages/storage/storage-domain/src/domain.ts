@@ -72,6 +72,22 @@ export interface KvTable<K extends string, V> {
   put(key: K, value: V): Promise<void>
 
   /**
+   * Atomically replace a record when the durable medium still equals the
+   * expected value. This is intentionally unavailable on backends without a
+   * cross-process compare/exchange primitive; callers must treat that as a
+   * deployment error, not fall back to the in-memory snapshot.
+   * @param key - Record key.
+   * @param expected - Durable value required, or `undefined` for absence.
+   * @param replacement - Next value, or `undefined` to delete.
+   * @returns whether the exchange landed and the durable value current then.
+   */
+  compareExchange(
+    key: K,
+    expected: V | undefined,
+    replacement: V | undefined,
+  ): Promise<{ exchanged: boolean; current: V | undefined }>
+
+  /**
    * Delete one record durably.
    * @param key - Record key.
    * @returns `true` when the record existed, `false` when it was already
@@ -309,6 +325,38 @@ class KvTableImpl<K extends string, V> implements KvTable<K, V> {
       await this.host.unit.putRecord(this.tableName, key, value)
       this.records.set(key, value)
       this.emitPut(key, value)
+    })
+  }
+
+  compareExchange(
+    key: K,
+    expected: V | undefined,
+    replacement: V | undefined,
+  ): Promise<{ exchanged: boolean; current: V | undefined }> {
+    return this.host.enqueue(async () => {
+      const exchange = this.host.unit.compareExchangeRecord
+      if (exchange === undefined) {
+        throw new DomainError(
+          'facet-unsupported',
+          `domain '${this.host.domainName}' backend cannot compare/exchange records across processes`,
+        )
+      }
+      const result = await exchange.call(this.host.unit, this.tableName, key, expected, replacement)
+      if (result.current === undefined) this.records.delete(key)
+      else this.records.set(key, result.current)
+      if (result.exchanged) {
+        if (replacement === undefined) {
+          this.host.emitChanged({
+            domain: this.host.domainName,
+            table: this.tableName,
+            key,
+            operation: 'deleted',
+          })
+        } else {
+          this.emitPut(key, replacement)
+        }
+      }
+      return result as { exchanged: boolean; current: V | undefined }
     })
   }
 

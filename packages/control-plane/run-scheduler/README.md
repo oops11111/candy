@@ -1,5 +1,5 @@
 ---
-description: "One Candy runtime's live run state: the ledger and replay store a run is admitted against, and the clock that releases a hold no settlement claimed."
+description: "One Candy runtime's live run ledger, durable admission composition, and the clock that releases a hold no settlement claimed."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Everything this service composes already existed as a library. What did not exist was an owner. The ledger and the replay store are per-runtime objects nothing held; admission's policy had to be assembled by hand at every call site; and `RunLedger.expire` was a call no clock made, so a run abandoned without settling held its parent's allowance until someone thought to reclaim it.
+Everything this service composes already existed as a library. What did not exist was an owner. The ledger was a per-runtime object nothing held, admission's policy had to be assembled by hand at every call site, and `RunLedger.expire` was a call no clock made, so a run abandoned without settling held its parent's allowance until someone thought to reclaim it. Nonce decisions now live in the durable control-plane store rather than another scheduler-local object.
 
 `ctx.runScheduler` holds that state, starts a run from an execution assertion, drives the clock, and charges a settled tree to whoever funded it. It is where a tenant's durable allowance and its live runs meet, and that meeting is the whole of Candy's tenant-level bound: read on its own, either half admits a run it should refuse.
 
@@ -242,7 +242,7 @@ Composing `disposableSpawn` around the `spawn` function a provider binding hands
 
 ### Why one instance owns one ledger
 
-Every run this runtime admits is accounted against the same delegation trees and the same spent nonces. Two instances would each believe they held the whole allowance, and the delegation cap would hold in neither — the same reason `dsh-run-ledger` requires a parent and its children to share an instance.
+Every run this runtime admits is accounted against the same delegation trees. Two instances would each believe they held the whole allowance, and the delegation cap would hold in neither — the same reason `dsh-run-ledger` requires a parent and its children to share an instance. Spent nonces are different: they live in the durable control-plane store and are shared across processes.
 
 ### Why the budget lookup is composed rather than delegated
 
@@ -288,7 +288,7 @@ A `RunRecord` names a run and its parent, not an identity, so the tenant a tree 
 
 ### Why the clock is a service concern
 
-`expire` releases a hold whose lease has passed, and `evict` drops nonce records that can no longer deny anything. Neither changes a decision a caller could make instead; both bound what the runtime holds. A caller with its own decision timestamp can call `sweep` directly, which is what the tests do.
+`expire` releases a hold whose lease has passed, and the store's nonce eviction drops records that can no longer deny anything. Neither changes a decision a caller could make instead; together they bound live ledger state and durable replay state. A caller with its own decision timestamp can call `sweep` directly, which is what the tests do.
 
 </details>
 

@@ -4362,6 +4362,9 @@ importers:
       '@deepseek-ai/dsh-credential-vault':
         specifier: workspace:^
         version: link:../credential-vault
+      '@deepseek-ai/dsh-execution-assertion':
+        specifier: workspace:^
+        version: link:../execution-assertion
       '@deepseek-ai/dsh-provider-accounts':
         specifier: workspace:^
         version: link:../provider-accounts
@@ -4371,6 +4374,9 @@ importers:
       '@deepseek-ai/dsh-run-ledger':
         specifier: workspace:^
         version: link:../run-ledger
+      '@deepseek-ai/dsh-run-replay':
+        specifier: workspace:^
+        version: link:../run-replay
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -4629,9 +4635,6 @@ importers:
       '@deepseek-ai/dsh-run-metering':
         specifier: workspace:^
         version: link:../run-metering
-      '@deepseek-ai/dsh-run-replay':
-        specifier: workspace:^
-        version: link:../run-replay
       '@deepseek-ai/dsh-run-start':
         specifier: workspace:^
         version: link:../run-start

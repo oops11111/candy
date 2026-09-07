@@ -684,6 +684,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Durable provider accounts and tenant allowances.\n\nReads are synchronous against the domain\'s in-memory state and are exposed as promises because the ports they satisfy are asynchronous. Writes reach the medium before memory, so a read never sees a record the medium does not hold.',
     methods: [
       {
+        signature: 'async spendNonce( claims: ExecutionAssertionClaims, now: number, ): Promise<boolean>',
+        description: 'Atomically consume one tenant-scoped assertion nonce on the durable medium. A digest keeps the per-record JSON layout\'s path-safe key contract without weakening the collision boundary held by `replayKey`.',
+        parameters: [{ name: 'claims', description: 'The verified tenant, nonce, and assertion expiry.' }, { name: 'now', description: 'The admission decision\'s epoch-millisecond timestamp.' }],
+        returns: 'true only for the first admissible use.',
+      },
+      {
+        signature: 'async evictNonces(now: number): Promise<number>',
+        description: 'Remove locally known nonce records after their assertions expire. The compare/exchange prevents one process from deleting a newer reservation another process installed under the same key.',
+        parameters: [{ name: 'now', description: 'Epoch milliseconds used as the expiry boundary.' }],
+        returns: 'the number of records this process removed.',
+      },
+      {
         signature: 'listByUser(userId: UserId): Promise<readonly ProviderAccountEntry[]>',
         description: 'Every account one tenant owns, deleted ones included.\n\nA deleted account is retained rather than removed: `dsh-provider-accounts` keeps its id blocked so a later account cannot inherit its history.',
         parameters: [{ name: 'userId', description: 'the tenant to list.' }],
@@ -1439,16 +1451,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'runScheduler',
     summary: 'Live run state for one Candy runtime, and the composition that starts a run.',
-    description: 'Live run state for one Candy runtime, and the composition that starts a run.\n\nOne instance owns one ledger and one replay store, so every run this runtime admits is accounted against the same delegation trees and the same spent nonces. Two instances would each believe they held the whole allowance.',
+    description: 'Live run state for one Candy runtime, and the composition that starts a run.\n\nOne instance owns one ledger, so every run this runtime admits is accounted against the same delegation trees. Spent nonces instead belong to the durable control-plane store and are shared across runtime processes.',
     methods: [
       {
         signature: 'readonly ledger: RunLedger = new RunLedger()',
         description: 'Open runs and their holds, for every tree this runtime is running.',
-        parameters: [],
-      },
-      {
-        signature: 'readonly replay: RunReplayStore = new RunReplayStore()',
-        description: 'Nonces spent by assertions still admissible here.',
         parameters: [],
       },
       {
@@ -4539,11 +4546,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KvTable',
-    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n}',
+    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    compareExchange(key: K, expected: V | undefined, replacement: V | undefined): Promise<{\n        exchanged: boolean;\n        current: V | undefined;\n    }>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n}',
   },
   {
     name: 'KvUnit',
-    declaration: 'export interface KvUnit {\n    loadAll(): Promise<{\n        tables: Record<string, Record<string, unknown>>;\n        global: unknown;\n    }>;\n    putRecord(table: string, key: string, value: unknown): Promise<void>;\n    deleteRecord(table: string, key: string): Promise<void>;\n    backupRecord?(table: string, key: string): Promise<string>;\n    setGlobal(value: unknown): Promise<void>;\n    close(): Promise<void>;\n}',
+    declaration: 'export interface KvUnit {\n    loadAll(): Promise<{\n        tables: Record<string, Record<string, unknown>>;\n        global: unknown;\n    }>;\n    putRecord(table: string, key: string, value: unknown): Promise<void>;\n    compareExchangeRecord?(table: string, key: string, expected: unknown | undefined, replacement: unknown | undefined): Promise<{\n        exchanged: boolean;\n        current: unknown | undefined;\n    }>;\n    deleteRecord(table: string, key: string): Promise<void>;\n    backupRecord?(table: string, key: string): Promise<string>;\n    setGlobal(value: unknown): Promise<void>;\n    close(): Promise<void>;\n}',
   },
   {
     name: 'KvUnitDescriptor',
@@ -5068,10 +5075,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RunRejection',
     declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'lineage\';\n    readonly reason: \'tenant-mismatch\' | \'account-mismatch\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'workspace\';\n    readonly reason: WorkspaceGrantRejection;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'session\';\n    readonly reason: \'already-driven\';\n    readonly holder: RunId;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
-  },
-  {
-    name: 'RunReplayStore',
-    declaration: 'export class RunReplayStore {\n    spend(claims: ExecutionAssertionClaims, now: number): boolean;\n    evict(now: number): number;\n    get size(): number;\n}',
   },
   {
     name: 'RunSettlement',

@@ -127,7 +127,7 @@ kind: "package-reference"
 这些限制说明本后端何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是任务积压。
 
 - **同步驱动阻塞事件循环**——每次写入都是一次同步 `DatabaseSync` 调用；阻塞只持续一条语句，在领域数据规模下可以接受。
-- **没有忙等待或重试策略**——持有写锁的竞争连接会立即拒绝操作，而不是等待；领域层的写入链在单进程内串行化写入，跨进程协调属于范围外。
+- **没有应用层重试策略**——普通写入仍是一条语句，而 compare/exchange 会持有一个即时 SQLite 事务，直到比较与当前值读取都完成。无法取得写锁的竞争连接会拒绝操作；安全消费方决定重试还是 fail closed。
 - **只打开当前的物理布局版本**——任何其他已标记的 `user_version` 都会被拒绝而不是迁移（预发布立场）。
 - **打开顺序与 query provider 重复**——`openDatabase` 与 `session-query-sqlite` 都强制执行 SQLite 文件 ownership，但两个 package 分别拥有不同的 application identity 与 schema；没有共享 medium helper 将其耦合。
 

@@ -70,7 +70,7 @@ domain.table('workspaces').update(id, (r) => ({ ...r, path: newPath }))
 
 ### 可观察行为与失败
 
-每次写入只在后端确认持久后 resolve，并按写入顺序各发出一次 `domain/changed` 事件。失败携带稳定的 `DomainError` 代码：`already-open`（名称已打开或仍在关闭）、`facet-unsupported`（已路由后端不提供 `kv` 分面）、`invalid-record`（已存记录或全局不符合其 schema，并指明表与键）、`missing-key`（对不存在的记录执行 `update`）与 `closed`（关闭后的任何使用）。`version-mismatch` 等后端失败会原样透传。
+每次写入只在后端确认持久后 resolve，并按写入顺序各发出一次 `domain/changed` 事件。`KvTable.compareExchange` 还会把一条记录与持久介质同步，并且只有在后端能把比较、替换与返回当前值做成同一个跨进程原子操作时才可用；否则它以 `facet-unsupported` 拒绝，绝不会从内存快照模拟安全边界。其他失败沿用同一组稳定的 `DomainError` 代码：`already-open`、`invalid-record`、`missing-key` 与 `closed`。`version-mismatch` 等后端失败会原样透传。
 
 -----
 

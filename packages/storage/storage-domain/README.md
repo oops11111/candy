@@ -70,7 +70,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Observable behavior and failures
 
-Every write resolves only after the backend acknowledges durability, and each emits one `domain/changed` event in write order. Failures carry stable `DomainError` codes: `already-open` (the name is open or still closing), `facet-unsupported` (the routed backend serves no `kv` facet), `invalid-record` (a stored record or global fails its schema, naming the table and key), `missing-key` (an `update` on an absent record), and `closed` (any use after close). Backend failures such as `version-mismatch` pass through unchanged.
+Every write resolves only after the backend acknowledges durability, and each emits one `domain/changed` event in write order. `KvTable.compareExchange` additionally synchronizes one record with the durable medium and is available only when the backend can make the comparison, replacement, and returned current value one cross-process atomic operation. Otherwise it rejects with `facet-unsupported`; it never emulates a security boundary from the in-memory snapshot. Other failures carry the same stable `DomainError` vocabulary: `already-open`, `invalid-record`, `missing-key`, and `closed`. Backend failures such as `version-mismatch` pass through unchanged.
 
 -----
 

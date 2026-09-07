@@ -242,6 +242,7 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
 export const LINK_MAP: Readonly<Record<string, string>> = {
   Agent: 'core.md',
   CredentialEnvelope: 'candy-control-plane.md',
+  ExecutionAssertionClaims: 'candy-control-plane.md',
   RunChargeResult: 'candy-control-plane.md',
   RunId: 'candy-control-plane.md',
   RunLedgerResult: 'candy-control-plane.md',

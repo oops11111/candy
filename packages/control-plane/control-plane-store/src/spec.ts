@@ -201,6 +201,9 @@ const storedAuditTrail = z.object({ records: z.array(storedAuditRecord) })
 /** Persistent ownership remains after the session's run is settled. */
 const storedManagedSession = z.object({ runtime: z.string() })
 
+/** One tenant-scoped assertion nonce and the end of its admissible lifetime. */
+const storedReplayNonce = z.object({ expiresAt: z.number() })
+
 /** The durable declaration the control-plane store opens. */
 export const controlPlaneDomainSpec = defineDomain({
   name: 'candy_control_plane',
@@ -232,7 +235,9 @@ export const controlPlaneDomainSpec = defineDomain({
   // rather than recovered into runs admission would immediately refuse.
   // 7 adds persistent session ownership; older records cannot distinguish
   // a settled Candy session from an unmanaged session after a restart.
-  version: 7,
+  // 8 adds durable spent nonces. A version 7 store has no replay history, so
+  // accepting it would reopen every assertion admitted before the restart.
+  version: 8,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),
@@ -241,6 +246,7 @@ export const controlPlaneDomainSpec = defineDomain({
     audits: domainTable<AuditSubject, z.infer<typeof storedAuditTrail>>(storedAuditTrail),
     grants: domainTable<WorkspaceGrantId, z.infer<typeof storedGrantRecord>>(storedGrantRecord),
     managed_sessions: domainTable<SessionId, z.infer<typeof storedManagedSession>>(storedManagedSession),
+    spent_nonces: domainTable<string, z.infer<typeof storedReplayNonce>>(storedReplayNonce),
   },
 })
 

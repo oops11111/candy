@@ -127,7 +127,7 @@ None — the backend never touches live request prefixes.
 These limits define when this backend is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
 
 - **Synchronous driver blocks the event loop** — each write is a synchronous `DatabaseSync` call; the block lasts a single statement, which is acceptable at domain-data scale.
-- **No busy-wait or retry policy** — a competing connection holding a write lock rejects the operation immediately instead of waiting; the domain layer's write chain serializes writes within one process, and cross-process coordination is out of scope.
+- **No application retry policy** — ordinary writes remain single statements, while compare/exchange holds an immediate SQLite transaction through its comparison and current-value read. A competing connection that cannot obtain the write lock rejects the operation; the security consumer decides whether to retry or fail closed.
 - **Only the current physical layout version opens** — any other stamped `user_version` is rejected rather than migrated (pre-release stance).
 - **Open sequence duplicated with the query provider** — `openDatabase` and `session-query-sqlite` both enforce SQLite file ownership, but each package owns a distinct application identity and schema; no shared medium helper couples them.
 

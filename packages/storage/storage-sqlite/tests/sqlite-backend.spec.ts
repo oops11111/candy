@@ -42,6 +42,28 @@ const DESCRIPTOR: KvUnitDescriptor = {
 }
 
 describe('sqlite backend specifics', () => {
+  it('compares and exchanges one record across backend processes', async () => {
+    const path = await freshDbPath()
+    const firstBackend = backendAt(path)
+    const secondBackend = backendAt(path)
+    const first = await firstBackend.kv.open(DESCRIPTOR)
+    const second = await secondBackend.kv.open(DESCRIPTOR)
+
+    expect(await first.compareExchangeRecord?.('records', 'nonce', undefined, { expiresAt: 10 }))
+      .toEqual({ exchanged: true, current: { expiresAt: 10 } })
+    expect(await second.compareExchangeRecord?.('records', 'nonce', undefined, { expiresAt: 20 }))
+      .toEqual({ exchanged: false, current: { expiresAt: 10 } })
+    expect(await second.compareExchangeRecord?.('records', 'nonce', { expiresAt: 10 }, { expiresAt: 20 }))
+      .toEqual({ exchanged: true, current: { expiresAt: 20 } })
+    expect(await first.compareExchangeRecord?.('records', 'nonce', { expiresAt: 10 }, undefined))
+      .toEqual({ exchanged: false, current: { expiresAt: 20 } })
+    expect(await first.compareExchangeRecord?.('records', 'nonce', { expiresAt: 20 }, undefined))
+      .toEqual({ exchanged: true, current: undefined })
+
+    await firstBackend.close()
+    await secondBackend.close()
+  })
+
   it('opens an in-memory database', async () => {
     const backend = backendAt(':memory:')
     const unit = await backend.kv.open(DESCRIPTOR)

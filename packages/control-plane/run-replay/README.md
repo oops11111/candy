@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 An execution assertion carries a nonce and [`dsh-execution-assertion`](../execution-assertion/README.md) deliberately does not consume it: the signature binds it, and remembering it is somebody else's job. [`dsh-run-admission`](../run-admission/README.md) is where that job lands — it requires a `spendNonce` port and never retries a nonce reported as spent, which makes that port the whole of Candy's replay protection.
 
-This package is that port's in-process implementation, and the statement of what any implementation owes. Three things decide whether a replay store works, and each is easy to get wrong: the decision must be one indivisible step, retention must be bounded by the assertion rather than by a timer, and the record must be partitioned by tenant.
+This package is that port's in-process implementation, and the statement of what any implementation owes. Three things decide whether a replay store works, and each is easy to get wrong: the decision must be one indivisible step, retention must be bounded by the assertion rather than by a timer, and the record must be partitioned by tenant. Candy's production composition implements the same contract durably in [`dsh-control-plane-store`](../control-plane-store/README.md).
 
 Nothing here persists anything, and nothing here holds a clock.
 
@@ -106,7 +106,7 @@ Partitioning weakens nothing: a replayed token always carries the tenant its sig
 
 These are current package constraints, not a task backlog.
 
-- **One process, not a deployment** — the record lives in memory for the life of the instance. Two runtime processes sharing a control plane each admit a copy of the same token, and a restart forgets every unexpired nonce. A deployment that runs more than one process needs a durable store, and this package's contract is what that store must satisfy. Nothing in the repository can satisfy it yet: the indivisible step needs a write that fails when the key already exists, and `dsh-storage` offers `putRecord` as an unconditional upsert with reads answered from a snapshot loaded at open. A durable store waits on a conditional-write primitive there.
+- **This class is one process, not a deployment** — `RunReplayStore` remains the small synchronous implementation for library consumers and tests. Candy's scheduler does not use it: `dsh-control-plane-store` persists the same tenant-and-nonce decision through SQLite compare/exchange, so multiple runtime processes and restarts share the record.
 - **Nothing drives the clock** — `evict` is a call, not a timer. A deployment that never calls it denies the same runs and holds more records.
 - **Size is bounded only by the issue rate** — the count is what was admitted within one maximum assertion lifetime. There is no cap, because both answers to a full store are wrong: forgetting a record reopens replay, and refusing a fresh nonce denies a legitimate run.
 - **No Cordis service** — nothing here registers on a `Context`; it is constructed directly.
