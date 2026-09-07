@@ -198,6 +198,9 @@ const storedAuditRecord = z.object({
 /** One subject's most recent records, oldest first. */
 const storedAuditTrail = z.object({ records: z.array(storedAuditRecord) })
 
+/** Persistent ownership remains after the session's run is settled. */
+const storedManagedSession = z.object({ runtime: z.string() })
+
 /** The durable declaration the control-plane store opens. */
 export const controlPlaneDomainSpec = defineDomain({
   name: 'candy_control_plane',
@@ -227,7 +230,9 @@ export const controlPlaneDomainSpec = defineDomain({
   // 6 added workspace grants. A version 5 store holds none, and every run in
   // it names a grant that would now resolve to nothing — so it is discarded
   // rather than recovered into runs admission would immediately refuse.
-  version: 6,
+  // 7 adds persistent session ownership; older records cannot distinguish
+  // a settled Candy session from an unmanaged session after a restart.
+  version: 7,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),
@@ -235,6 +240,7 @@ export const controlPlaneDomainSpec = defineDomain({
     runs: domainTable<RunId, z.infer<typeof storedRun>>(storedRun),
     audits: domainTable<AuditSubject, z.infer<typeof storedAuditTrail>>(storedAuditTrail),
     grants: domainTable<WorkspaceGrantId, z.infer<typeof storedGrantRecord>>(storedGrantRecord),
+    managed_sessions: domainTable<SessionId, z.infer<typeof storedManagedSession>>(storedManagedSession),
   },
 })
 

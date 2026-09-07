@@ -254,9 +254,8 @@ export class RunScheduler extends Service {
    * like one this runtime never had and pass through unmetered. The run that
    * was cut off for outliving its lease would run for free.
    *
-   * It is in memory rather than on the medium because it must outlive the run
-   * and need not outlive the process: the agent that could make the call lives
-   * in this process too, and goes with it.
+   * This is a bounded cache. The control-plane store retains session ownership
+   * after settlement, so eviction and restart do not remove the restriction.
    */
   private readonly ended = new Set<SessionId>()
 
@@ -510,7 +509,8 @@ export class RunScheduler extends Service {
     const { rejection } = resolved
     switch (rejection.reason) {
       case 'no-open-run': {
-        if (!this.ended.has(options.sessionId)) return next()
+        if (!this.ended.has(options.sessionId)
+          && !this.ctx.controlPlaneStore.isManagedSession(options.sessionId, this.config.audience)) return next()
         return this.refuse(
           undefined,
           `session '${options.sessionId}' has no open run: the run driving it has ended`,
@@ -725,8 +725,10 @@ export class RunScheduler extends Service {
         }
         return {
           next: async () => {
+            if (left) return { done: true, value: undefined }
             if (reader === undefined) {
               await ahead
+              if (left) return { done: true, value: undefined }
               reader = start()
             }
             // Captured after the assignment above: the closure would widen the
@@ -1329,11 +1331,8 @@ export class RunScheduler extends Service {
   }
 
   /**
-   * Remember one ended session, dropping the oldest once the cap is reached.
-   *
-   * An evicted session falls back to passing its calls through: the memory
-   * bounds what this runtime holds, and a session old enough to be evicted is
-   * one whose agent has almost certainly gone with its run.
+   * Cache one ended session, dropping the oldest once the cap is reached.
+   * Durable ownership still refuses an evicted session without an open run.
    */
   private remember(sessionId: SessionId): void {
     this.ended.delete(sessionId)

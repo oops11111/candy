@@ -211,6 +211,8 @@ describe('a booted control-plane store', () => {
       deviceId: DEVICE, workspaceGrantId: WORKSPACE_GRANT, conversationId: CONVERSATION,
       runtime: 'runtime-1', settledSpent: undefined, absorbed: undefined,
     })
+    expect(ctx.controlPlaneStore.isManagedSession(SESSION, 'runtime-1')).toBe(true)
+    expect(ctx.controlPlaneStore.isManagedSession(SESSION, 'runtime-2')).toBe(false)
 
     await ctx.controlPlaneStore.absorbChild(RunId('run-root'), RunId('run-child'), { tokens: 30, wallMs: 1, costMicroUsd: 2 })
     await ctx.controlPlaneStore.absorbChild(RunId('run-root'), RunId('run-child'), { tokens: 30, wallMs: 1, costMicroUsd: 2 })

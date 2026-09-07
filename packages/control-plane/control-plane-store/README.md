@@ -13,7 +13,7 @@ English | [中文](README.zh.md)
 
 This service holds it: provider accounts with their sealed credentials, each tenant's allowance, the workspace grants a device issued, one record per live run, and a trail of what each tenant's runs did, from the attempt that opened one to the settlement that ended it, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
 
-It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once.
+It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once. Session ownership is written before each run and retained after settlement; `isManagedSession` identifies these sessions for their runtime without a live run. Domain version 7 rejects older records; upgrading an existing deployment requires a separately verified data transition. Ownership records have no automatic expiry.
 
 ## Table of Contents
 

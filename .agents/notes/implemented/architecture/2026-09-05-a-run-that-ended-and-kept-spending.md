@@ -14,9 +14,9 @@ A settlement deletes the run record. A lease can expire under an agent that is s
 
 The scheduler remembers the sessions whose runs it settled, and refuses their calls.
 
-The memory is in the process rather than on the medium, and that is the substance rather than an economy. It must outlive the run — the record is gone by then — and it need not outlive the process, because the agent that could still make the call lives in this process too and goes with it. A restart that loses the memory has already lost the agent.
+The cache-only retention decision is superseded by [persistent session ownership](../bug-fix/2026-09-07-candy-session-ownership-and-queued-cancellation.md). The control-plane store preserves ownership after settlement and restart.
 
-It is capped by `endedSessionMemory`, oldest evicted first, so a long-lived runtime holds a bounded set. An evicted session's calls pass through again: the cap bounds what the runtime holds, and a session old enough to be evicted is one whose agent has almost certainly gone with its run. That is stated rather than left as a surprise.
+The cache is capped by `endedSessionMemory`, oldest evicted first. Eviction leaves the durable ownership check in force; an owned session without an open run remains refused.
 
 A new run on a previously ended session clears it, so a session the control plane reuses is metered again rather than refused forever.
 

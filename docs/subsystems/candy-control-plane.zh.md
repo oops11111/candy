@@ -224,6 +224,14 @@ runsOfSession(runtime: string, sessionId: SessionId): readonly DurableRunRecord[
 async openRun(run: DurableRunRecord): Promise<void>
 
 /**
+ * Whether a session belongs to Candy, including after its run settles.
+ * @param sessionId - the session named by a model request.
+ * @param runtime - the runtime whose request is being classified.
+ * @returns true when durable ownership exists for that runtime.
+ */
+isManagedSession(sessionId: SessionId, runtime: string): boolean
+
+/**
  * Update what one run has spent, leaving every other field as it is.
  *
  * A whole-record write would erase {@link DurableRunRecord.absorbed}, whose

@@ -296,7 +296,10 @@ describe('a booted Candy scheduler', () => {
     expect(outcome.started).toBe(true)
     if (!outcome.started) return
     expect(outcome.value.reserved).toEqual(BUDGET)
-    expect((await stat(outcome.value.run.poolRoot)).mode & 0o777).toBe(0o700)
+    const pool = await stat(outcome.value.run.poolRoot)
+    expect(pool.isDirectory()).toBe(true)
+    // POSIX mode bits do not describe Windows ACLs.
+    if (process.platform !== 'win32') expect(pool.mode & 0o777).toBe(0o700)
     expect(Buffer.from(outcome.value.run.secret).toString('utf8')).toBe('sk-ant-alice')
   })
 
@@ -1052,6 +1055,32 @@ describe('a booted Candy scheduler', () => {
     for await (const chunk of ctx.llm.stream(request(SESSION))) seen.push(chunk)
 
     expect(seen.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('does not start a queued source after its consumer closes it', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    const runId = RunId('run-root')
+    const first = ctx.runScheduler.meter(runId, new FakeAdapter().stream())[Symbol.asyncIterator]()
+    await first.next()
+    let starts = 0
+    async function* source(): AsyncGenerator<StreamChunk> {
+      starts++
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+    const queued = ctx.runScheduler.meter(runId, source())[Symbol.asyncIterator]()
+    const pending = queued.next()
+    await queued.return?.()
+    await first.return?.()
+    expect(await pending).toEqual({ done: true, value: undefined })
+    expect(await queued.next()).toEqual({ done: true, value: undefined })
+    expect(starts).toBe(0)
+    expect((await collectChunks(ctx.runScheduler.meter(runId, source()))).at(-1))
+      .toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(starts).toBe(1)
   })
 
   it('does not make one tenant wait on another tenant\'s run', async () => {
@@ -2285,9 +2314,7 @@ describe('a booted Candy scheduler', () => {
     expect(ctx.runScheduler.ledger.get(RunId('run-2'))).toMatchObject({ spent: { tokens: 42 } })
   })
 
-  it('forgets an ended session once its memory is full', async () => {
-    // The memory bounds what the runtime holds; an evicted session falls back
-    // to passing its calls through.
+  it('refuses an ended session after cache eviction and restart', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root, { endedSessionMemory: 1 })
     const now = Date.now()
@@ -2315,8 +2342,14 @@ describe('a booted Candy scheduler', () => {
     const remembered: StreamChunk[] = []
     for await (const chunk of ctx.llm.stream(request(brandString<SessionId>('session-1')))) remembered.push(chunk)
 
-    expect(evicted.at(-1)).toEqual({ type: 'finish', reason: { kind: 'stop' } })
+    expect(evicted.at(-1)).toMatchObject({ reason: { kind: 'error', failure: { code: 'RUN_NOT_OPEN' } } })
     expect(remembered.at(-1)).toMatchObject({ reason: { kind: 'error', failure: { code: 'RUN_NOT_OPEN' } } })
+    await ctx.fiber.dispose()
+    const restarted = await boot(root)
+    await restarted.plugin(Llm)
+    restarted.llm.registerAdapter(['fake'], new FakeAdapter())
+    const denied = await collectChunks(restarted.llm.stream(request(brandString<SessionId>('session-0'))))
+    expect(denied.at(-1)).toMatchObject({ reason: { kind: 'error', failure: { code: 'RUN_NOT_OPEN' } } })
   })
 
   it('records every attempt when a tenant starts several runs at once', async () => {

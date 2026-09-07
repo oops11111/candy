@@ -758,6 +758,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution after the write reaches the medium.',
       },
       {
+        signature: 'isManagedSession(sessionId: SessionId, runtime: string): boolean',
+        description: 'Whether a session belongs to Candy, including after its run settles.',
+        parameters: [{ name: 'sessionId', description: 'the session named by a model request.' }, { name: 'runtime', description: 'the runtime whose request is being classified.' }],
+        returns: 'true when durable ownership exists for that runtime.',
+      },
+      {
         signature: 'async recordRunSpend(runId: RunId, spent: RunSpend): Promise<void>',
         description: 'Update what one run has spent, leaving every other field as it is.\n\nA whole-record write would erase DurableRunRecord.absorbed, whose whole purpose is to survive until the settled child it names is deleted.',
         parameters: [{ name: 'runId', description: 'the run being charged.' }, { name: 'spent', description: 'everything charged to it so far.' }],

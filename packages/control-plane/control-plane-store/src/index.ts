@@ -129,6 +129,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
   private runs!: KvTable<RunId, StoredRun>
   private audits!: KvTable<AuditSubject, StoredAuditTrail>
   private grants!: KvTable<WorkspaceGrantId, StoredWorkspaceGrant>
+  private managedSessions!: KvTable<SessionId, { runtime: string }>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -143,6 +144,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     this.runs = domain.table('runs')
     this.audits = domain.table('audits')
     this.grants = domain.table('grants')
+    this.managedSessions = domain.table('managed_sessions')
   }
 
   /**
@@ -347,7 +349,18 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
    * @returns resolution after the write reaches the medium.
    */
   async openRun(run: DurableRunRecord): Promise<void> {
+    await this.managedSessions.put(run.sessionId, { runtime: run.runtime })
     await this.runs.put(run.record.runId, toStoredRun(run))
+  }
+
+  /**
+   * Whether a session belongs to Candy, including after its run settles.
+   * @param sessionId - the session named by a model request.
+   * @param runtime - the runtime whose request is being classified.
+   * @returns true when durable ownership exists for that runtime.
+   */
+  isManagedSession(sessionId: SessionId, runtime: string): boolean {
+    return this.managedSessions.get(sessionId)?.runtime === runtime
   }
 
   /**
