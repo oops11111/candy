@@ -24,6 +24,7 @@ import {
 } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import type { WorkspaceGrantRecord } from '@deepseek-ai/dsh-workspace-grant'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
@@ -447,5 +448,38 @@ describe('a booted control-plane store', () => {
       .toEqual({ grant: BUDGET, consumed: { tokens: 9, wallMs: 8, costMicroUsd: 7 } })
     expect(await second.controlPlaneStore.findCredential({ userId: ALICE, accountId: ACCOUNT }))
       .toMatchObject({ accountId: ACCOUNT })
+  })
+
+  it('keeps a workspace grant, and its revocation, across a restart', async () => {
+    // A grant that did not survive the process would let a revoked one come
+    // back as never-issued, and every run naming a live one be refused at boot.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+    const grant: WorkspaceGrantRecord = {
+      id: WorkspaceGrantId('grant-1'),
+      userId: ALICE,
+      deviceId: DEVICE,
+      roots: ['/srv/candy/alice', '/srv/candy/shared'],
+      mode: 'workspace-write',
+      version: 2,
+      createdAt: NOW,
+      updatedAt: NOW,
+      revokedAt: undefined,
+    }
+    await first.controlPlaneStore.saveGrant(grant)
+    await first.controlPlaneStore.saveGrant({
+      id: WorkspaceGrantId('grant-2'), userId: ALICE, deviceId: DEVICE,
+      roots: [], mode: 'read-only', version: 1,
+      createdAt: NOW, updatedAt: NOW + 1, revokedAt: NOW + 1,
+    })
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    expect(await second.controlPlaneStore.findGrant(WorkspaceGrantId('grant-1'))).toEqual(grant)
+    expect(await second.controlPlaneStore.findGrant(WorkspaceGrantId('grant-2')))
+      .toMatchObject({ roots: [], mode: 'read-only', revokedAt: NOW + 1 })
+    expect(await second.controlPlaneStore.findGrant(WorkspaceGrantId('grant-9'))).toBeUndefined()
   })
 })

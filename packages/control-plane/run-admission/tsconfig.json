@@ -9,6 +9,7 @@
     { "path": "../credential-vault" },
     { "path": "../execution-assertion" },
     { "path": "../run-budget" },
+    { "path": "../workspace-grant" },
     { "path": "../runtime-pool" }
   ],
   "include": [

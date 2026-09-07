@@ -4227,6 +4227,9 @@ importers:
       '@deepseek-ai/dsh-subprocess-local':
         specifier: workspace:^
         version: link:../../subprocess/subprocess-local
+      '@deepseek-ai/dsh-workspace-grant':
+        specifier: workspace:^
+        version: link:../workspace-grant
 
   packages/control-plane/claude-cli-route:
     dependencies:
@@ -4334,6 +4337,9 @@ importers:
 
   packages/control-plane/control-plane-store:
     dependencies:
+      '@deepseek-ai/dsh-workspace-grant':
+        specifier: workspace:^
+        version: link:../workspace-grant
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -4434,6 +4440,9 @@ importers:
       '@deepseek-ai/dsh-runtime-pool':
         specifier: workspace:^
         version: link:../runtime-pool
+      '@deepseek-ai/dsh-workspace-grant':
+        specifier: workspace:^
+        version: link:../workspace-grant
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -4689,6 +4698,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-workspace-grant':
+        specifier: workspace:^
+        version: link:../workspace-grant
 
   packages/control-plane/runtime-pool:
     dependencies:
@@ -4754,6 +4766,19 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+
+  packages/control-plane/workspace-grant:
+    dependencies:
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
+      '@deepseek-ai/dsh-sandbox':
+        specifier: workspace:^
+        version: link:../../sandbox/sandbox
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
 
   packages/core/agent:
     devDependencies:

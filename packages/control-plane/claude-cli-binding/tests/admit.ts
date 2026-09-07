@@ -119,6 +119,17 @@ export async function admissionFor(
     spendNonce,
     findSessionRun: () => Promise.resolve(undefined),
     findParentIdentity: () => Promise.resolve(undefined),
+    findWorkspaceGrant: id => Promise.resolve({
+      id,
+      userId: subject.userId,
+      deviceId: subject.deviceId,
+      roots: [poolBase],
+      mode: 'workspace-write' as const,
+      version: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+      revokedAt: undefined,
+    }),
     findCredential: () => Promise.resolve(
       sealCredential(secret, { userId: subject.userId, accountId: subject.accountId }, KEYRING, NOW).envelope,
     ),

@@ -305,6 +305,28 @@ deleteRun(runId: RunId): Promise<boolean>
 async recordAudit( subject: AuditSubject, records: readonly RunAuditRecord[], retain: number, ): Promise<readonly RunAuditRecord[]>
 
 /**
+ * Read the grant an execution assertion names.
+ *
+ * Answering `undefined` denies the run: a grant this store does not hold is
+ * never an unlimited one, which is the rule {@link
+ * @deepseek-ai/dsh-workspace-grant!refuseWorkspaceGrant} applies.
+ * @param id - the grant id the assertion carries.
+ * @returns the grant, or `undefined` when none is stored under that id.
+ */
+findGrant(id: WorkspaceGrantId): Promise<WorkspaceGrantRecord | undefined>
+
+/**
+ * Write one grant, replacing any record under the same id.
+ *
+ * A revocation is this same call with `revokedAt` set: the record is the
+ * authority an assertion only names, so removing it would leave a run
+ * naming a grant that reads as never-issued rather than as withdrawn.
+ * @param record - the grant to store.
+ * @returns resolution once the medium holds it.
+ */
+async saveGrant(record: WorkspaceGrantRecord): Promise<void>
+
+/**
  * One subject's recorded activity, oldest first.
  * @param subject - the tenant or runtime to read.
  * @returns its retained records; empty when nothing is recorded for it.

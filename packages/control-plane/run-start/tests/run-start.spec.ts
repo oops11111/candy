@@ -76,6 +76,17 @@ function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy
     spendNonce: subject => Promise.resolve(replay.spend(subject, NOW)),
     findSessionRun: () => Promise.resolve(undefined),
     findParentIdentity: () => Promise.resolve(undefined),
+    findWorkspaceGrant: id => Promise.resolve({
+      id,
+      userId: UserId('user-alice'),
+      deviceId: DeviceId('device-1'),
+      roots: [base],
+      mode: 'workspace-write' as const,
+      version: 1,
+      createdAt: NOW,
+      updatedAt: NOW,
+      revokedAt: undefined,
+    }),
     findCredential: subject => Promise.resolve(sealCredential(
       Buffer.from('sk-ant-alice', 'utf8'),
       { userId: subject.userId, accountId: subject.accountId },

@@ -35,7 +35,12 @@ import {
   hasRemainingBudget,
   type RunBudget,
 } from '@deepseek-ai/dsh-run-budget'
-import type { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
+import type { ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import {
+  admitWorkspaceGrant,
+  type WorkspaceGrantRecord,
+  type WorkspaceGrantRejection,
+} from '@deepseek-ai/dsh-workspace-grant'
 import {
   runtimePoolKey,
   runtimePoolRoot,
@@ -137,7 +142,27 @@ export interface RunAdmissionPolicy {
    */
   readonly findParentIdentity: (
     parentRunId: RunId,
-  ) => Promise<{ readonly userId: UserId; readonly accountId: ProviderAccountId } | undefined>
+  ) => Promise<{
+    readonly userId: UserId
+    readonly accountId: ProviderAccountId
+    /** The workspace grant the parent run was admitted with; a child may name no other. */
+    readonly workspaceGrantId: WorkspaceGrantId
+  } | undefined>
+  /**
+   * Read the workspace grant these claims name.
+   *
+   * An assertion carries a grant id and nothing else about the filesystem, so
+   * this is what turns that id into authority a run actually holds. Answering
+   * `undefined` denies the run: a grant the deployment does not hold is never
+   * an unlimited one.
+   *
+   * The record's roots are not read here. They are spelled for the device that
+   * issued them, and deciding whether a path lies under one is that device's
+   * filesystem semantics; this step decides only that the run may hold the
+   * grant at all, and the enforcement of its roots belongs where the file
+   * operation happens.
+   */
+  readonly findWorkspaceGrant: (id: WorkspaceGrantId) => Promise<WorkspaceGrantRecord | undefined>
   /** Look up the sealed credential for the tenant and account the assertion names. */
   readonly findCredential: (claims: ExecutionAssertionClaims) => Promise<CredentialEnvelope | undefined>
 }
@@ -180,6 +205,16 @@ export interface AdmittedRun {
    * durable write this module does not own.
    */
   readonly budget: RunBudget
+  /**
+   * The workspace grant this run was admitted against, exactly as
+   * `findWorkspaceGrant` answered it.
+   *
+   * It carries the roots and the file-effect ceiling a caller enforces at the
+   * filesystem, and the `version` those were read at — so a check made later,
+   * against a grant an operator has since narrowed, can tell that it has
+   * moved rather than silently honouring what the run was given.
+   */
+  readonly workspace: WorkspaceGrantRecord
 }
 
 /**
@@ -207,6 +242,11 @@ export type RunRejection =
   | {
     readonly stage: 'lineage'
     readonly reason: 'tenant-mismatch' | 'account-mismatch'
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'workspace'
+    readonly reason: WorkspaceGrantRejection
     readonly claims: ExecutionAssertionClaims
   }
   | {
@@ -287,9 +327,25 @@ export async function admitRun(
   // topping up and presenting the same still-valid assertion — so burning its
   // single-use token would turn a recoverable refusal into a round trip to the
   // control plane. It is also a cheap read that touches no secret.
-  const lineage = await parentMismatch(policy, claims)
+  const parent = claims.parentRunId === undefined
+    ? undefined
+    : await policy.findParentIdentity(claims.parentRunId)
+  const lineage = parentMismatch(parent, claims)
   if (lineage !== undefined) {
     return { admitted: false, rejection: { stage: 'lineage', reason: lineage, claims }, audits: [] }
+  }
+
+  // Filesystem authority is resolved beside the other inherited grants and
+  // before the nonce, so a run refused for a revoked or foreign grant can be
+  // retried once an operator reissues one.
+  const workspace = admitWorkspaceGrant({
+    userId: claims.userId,
+    deviceId: claims.deviceId,
+    grantId: claims.workspaceGrantId,
+    parentGrantId: parent?.workspaceGrantId,
+  }, await policy.findWorkspaceGrant(claims.workspaceGrantId))
+  if (!workspace.admitted) {
+    return { admitted: false, rejection: { stage: 'workspace', reason: workspace.rejection, claims }, audits: [] }
   }
 
   const budget = await policy.findBudget(claims)
@@ -341,6 +397,7 @@ export async function admitRun(
       poolKey,
       poolRoot: runtimePoolRoot(policy.poolBase, poolKey),
       budget,
+      workspace: workspace.grant,
     }),
   }
 }
@@ -371,18 +428,20 @@ function admittedRun(fields: Omit<AdmittedRun, 'toJSON'>): AdmittedRun {
 
 
 /**
- * The grant a child would widen, if any.
+ * The identity grant a child would widen, if any.
  *
  * A root run has no parent to inherit from, and a parent this deployment does
  * not know is left to the budget lookup, which denies a child whose parent
  * holds no allowance.
+ * @param parent - the parent run's admitted identity, absent for a root run
+ *   and for a parent this deployment does not hold.
+ * @param claims - the verified claims of the run being admitted.
+ * @returns the mismatched grant, or `undefined` when the child inherits both.
  */
-async function parentMismatch(
-  policy: RunAdmissionPolicy,
+function parentMismatch(
+  parent: { readonly userId: UserId; readonly accountId: ProviderAccountId } | undefined,
   claims: ExecutionAssertionClaims,
-): Promise<'tenant-mismatch' | 'account-mismatch' | undefined> {
-  if (claims.parentRunId === undefined) return undefined
-  const parent = await policy.findParentIdentity(claims.parentRunId)
+): 'tenant-mismatch' | 'account-mismatch' | undefined {
   if (parent === undefined) return undefined
   if (parent.userId !== claims.userId) return 'tenant-mismatch'
   return parent.accountId === claims.accountId ? undefined : 'account-mismatch'

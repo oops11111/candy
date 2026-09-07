@@ -46,6 +46,7 @@
     "@deepseek-ai/dsh-run-ledger": "workspace:^",
     "@deepseek-ai/dsh-run-replay": "workspace:^",
     "@deepseek-ai/dsh-runtime-pool": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^"
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-workspace-grant": "workspace:^"
   }
 }

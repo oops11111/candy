@@ -17,21 +17,24 @@
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { ProviderAccountId, RunId, UserId } from '@deepseek-ai/dsh-control-plane'
+import type { ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountRecord, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { consumeAllowance, openAllowance, type TenantAllowance } from '@deepseek-ai/dsh-tenant-allowance'
+import type { WorkspaceGrantRecord, WorkspaceGrantStore } from '@deepseek-ai/dsh-workspace-grant'
 import {
   controlPlaneDomainSpec,
   fromStoredAllowance,
   fromStoredEntry,
+  fromStoredGrantRecord,
   fromStoredRecord,
   fromStoredRun,
   toStoredAllowance,
   toStoredEntry,
+  toStoredGrant,
   toStoredRun,
   type AuditSubject,
   type DurableRunRecord,
@@ -39,10 +42,11 @@ import {
   type StoredAuditTrail,
   type StoredRun,
   type StoredTenantAllowance,
+  type StoredWorkspaceGrant,
 } from './spec.ts'
 
 export { controlPlaneDomainSpec, runtimeSubject, tenantSubject } from './spec.ts'
-export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredRun, StoredTenantAllowance } from './spec.ts'
+export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredRun, StoredTenantAllowance, StoredWorkspaceGrant } from './spec.ts'
 
 /**
  * Add one record to a trail, folding it into the last when it says the same
@@ -103,7 +107,7 @@ declare module '@deepseek-ai/cordis' {
  * the medium before memory, so a read never sees a record the medium does not
  * hold.
  */
-export class ControlPlaneStore extends Service implements ProviderAccountStore {
+export class ControlPlaneStore extends Service implements ProviderAccountStore, WorkspaceGrantStore {
   static inject = ['storageDomain']
 
   // Assigned by `Service.init`, which Cordis awaits before the service is
@@ -124,6 +128,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
   private allowances!: KvTable<UserId, StoredTenantAllowance>
   private runs!: KvTable<RunId, StoredRun>
   private audits!: KvTable<AuditSubject, StoredAuditTrail>
+  private grants!: KvTable<WorkspaceGrantId, StoredWorkspaceGrant>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -137,6 +142,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
     this.allowances = domain.table('allowances')
     this.runs = domain.table('runs')
     this.audits = domain.table('audits')
+    this.grants = domain.table('grants')
   }
 
   /**
@@ -469,6 +475,33 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore {
       await this.audits.put(subject, { records: kept })
       return kept
     })
+  }
+
+  /**
+   * Read the grant an execution assertion names.
+   *
+   * Answering `undefined` denies the run: a grant this store does not hold is
+   * never an unlimited one, which is the rule {@link
+   * @deepseek-ai/dsh-workspace-grant!refuseWorkspaceGrant} applies.
+   * @param id - the grant id the assertion carries.
+   * @returns the grant, or `undefined` when none is stored under that id.
+   */
+  findGrant(id: WorkspaceGrantId): Promise<WorkspaceGrantRecord | undefined> {
+    const stored = this.grants.get(id)
+    return Promise.resolve(stored === undefined ? undefined : fromStoredGrantRecord(stored))
+  }
+
+  /**
+   * Write one grant, replacing any record under the same id.
+   *
+   * A revocation is this same call with `revokedAt` set: the record is the
+   * authority an assertion only names, so removing it would leave a run
+   * naming a grant that reads as never-issued rather than as withdrawn.
+   * @param record - the grant to store.
+   * @returns resolution once the medium holds it.
+   */
+  async saveGrant(record: WorkspaceGrantRecord): Promise<void> {
+    await this.grants.put(record.id, toStoredGrant(record))
   }
 
   /** Queue one read-modify-write, so no other reads the record it is about to replace. */

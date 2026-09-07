@@ -251,6 +251,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AuditSubject: 'candy-control-plane.md',
   DurableRunRecord: 'candy-control-plane.md',
   RunAuditRecord: 'candy-control-plane.md',
+  WorkspaceGrantId: 'candy-control-plane.md',
+  WorkspaceGrantRecord: 'candy-control-plane.md',
   TenantAllowance: 'candy-control-plane.md',
   ProviderAccountEntry: 'candy-control-plane.md',
   ProviderAccountRecord: 'candy-control-plane.md',

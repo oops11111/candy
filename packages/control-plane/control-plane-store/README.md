@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 [`dsh-provider-accounts`](../provider-accounts/README.md) defines its account store as a port, and [`dsh-run-admission`](../run-admission/README.md) requires a credential lookup and a budget lookup as ports. Every one of them was a parameter no deployment could fill, because nothing in the repository held the data.
 
-This service holds it: provider accounts with their sealed credentials, each tenant's allowance, one record per live run, and a trail of what each tenant's runs did, from the attempt that opened one to the settlement that ended it, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
+This service holds it: provider accounts with their sealed credentials, each tenant's allowance, the workspace grants a device issued, one record per live run, and a trail of what each tenant's runs did, from the attempt that opened one to the settlement that ended it, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
 
 It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once.
 
@@ -123,6 +123,10 @@ A bounded trail rewritten whole is also erasable by whoever can make an event re
 ### Why some records name a runtime instead of a tenant
 
 Every stage past the assertion works from verified claims, so its record names the tenant, account and run it refused. An assertion that fails to verify names none this runtime may believe — and it is also the record an operator most wants — so it is filed against the runtime that refused it. The `t_` and `r_` prefixes on a subject key keep the two spaces from colliding.
+
+### Why a revoked grant is stored rather than deleted
+
+An execution assertion names a workspace grant by id, and the record is the authority behind it. A deleted record reads as a grant that was never issued, which is a different fact from one that was withdrawn — and the run refused for it should say `revoked`, because that is what an operator investigating the refusal needs. [`dsh-workspace-grant`](../workspace-grant/README.md) reads `revokedAt` and nothing else to decide which.
 
 ### Why a run record names its account
 

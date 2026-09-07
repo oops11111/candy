@@ -113,6 +113,11 @@ async function boot(at: string, config: Config): Promise<Context> {
 /** Give the tenant an allowance and a sealed credential, as a control plane would. */
 async function provision(context: Context, now: number): Promise<void> {
   await context.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+  await context.controlPlaneStore.saveGrant({
+    id: WorkspaceGrantId('grant-1'), userId: ALICE, deviceId: DeviceId('device-1'),
+    roots: ['/srv/candy/alice'], mode: 'workspace-write', version: 1,
+    createdAt: now, updatedAt: now, revokedAt: undefined,
+  })
   await context.controlPlaneStore.save({
     record: {
       id: ACCOUNT, userId: ALICE, provider: 'claude-cli', label: 'work',

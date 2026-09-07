@@ -39,6 +39,7 @@
     "@deepseek-ai/dsh-tenant-allowance": "workspace:^"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-workspace-grant": "workspace:^",
     "zod": "^4.4.3"
   },
   "devDependencies": {

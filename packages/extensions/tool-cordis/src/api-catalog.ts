@@ -796,6 +796,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['RangeError when `retain` is not a positive safe integer, which is a deployment error rather than a record to drop.'],
       },
       {
+        signature: 'findGrant(id: WorkspaceGrantId): Promise<WorkspaceGrantRecord | undefined>',
+        description: 'Read the grant an execution assertion names.\n\nAnswering `undefined` denies the run: a grant this store does not hold is never an unlimited one, which is the rule {@link',
+        parameters: [{ name: 'id', description: 'the grant id the assertion carries.' }],
+        returns: 'the grant, or `undefined` when none is stored under that id.',
+      },
+      {
+        signature: 'async saveGrant(record: WorkspaceGrantRecord): Promise<void>',
+        description: 'Write one grant, replacing any record under the same id.\n\nA revocation is this same call with `revokedAt` set: the record is the authority an assertion only names, so removing it would leave a run naming a grant that reads as never-issued rather than as withdrawn.',
+        parameters: [{ name: 'record', description: 'the grant to store.' }],
+        returns: 'resolution once the medium holds it.',
+      },
+      {
         signature: 'auditsOf(subject: AuditSubject): readonly RunAuditRecord[]',
         description: 'One subject\'s recorded activity, oldest first.',
         parameters: [{ name: 'subject', description: 'the tenant or runtime to read.' }],
@@ -3609,7 +3621,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AdmittedRun',
-    declaration: 'export interface AdmittedRun {\n    readonly claims: ExecutionAssertionClaims;\n    readonly secret: Uint8Array;\n    toJSON: () => Omit<AdmittedRun, \'secret\' | \'toJSON\'> & {\n        secret: string;\n    };\n    readonly poolKey: RuntimePoolKey;\n    readonly poolRoot: string;\n    readonly budget: RunBudget;\n}',
+    declaration: 'export interface AdmittedRun {\n    readonly claims: ExecutionAssertionClaims;\n    readonly secret: Uint8Array;\n    toJSON: () => Omit<AdmittedRun, \'secret\' | \'toJSON\'> & {\n        secret: string;\n    };\n    readonly poolKey: RuntimePoolKey;\n    readonly poolRoot: string;\n    readonly budget: RunBudget;\n    readonly workspace: WorkspaceGrantRecord;\n}',
   },
   {
     name: 'Agent',
@@ -5049,7 +5061,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RunRejection',
-    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'lineage\';\n    readonly reason: \'tenant-mismatch\' | \'account-mismatch\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'session\';\n    readonly reason: \'already-driven\';\n    readonly holder: RunId;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
+    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'lineage\';\n    readonly reason: \'tenant-mismatch\' | \'account-mismatch\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'workspace\';\n    readonly reason: WorkspaceGrantRejection;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'session\';\n    readonly reason: \'already-driven\';\n    readonly holder: RunId;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
   },
   {
     name: 'RunReplayStore',
@@ -6558,6 +6570,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceGrantId',
     declaration: 'export type WorkspaceGrantId = Branded<\'WorkspaceGrantId\'>;',
+  },
+  {
+    name: 'WorkspaceGrantRecord',
+    declaration: 'export interface WorkspaceGrantRecord {\n    readonly id: WorkspaceGrantId;\n    readonly userId: UserId;\n    readonly deviceId: DeviceId;\n    readonly roots: readonly string[];\n    readonly mode: SandboxMode;\n    readonly version: number;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly revokedAt: number | undefined;\n}',
+  },
+  {
+    name: 'WorkspaceGrantRejection',
+    declaration: 'export type WorkspaceGrantRejection = \'not-found\' | \'revoked\' | \'tenant-mismatch\' | \'device-mismatch\' | \'not-inherited\';',
   },
   {
     name: 'WorkspaceInsertBeforeRequest',

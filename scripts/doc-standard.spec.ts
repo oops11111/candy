@@ -64,6 +64,7 @@ const PACKAGE_LIBRARIES: Readonly<Record<string, string>> = {
   'packages/control-plane/run-budget': 'Budget arithmetic for delegation trees; plain function exports, no plugin entry.',
   'packages/control-plane/run-ledger': 'Live run records and settlement over the budget arithmetic; a plain class export, no plugin entry.',
   'packages/control-plane/run-replay': 'The single-use nonce record behind admission; a plain class export, no plugin entry.',
+  'packages/control-plane/workspace-grant': 'The workspace-grant record and its admission rule; plain type/function exports, no plugin entry.',
   'packages/control-plane/run-start': 'Composition of admission, funding and placement with rollback; a plain function export, no plugin entry.',
   'packages/control-plane/runtime-pool': 'Pool-key derivation and path containment; plain function exports, no plugin entry.',
   'packages/control-plane/run-metering': 'Stream metering over a run allowance; a plain generator export, no plugin entry.',

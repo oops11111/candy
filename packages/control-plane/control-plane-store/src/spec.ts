@@ -21,6 +21,7 @@ import type { ProviderAccountEntry, ProviderAccountRecord } from '@deepseek-ai/d
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import type { RunRecord } from '@deepseek-ai/dsh-run-ledger'
 import type { TenantAllowance } from '@deepseek-ai/dsh-tenant-allowance'
+import type { WorkspaceGrantRecord } from '@deepseek-ai/dsh-workspace-grant'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 
 /** The closed provider set, spelled once for the durable boundary. */
@@ -140,6 +141,25 @@ const storedRun = z.object({
 })
 
 /**
+ * One device's standing grant of filesystem authority to one tenant.
+ *
+ * The roots are stored as the issuing device spells them and are never
+ * compared here: this medium holds the record, and the device it names is what
+ * resolves a path against it.
+ */
+const storedGrantRecord = z.object({
+  id: z.string(),
+  userId: z.string(),
+  deviceId: z.string(),
+  roots: z.array(z.string()),
+  mode: z.enum(['read-only', 'workspace-write', 'danger-full-access']),
+  version: z.number(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  revokedAt: z.number().optional(),
+})
+
+/**
  * One thing that happened to a run, as an operator reads it back.
  *
  * The `subject` a record is filed under is the tenant when the attempt named
@@ -203,13 +223,18 @@ export const controlPlaneDomainSpec = defineDomain({
   // delegated from, and every run that finished simply stops appearing, so a
   // trail admitted as this version would answer both questions wrongly rather
   // than not at all.
-  version: 5,
+  //
+  // 6 added workspace grants. A version 5 store holds none, and every run in
+  // it names a grant that would now resolve to nothing — so it is discarded
+  // rather than recovered into runs admission would immediately refuse.
+  version: 6,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),
     allowances: domainTable<UserId, z.infer<typeof storedAllowance>>(storedAllowance),
     runs: domainTable<RunId, z.infer<typeof storedRun>>(storedRun),
     audits: domainTable<AuditSubject, z.infer<typeof storedAuditTrail>>(storedAuditTrail),
+    grants: domainTable<WorkspaceGrantId, z.infer<typeof storedGrantRecord>>(storedGrantRecord),
   },
 })
 
@@ -515,3 +540,45 @@ export type RunAuditRecord = z.infer<typeof storedAuditRecord>
 
 /** One subject's trail, oldest first. */
 export type StoredAuditTrail = z.infer<typeof storedAuditTrail>
+
+
+/** The stored grant form, for a caller writing one. */
+export type StoredWorkspaceGrant = z.infer<typeof storedGrantRecord>
+
+/**
+ * Project one workspace grant onto the medium.
+ * @param record - the runtime grant.
+ * @returns the stored form, with an absent revocation omitted.
+ */
+export function toStoredGrant(record: WorkspaceGrantRecord): StoredWorkspaceGrant {
+  return {
+    id: record.id,
+    userId: record.userId,
+    deviceId: record.deviceId,
+    roots: [...record.roots],
+    mode: record.mode,
+    version: record.version,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    ...present('revokedAt', record.revokedAt),
+  }
+}
+
+/**
+ * Rebuild one workspace grant from the medium.
+ * @param stored - the validated stored grant.
+ * @returns the runtime grant, with its ids branded.
+ */
+export function fromStoredGrantRecord(stored: StoredWorkspaceGrant): WorkspaceGrantRecord {
+  return {
+    id: WorkspaceGrantId(stored.id),
+    userId: UserId(stored.userId),
+    deviceId: DeviceId(stored.deviceId),
+    roots: stored.roots,
+    mode: stored.mode,
+    version: stored.version,
+    createdAt: stored.createdAt,
+    updatedAt: stored.updatedAt,
+    revokedAt: stored.revokedAt,
+  }
+}

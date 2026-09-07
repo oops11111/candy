@@ -1,5 +1,6 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import type { WorkspaceGrantRecord } from '@deepseek-ai/dsh-workspace-grant'
 import {
   CredentialKeyVersion,
   revokeCredential,
@@ -54,6 +55,30 @@ function claims(overrides: Partial<ExecutionAssertionClaims> = {}): ExecutionAss
   }
 }
 
+/** The grant the default claims name, held by the tenant and device they name. */
+const GRANT: WorkspaceGrantRecord = {
+  id: WorkspaceGrantId('grant-1'),
+  userId: UserId('user-alice'),
+  deviceId: DeviceId('device-1'),
+  roots: ['/srv/candy/alice'],
+  mode: 'workspace-write',
+  version: 1,
+  createdAt: NOW,
+  updatedAt: NOW,
+  revokedAt: undefined,
+}
+
+/** A second tenant's grant, so a case naming that tenant names its own. */
+const STRANGER_GRANT: WorkspaceGrantRecord = {
+  ...GRANT,
+  id: WorkspaceGrantId('grant-2'),
+  userId: UserId('user-bobby'),
+  roots: ['/srv/candy/bobby'],
+}
+
+/** The stored grants, read by id exactly as a deployment's store answers. */
+const GRANTS = new Map([[GRANT.id, GRANT], [STRANGER_GRANT.id, STRANGER_GRANT]])
+
 function sealedFor(subject: ExecutionAssertionClaims): CredentialEnvelope {
   return sealCredential(
     API_KEY, { userId: subject.userId, accountId: subject.accountId }, KEYRING, NOW,
@@ -78,6 +103,7 @@ function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy
     spendNonce: subject => Promise.resolve(replay.spend(subject, NOW)),
     findSessionRun: () => Promise.resolve(undefined),
     findParentIdentity: () => Promise.resolve(undefined),
+    findWorkspaceGrant: id => Promise.resolve(GRANTS.get(id)),
     findCredential: subject => Promise.resolve(
       subject.userId === UserId('user-alice') ? sealedFor(subject) : undefined,
     ),
@@ -194,7 +220,10 @@ describe('admitRun', () => {
     // fails this one, letting whichever tenant arrives first deny the other.
     const shared = policy({ findCredential: subject => Promise.resolve(sealedFor(subject)) })
     const alice = mintExecutionAssertion(claims(), ASSERTION_SECRET)
-    const bobby = mintExecutionAssertion(claims({ userId: UserId('user-bobby') }), ASSERTION_SECRET)
+    const bobby = mintExecutionAssertion(
+      claims({ userId: UserId('user-bobby'), workspaceGrantId: STRANGER_GRANT.id }),
+      ASSERTION_SECRET,
+    )
 
     const first = await admitRun({ token: alice }, shared, NOW)
     const second = await admitRun({ token: bobby }, shared, NOW)
@@ -216,7 +245,7 @@ describe('admitRun', () => {
   })
 
   it('denies a tenant whose account has no stored credential', async () => {
-    const stranger = claims({ userId: UserId('user-bobby') })
+    const stranger = claims({ userId: UserId('user-bobby'), workspaceGrantId: STRANGER_GRANT.id })
     const token = mintExecutionAssertion(stranger, ASSERTION_SECRET)
 
     const admission = await admitRun({ token }, policy(), NOW)
@@ -444,8 +473,8 @@ describe('the budget a run is admitted against', () => {
   })
 
   it.each([
-    ['tenant-mismatch', { userId: UserId('user-bobby'), accountId: ProviderAccountId('account-1') }],
-    ['account-mismatch', { userId: UserId('user-alice'), accountId: ProviderAccountId('account-9') }],
+    ['tenant-mismatch', { userId: UserId('user-bobby'), accountId: ProviderAccountId('account-1'), workspaceGrantId: GRANT.id }],
+    ['account-mismatch', { userId: UserId('user-alice'), accountId: ProviderAccountId('account-9'), workspaceGrantId: GRANT.id }],
   ])('refuses a child that widens its parent\'s grant: %s', async (reason, parent) => {
     // The parent held exactly one tenant and one account, and neither of a pair
     // is a subset of the other.
