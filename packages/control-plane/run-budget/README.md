@@ -9,7 +9,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-run-budget` bounds what a tree of runs may consume. The harness already caps delegation *depth* — `dsh-subagent` raises `SubagentDepthError` past a `maxDepth` — and pins a delegated child's sandbox mode and approval policy to its parent's. None of that bounds spend: depth 3 with ten children at each level is a thousand runs, every one free to consume a tenant's tokens, time, and money. This module is the missing half. A child's allowance is subtracted from its parent when the child starts, so a parent cannot promise the same tokens twice however many children it delegates, and the unspent remainder returns only when the child settles.
+`dsh-run-budget` bounds what a tree of runs may consume. The harness already caps delegation *depth* — `dsh-subagent` raises `SubagentDepthError` past a `maxDepth` — and pins a delegated child's sandbox mode and approval policy to its parent's. None of that bounds spend: depth 3 with ten children at each level is a thousand runs, every one free to consume a tenant's tokens, time, and money. This module is the arithmetic that bounds it: a child's allowance is taken out of its parent's when the child starts, so a parent cannot promise the same tokens twice however many children it delegates.
+
+Holding those reservations, recording what a run spends, and returning an unspent remainder all need records of live runs, which is [`dsh-run-ledger`](../run-ledger/README.md)'s. This package is the values and the two decisions that need no record: whether a request fits, and whether an allowance has anything left.
 
 Money is integer micro-USD throughout. A limit compared or decremented in floating point drifts, and a spend limit that drifts is not a limit.
 
@@ -29,7 +31,7 @@ Money is integer micro-USD throughout. A limit compared or decremented in floati
 ### Delegating part of a run's allowance
 
 ```ts
-import { reserveChild, settleChild } from '@deepseek-ai/dsh-run-budget'
+import { reserveChild } from '@deepseek-ai/dsh-run-budget'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 
 declare const parent: RunBudget
@@ -46,37 +48,20 @@ export const outcome = reservation.reserved
   : { refused: reservation.denial.dimension }
 ```
 
-`reservation.parent` is the parent's allowance *after* the delegation. Using it is the enforcement: a parent that keeps spending its pre-reservation budget can hand the same tokens to every child it starts.
+`reservation.parent` is the parent's allowance *after* the delegation. Using it is the enforcement: a parent that keeps spending its pre-reservation budget can hand the same tokens to every child it starts. A caller holding a [`dsh-run-ledger`](../run-ledger/README.md) never does this arithmetic itself — the ledger holds the reservation and derives what the parent has left.
 
-When the child ends, return what it did not use:
-
-```ts
-import { settleChild } from '@deepseek-ai/dsh-run-budget'
-import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
-
-declare const parentNow: RunBudget
-declare const childBudget: RunBudget
-declare const childSpent: RunSpend
-
-export const parentAfter = settleChild(parentNow, childBudget, childSpent)
-```
-
-### Charging a run as it consumes
+### Asking whether an allowance is spent
 
 ```ts
-import { chargeRun, hasRemainingBudget } from '@deepseek-ai/dsh-run-budget'
+import { hasRemainingBudget } from '@deepseek-ai/dsh-run-budget'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 
 declare const budget: RunBudget
 
-const charge = chargeRun(budget, { tokens: 1_200, wallMs: 3_400, costMicroUsd: 9_000 })
-
-export const next = charge.charged
-  ? { budget: charge.remaining, keepGoing: hasRemainingBudget(charge.remaining) }
-  : { stop: charge.denial }
+export const mayStart = hasRemainingBudget(budget)
 ```
 
-A refused charge deducts nothing, so a caller that stops the run on a denial never leaves the budget partly spent by the charge it rejected.
+`children` is not consulted. A run with no delegation slots left can still do its own work; it simply cannot start a child, and refusing it would confuse "cannot delegate" with "cannot proceed".
 
 ### Requests are refused, never shrunk
 
@@ -94,18 +79,20 @@ Every operation returns a denial naming the one dimension that was insufficient,
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `RunBudget`, `RunSpend`, `reserveChild`, `settleChild`, `chargeRun`, `hasRemainingBudget`, and the budget assertions |
+| [`src/index.ts`](src/index.ts) | `RunBudget`, `RunSpend`, `reserveChild`, `hasRemainingBudget`, and the budget assertions |
 | — | No runtime invariant companion is published; this pure module owns no event stream or mutable runtime data, and its arithmetic is enforced by unit tests. |
 
 ### Why a child slot is held rather than spent
 
-`children` is the count of child runs that may be live at once, so it behaves unlike the other three dimensions: reserving a child takes one slot, and settling returns it. Tokens, milliseconds and money are consumed for good. That is why `RunSpend` has no `children` field at all — a caller that could "spend" concurrency would destroy the very capacity it is supposed to release.
+`children` is the count of runs that may be live at once, so it behaves unlike the other three dimensions: reserving a child takes slots, and they come back when that child ends. Tokens, milliseconds and money are consumed for good. That is why `RunSpend` has no `children` field at all — a caller that could "spend" concurrency would destroy the very capacity it is supposed to release.
 
-The concurrency a child may itself delegate is its own to hold and is not taken from the parent's slots; only the one slot the child occupies is. A parent with one slot left can therefore start a child permitted five grandchildren.
+### Why a child pays for the slots it hands down
 
-### Why an overspend is not credited back
+A child costs its parent one slot for itself plus every slot it may delegate, so the count bounds a whole subtree rather than only its top level. A run granted four slots can start four childless children, or one child that may run three of its own, and no arrangement in between puts more than four runs live beneath it.
 
-`settleChild` returns `max(0, reserved - spent)`. A child that consumed more than it reserved has already cost the tenant that money; crediting the difference would invent budget and let the parent spend it a second time. The overspend is prevented during the run by `chargeRun`, not corrected at settlement — which is the reason a run is charged as it goes rather than reconciled at the end.
+Charging one slot per child instead would leave the dimension unbounded across a tree: four children each granted four of their own, and their children again, reaches over thirteen hundred live runs at depth five from a grant that reads as four. Nothing at any level would have paid for the ones below, which contradicts the parent-subset rule in [Candy Runtime Boundaries](../../../docs/candy-runtime-boundaries.md) — a child may use only the concurrency authority its parent already had. Spend is conserved either way; concurrency was not.
+
+The cost is that a grant now reads as a subtree size. Expressing "four children that may each delegate two" asks for twelve, not four.
 
 ### Why the assertions throw instead of denying
 
@@ -130,10 +117,9 @@ A negative, fractional, or unsafe-integer budget is a storage or arithmetic defe
 
 These are current package constraints, not a task backlog.
 
-- **Nothing stores or enforces a budget** — this is arithmetic over values a caller holds. Persisting a run's remaining allowance, reloading it, and refusing to schedule an exhausted run belong to the scheduler and run store that R3 has not built.
+- **Nothing here stores a budget** — this is arithmetic over values a caller holds. [`dsh-run-admission`](../run-admission/README.md) refuses to start a run whose budget is exhausted and [`dsh-run-ledger`](../run-ledger/README.md) holds the live records, but persisting those records belongs to the run store R3 has not built.
 - **No wall-clock source** — `wallMs` is a number the caller measures and charges. Nothing here reads a clock, so a run that never charges its elapsed time is never stopped for exceeding it.
-- **Cost must be supplied, and the adapters cannot supply it** — `costMicroUsd` is enforceable only if something computes it. `TokenUsage` carries no cost, and [`dsh-llm-claude-cli`](../../llm/llm-claude-cli/README.md) drops the CLI's own `total_cost_usd`, so today a caller must price tokens itself.
-- **A reservation is not a lease** — nothing expires an unsettled reservation, so a child that is lost without settling holds its parent's allowance until the caller reconciles it. A crash-safe hold needs the durable run records R3 owns.
+- **Only one route reports cost** — `TokenUsage.costMicroUsd` carries a provider-reported figure, and [`dsh-llm-claude-cli`](../../llm/llm-claude-cli/README.md) is the one route that supplies it. A caller charging `costMicroUsd` against an HTTP route still prices tokens itself, and nothing folds the reported figure into a durable total.
 - **One tree, not a tenant** — these operations bound a delegation tree beneath one run. A tenant-wide cap across concurrent unrelated runs is a different accounting seam and is not this one.
 - **No Cordis service** — nothing here registers on a `Context`; it is imported directly, like `dsh-brand`.
 

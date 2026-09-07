@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-05-the-stream-redaction-could-not-reach.md
+2026-09-05-the-stream-redaction-could-not-reach.md: 015159ee2e5124e0513eddedd635af9f08ed8e10
+2026-09-05-the-stream-redaction-could-not-reach.zh.md: 222da873a289697015b67ee26f2daf416e7aec75

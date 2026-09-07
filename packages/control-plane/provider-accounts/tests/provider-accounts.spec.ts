@@ -46,7 +46,9 @@ async function create(
     provider,
     label: ` ${id} `,
     secret: Buffer.from(`secret-${id}`, 'utf8'),
-    makeDefault,
+    // Omitted rather than passed undefined: the request declares makeDefault
+    // optional, and exactOptionalPropertyTypes distinguishes the two.
+    ...makeDefault === undefined ? {} : { makeDefault },
   }, NOW)
 }
 
@@ -72,6 +74,48 @@ describe('provider accounts', () => {
 
     expect(await listProviderAccounts(store, ALICE)).toHaveLength(2)
     expect(await listProviderAccounts(store, ALICE, DEEPSEEK)).toMatchObject([{ id: ProviderAccountId('account-1') }])
+  })
+
+  it('leaves the tenant\'s default alone when another account is revoked', async () => {
+    const store = memoryStore()
+    await create(store, 'a')
+    await create(store, 'b')
+    await create(store, 'c')
+
+    await revokeProviderAccount(store, ALICE, ProviderAccountId('b'), NOW + 1)
+
+    // Promoting beside a default the tenant still has would leave two marked
+    // default for one provider, and whoever resolves "the default" would get
+    // an arbitrary one of them.
+    const views = await listProviderAccounts(store, ALICE)
+    expect(views.filter(view => view.isDefault).map(view => view.id)).toEqual([ProviderAccountId('a')])
+  })
+
+  it('leaves the tenant\'s default alone when another account is deleted', async () => {
+    const store = memoryStore()
+    await create(store, 'a')
+    await create(store, 'b')
+    await create(store, 'c')
+
+    await deleteProviderAccount(store, ALICE, ProviderAccountId('b'), NOW + 1)
+
+    const views = await listProviderAccounts(store, ALICE)
+    expect(views.filter(view => view.isDefault).map(view => view.id)).toEqual([ProviderAccountId('a')])
+  })
+
+  it('keeps the chosen default when it is not the oldest account', async () => {
+    const store = memoryStore()
+    await create(store, 'a')
+    await create(store, 'b')
+    await create(store, 'c')
+    // The tenant picks a later account, so the default is not the first the
+    // store lists — the case where "promote the first usable one" is wrong.
+    await selectDefaultProviderAccount(store, ALICE, ProviderAccountId('c'), NOW + 1)
+
+    await revokeProviderAccount(store, ALICE, ProviderAccountId('b'), NOW + 2)
+
+    const views = await listProviderAccounts(store, ALICE)
+    expect(views.filter(view => view.isDefault).map(view => view.id)).toEqual([ProviderAccountId('c')])
   })
 
   it('keeps one default per user and provider', async () => {
@@ -132,10 +176,13 @@ describe('provider accounts', () => {
       KEYRING,
       ALICE,
       ProviderAccountId('account-1'),
-      (provider, secret) => Promise.resolve({
-        valid: provider === DEEPSEEK && Buffer.from(secret).toString('utf8') === 'secret-account-1',
-        diagnostic: 'x'.repeat(500),
-      }),
+      (provider, secret) => Promise.resolve(
+        provider === DEEPSEEK && Buffer.from(secret).toString('utf8') === 'secret-account-1'
+          ? { valid: true, diagnostic: 'x'.repeat(500) }
+          // The union requires a reason on the failing side, so the branch is
+          // explicit rather than a computed `valid` the compiler cannot narrow.
+          : { valid: false, reason: 'invalid-credential', diagnostic: 'x'.repeat(500) },
+      ),
       NOW + 1,
     )
 
@@ -156,5 +203,122 @@ describe('provider accounts', () => {
 
     await create(store, 'account-1')
     await expect(create(store, 'account-1')).rejects.toMatchObject({ code: 'account-already-exists' })
+  })
+
+  it('never lets a deleted id be reused, even by the tenant that owned it', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+    await deleteProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 1)
+    const retained = await store.find(ProviderAccountId('account-1'))
+
+    await expect(createProviderAccount(store, KEYRING, {
+      id: ProviderAccountId('account-1'),
+      userId: ALICE,
+      provider: DEEPSEEK,
+      label: 'replacement',
+      secret: Buffer.from('secret-replacement', 'utf8'),
+    }, NOW + 2)).rejects.toMatchObject({ code: 'account-already-exists' })
+
+    // The refusal is what protects it: a caller that reused the id would
+    // silently overwrite the very record deletion promises to retain.
+    expect(await store.find(ProviderAccountId('account-1'))).toEqual(retained)
+  })
+})
+
+describe('the paths that refuse an account', () => {
+  it('reports an unopenable credential as a failed validation, not a thrown error', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+
+    // A keyring without the version the envelope names: the vault cannot open
+    // it. That is a validation outcome the caller routes on, not a defect.
+    const otherKeyring: CredentialKeyring = {
+      currentVersion: CredentialKeyVersion('2026-09-b'),
+      keys: new Map([[CredentialKeyVersion('2026-09-b'), Buffer.alloc(32, 9)]]),
+    }
+    let probed = false
+    const result = await validateProviderAccount(
+      store, otherKeyring, ALICE, ProviderAccountId('account-1'),
+      () => { probed = true; return Promise.resolve({ valid: true }) },
+      NOW + 1,
+    )
+
+    expect(result.value.validation).toEqual({ valid: false, reason: 'invalid-credential' })
+    // The probe never runs, so a broken keyring cannot send a secret anywhere.
+    expect(probed).toBe(false)
+    expect(result.audits).toHaveLength(1)
+  })
+
+  it('leaves validatedAt untouched when the probe reports failure', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+
+    const result = await validateProviderAccount(
+      store, KEYRING, ALICE, ProviderAccountId('account-1'),
+      () => Promise.resolve({ valid: false, reason: 'provider-unavailable' }),
+      NOW + 1,
+    )
+
+    // Only a successful probe stamps the record, so a provider outage cannot
+    // make a stale credential look freshly checked.
+    expect(result.value.account.validatedAt).toBeUndefined()
+    expect(store.entries.get('account-1')?.record.updatedAt).toBe(NOW)
+  })
+
+  it('returns a validation that carried no diagnostic unchanged', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+
+    const result = await validateProviderAccount(
+      store, KEYRING, ALICE, ProviderAccountId('account-1'),
+      () => Promise.resolve({ valid: true }),
+      NOW + 1,
+    )
+
+    expect(result.value.validation).toEqual({ valid: true })
+    expect(result.value.account.validatedAt).toBe(NOW + 1)
+  })
+
+  it('refuses an account another tenant owns as not-found', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+
+    // Reported as absent rather than forbidden: a distinct error would let one
+    // tenant probe another's account ids.
+    await expect(selectDefaultProviderAccount(store, BOB, ProviderAccountId('account-1'), NOW + 1))
+      .rejects.toThrow(new ProviderAccountError('not-found'))
+  })
+
+  it('refuses a revoked account', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+    await revokeProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 1)
+
+    await expect(selectDefaultProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 2))
+      .rejects.toThrow(new ProviderAccountError('revoked'))
+  })
+
+  it('refuses a deleted account', async () => {
+    const store = memoryStore()
+    await create(store, 'account-1')
+    await deleteProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 1)
+
+    await expect(selectDefaultProviderAccount(store, ALICE, ProviderAccountId('account-1'), NOW + 2))
+      .rejects.toThrow(new ProviderAccountError('deleted'))
+  })
+
+  it.each([
+    ['blank once trimmed', '   '],
+    ['longer than 120 characters', 'x'.repeat(121)],
+  ])('refuses a label that is %s', async (_case, label) => {
+    const store = memoryStore()
+
+    await expect(createProviderAccount(store, KEYRING, {
+      id: ProviderAccountId('account-1'),
+      userId: ALICE,
+      provider: DEEPSEEK,
+      label,
+      secret: Buffer.from('secret', 'utf8'),
+    }, NOW)).rejects.toThrow(new ProviderAccountError('invalid-label'))
   })
 })

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-06-one-damaged-record-took-every-tenant-down.md
+2026-09-06-one-damaged-record-took-every-tenant-down.md: 7ea180879ddf26ea211a77369d6b5e3e5f7844c5
+2026-09-06-one-damaged-record-took-every-tenant-down.zh.md: dada4019028515704496566f99254b3c60f88f27

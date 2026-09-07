@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-06-a-conversation-stdin-could-not-carry.md
+2026-09-06-a-conversation-stdin-could-not-carry.md: 1490bf00aa8eb07ed90bed1ff1ded85cdd7370f9
+2026-09-06-a-conversation-stdin-could-not-carry.zh.md: 70ec74c14a33de827eb75c5a2250b9f466740320

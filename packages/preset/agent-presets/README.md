@@ -78,9 +78,30 @@ A copy is refused when the id is not `[a-z0-9][a-z0-9-]*` (the id becomes a dire
 
 A session can switch to a different preset only while it has produced nothing — no messages or tool calls. After that, the composition is fixed for the session's life, because swapping tools mid-conversation would leave logged tool calls the new composition cannot make. A committed switch emits `tools/change` because the resolved tool set changed without a registry edit. The switch is also recorded in the session log, so a resumed or forked session rebuilds under the composition it ran.
 
+### Restricting which presets an agent may join
+
+`AgentPresets.guard(guard)` registers a synchronous check consulted by `mount()` and `recompose()` before either composes or re-links an agent — the only two operations that ever install an agent's binding, so a guard registered here cannot be bypassed by any other call path. A returned string refuses the preset with that reason; `undefined` defers to the next guard, and no guard can force-allow a preset another guard refused:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent-presets'
+
+declare const ctx: Context
+
+const stop = ctx.agentPresets.guard((agentCtx, id) => {
+  // agentCtx.agent is the constructing or re-linking Agent; a consumer
+  // resolves whatever identity it needs from there.
+  return agentCtx.agent?.id === 'blocked-session' ? 'not permitted' : undefined
+})
+```
+
+This package carries no notion of who is asking or why — a guard is how a deployment adds one, without teaching the roster a concept it does not otherwise need. [`dsh-tenant-preset-policy`](../../control-plane/tenant-preset-policy/README.md) is the first consumer: it restricts a Candy tenant to a configured subset of the roster. A guard is never consulted by `standingKeyFor()`'s cold, agent-free read, since that path starts no agent and no session for any guard to judge.
+
 ### Failures and recovery
 
 A preset whose composition is missing, unparsable, not a list of named plugin rows, or naming a module that cannot be resolved is listed as broken with a reason naming the rows at fault; composing such a preset is refused up front, so a session never starts half-composed. What survives to session creation is a row whose module loads and then refuses — a plugin that throws, or one waiting for a service the composition never supplies — which fails the creation and rolls it back, naming every failed row including those inside a group. Fix the preset's file or delete it, then retry.
+
+A preset a registered guard refuses fails the same way, with code `agent-preset/refused` and the guard's own reason in the message; a refused `recompose()` leaves the agent exactly on its previous composition, the same as any other failed switch.
 
 -----
 
@@ -98,6 +119,7 @@ This section explains the design behind the roster and the standing mount; obser
 - **Generations keyed on the composition file.** The mount records the composition file's stamp (mtime and size); a session that finds the stamp stale starts the next generation, while sessions already joined keep the generation they run on — a running session outlives its file changing or disappearing.
 - **The preset file is an input, never a persistence target.** The mounted subtree overrides `write()` as a no-op, so a loader-initiated write-back never rewrites a shared preset file.
 - **Discovery owns health.** A directory whose composition is missing or unloadable is a broken roster row with a reason, not a skip — a skipped directory would still occupy its id while no surface shows anything to delete.
+- **A guard is the roster's one policy seam.** `resolveMountable` — the single choke point behind both `mount()` and `recompose()` — is where every registered guard is consulted, so this package never carries a Candy-specific (or any other consumer-specific) concept of who is allowed to use what; a consumer teaches it that through a plain function.
 
 ### Source map
 

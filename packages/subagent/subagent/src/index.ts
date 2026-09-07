@@ -31,7 +31,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { admitPromptContent } from '@deepseek-ai/dsh-attachment'
-import { scopeTarget } from '@deepseek-ai/dsh-scope'
+import { AnonymousEntries, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
@@ -50,6 +50,8 @@ import type {
   SubagentPromptRequestId,
 } from './control-types.ts'
 import type {
+  ChildDelegationHook,
+  ChildDelegationRollback,
   ContinuableCreateRequest,
   ContinuableCreateSpec,
   ResolvedSubagentStartRequest,
@@ -130,7 +132,7 @@ export type {
 } from './continuation.ts'
 export type * from './control-types.ts'
 export type { SubagentDescendantListEntry } from './list-children.ts'
-export type { SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
+export type { ChildDelegationHook, ChildDelegationRollback, SubagentRunEndInfo, SubagentRunInfo } from './types.ts'
 export type { SubagentIdentityProjection, SubagentTimingProjection } from './projection-types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -197,6 +199,12 @@ export class SubagentRuntime extends TypertRemoteService {
    * composes into the carrier.
    */
   private readonly emitLifecycle: LifecycleEmitter
+  /**
+   * Hooks consulted by {@link prepareDelegatedChild}, in registration order.
+   * Any hook may refuse a delegation by throwing; a refusal from one hook is
+   * not something a later hook can undo.
+   */
+  private readonly delegationHooks = new AnonymousEntries<ChildDelegationHook>()
 
   constructor(ctx: Context) {
     super(ctx, 'subagents')
@@ -204,6 +212,7 @@ export class SubagentRuntime extends TypertRemoteService {
     ctx.inject(['agents'], (childCtx: Context) => {
       const manager = new SubagentContinuationManager(childCtx, {
         prepareContinuable: (name, request) => this.prepareContinuable(name, request),
+        prepareDelegatedChild: (parent, childId) => this.prepareDelegatedChild(parent, childId),
         observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
       })
       this.continuations = manager
@@ -216,6 +225,54 @@ export class SubagentRuntime extends TypertRemoteService {
       projectionCtx.sessionProjections.register(subagentTimingProjectionDefinition)
       projectionCtx.sessionProjections.register(subagentIdentityProjectionDefinition)
     })
+  }
+
+  /**
+   * Register a hook consulted by {@link prepareDelegatedChild} before every
+   * in-process one-shot child is created. Any hook may refuse by throwing.
+   * @param hook - async check; may throw or reject to refuse the delegation.
+   * @returns the disposer that unregisters the hook.
+   */
+  onBeforeDelegate(hook: ChildDelegationHook): () => void {
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+    return this.ctx.effect(() => this.delegationHooks.append(hook), 'subagents.onBeforeDelegate()')
+  }
+
+  /**
+   * Run every registered {@link onBeforeDelegate} hook, in registration
+   * order, before an in-process driver creates a child. Called once per
+   * residency epoch, before `ctx.agents.create()` or `ctx.agents.resume()`,
+   * so a hook's asynchronous setup completes before the child exists to make
+   * its first request.
+   *
+   * The returned rollback undoes what the hooks set up, in reverse order, and
+   * belongs to the caller's creation transaction: an epoch that never
+   * publishes must run it, or a hook's setup outlives the child it was for.
+   * A hook that refuses is unwound here instead, since the caller never
+   * receives a rollback it could run.
+   * @param parent - the delegating parent agent.
+   * @param childId - the session id the child will be created with.
+   * @returns the rollback for every hook that set something up.
+   * @throws whatever the first hook that refuses throws or rejects with,
+   *   after the hooks before it have been rolled back.
+   */
+  async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<ChildDelegationRollback> {
+    const rollbacks: ChildDelegationRollback[] = []
+    const undo = async (): Promise<void> => {
+      // Reverse order: a later hook may have built on an earlier one's setup.
+      for (const rollback of rollbacks.reverse()) await rollback()
+    }
+    for (const hook of this.delegationHooks.values()) {
+      let rollback: ChildDelegationRollback | void
+      try {
+        rollback = await hook(parent, childId)
+      } catch (refusal) {
+        await undo()
+        throw refusal
+      }
+      if (rollback !== undefined) rollbacks.push(rollback)
+    }
+    return undo
   }
 
   /**

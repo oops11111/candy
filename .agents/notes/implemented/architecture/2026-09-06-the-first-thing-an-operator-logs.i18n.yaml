@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-06-the-first-thing-an-operator-logs.md
+2026-09-06-the-first-thing-an-operator-logs.md: 5086b03289f7deda4184a5230a1f4fa83f1961af
+2026-09-06-the-first-thing-an-operator-logs.zh.md: 20c0cee8e5e67c16fe50764522c0cc2caac3a1fb

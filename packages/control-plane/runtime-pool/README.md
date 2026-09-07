@@ -39,7 +39,30 @@ const key = runtimePoolKey({
 export const root = runtimePoolRoot('/srv/candy/pools', key)
 ```
 
-`provider` is a `ProviderKind` from [`dsh-control-plane`](../control-plane/README.md): one of `deepseek-api`, `claude-cli`, or `codex-cli`, a closed set because the delivery plan names exactly those three. It lives there rather than here because an account, an assertion, and a pool all name it. The base must be absolute: a pool root resolved against a working directory is a deployment error, and it throws rather than guessing.
+`provider` is a `ProviderKind` from [`dsh-control-plane`](../control-plane/README.md): one of `deepseek-api`, `claude-cli`, or `codex-cli`, a closed set because the delivery plan names exactly those three. It lives there rather than here because an account, an assertion, and a pool all name it. The base must be absolute in POSIX or Win32 syntax, and the base's own syntax decides how the path is joined — a control plane on Linux resolves a Windows host's pool root, where this platform's `path.join` would produce the other separator. A base absolute in neither syntax throws rather than being resolved against a working directory.
+
+### Creating a pool's directory
+
+```ts
+import { openRuntimePool, runtimePoolKey } from '@deepseek-ai/dsh-runtime-pool'
+import { ProviderAccountId, UserId } from '@deepseek-ai/dsh-control-plane'
+
+const pool = runtimePoolKey({
+  userId: UserId('user-1'),
+  provider: 'claude-cli',
+  accountId: ProviderAccountId('account-1'),
+})
+
+export const home = await openRuntimePool('/srv/candy/pools', pool)
+```
+
+The permissions are applied, not requested. `mkdir` sets a mode only on a directory it creates, so a pool root left behind by an earlier run, an operator, or a different umask keeps whatever permissions it already had, and the next run writes the tenant's provider credential into it. The explicit change afterwards is what makes `0o700` true of the directory the call returns rather than only of a directory it happened to create.
+
+The base is never created. A pool base that does not exist means the deployment never provisioned its storage, and inventing the whole tree under a mistyped path with whatever permissions its ancestors imply hides that instead of reporting it, so a missing base throws. Provisioning the base and deciding who may write inside it stay with the deployment: no pool can be private to its tenant if another local account can create directories beside it.
+
+What already exists in the pool's place must be a real directory. `chmod` follows a symlink, so a link planted there would send the mode to its target and hand the tenant that target as a home — and a link to another tenant's pool root is owned by the same account, so no permission check would catch it. `lstat` describes the entry itself, so the link is seen and refused.
+
+Opening a pool that already exists is how a second run joins it, so the call is idempotent and keeps what the pool holds.
 
 ### What belongs under the root, and what does not
 
@@ -104,7 +127,8 @@ Read these pages for the isolation rule this package implements and the ids it k
 
 These are current package constraints, not a task backlog.
 
-- **Paths are derived, never created or removed** — nothing here touches the filesystem, so directory creation, permissions, ownership, and cleanup on pool retirement belong to the runtime that manages pools. A derived root says where state belongs, not that it exists or that its mode is right.
+- **Pools are created, never removed** — `openRuntimePool` creates one pool root and makes it private; ownership, quota, and cleanup on pool retirement belong to the runtime that manages pools. `runtimePoolRoot` remains a pure derivation for a caller that only needs the path.
+- **The pool base's own permissions are not checked** — a base another local account can write to lets that account place something where a pool root goes before this package sees it. Two of those are refused: a symlink or any non-directory fails the entry check, and a directory owned by someone else fails the mode change with `EPERM`. A directory that account creates and this runtime owns is indistinguishable from one an earlier run left, so provisioning the base privately stays the deployment's — and on Windows it is `dsh-sandbox-windows-acl`'s, since POSIX mode bits do not describe that platform's access control.
 - **No quota, process, or event-log enforcement** — the boundaries page also partitions quotas, process ownership, and event logs by pool key. This package supplies the key those partitions share; enforcing them needs the scheduler and session store that R1 has not built.
 - **No environment overlay** — which variables a pool's provider process receives, including where its home points, is provider-specific and belongs to the R2 adapters.
 - **A subdirectory layout is deliberately absent** — the package names one root per pool and leaves its interior to the owner, so a taxonomy is not invented before a consumer needs one.

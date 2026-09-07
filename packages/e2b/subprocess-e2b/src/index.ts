@@ -137,7 +137,7 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
   }
 
   /** @inheritdoc */
-  spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+  protected override spawnProcess(spec: SubprocessSpawnSpec): SubprocessHandle {
     if (this.disposing) throw new Error('subprocess-e2b: service is disposing')
     const program = spec.argv[0]
     if (program === undefined || program.length === 0) {
@@ -161,7 +161,7 @@ export class E2BSubprocessRuntime extends SubprocessRuntime {
   }
 
   /** @inheritdoc */
-  async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+  protected override async spawnTerminalSession(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
     if (this.disposing) throw new Error('subprocess-e2b: service is disposing')
     const program = spec.argv[0]
     if (program === undefined || program.length === 0) {

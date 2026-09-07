@@ -26,11 +26,11 @@ A budget compared or decremented in floating point drifts, and a spend limit tha
 
 ### Child slots are held, not spent
 
-`children` behaves unlike the other three: reserving takes a slot, settling returns it, while tokens, milliseconds and money are gone for good. That is why `RunSpend` has no `children` field — a caller able to "spend" concurrency would destroy the capacity it is supposed to release. The concurrency a child may itself delegate is its own to hold and is not drawn from the parent's slots; only the one slot the child occupies is, so a parent with one slot left can still start a child permitted five grandchildren.
+`children` behaves unlike the other three: reserving takes slots, settling returns them, while tokens, milliseconds and money are gone for good. That is why `RunSpend` has no `children` field — a caller able to "spend" concurrency would destroy the capacity it is supposed to release. A child costs its parent one slot for itself plus every slot it may hand down, so the count bounds a whole subtree ([concurrency is conserved across a tree](2026-09-04-concurrency-is-conserved-across-a-tree.md)).
 
 ### An overspend is not credited back
 
-`settleChild` returns `max(0, reserved - spent)`. A child that consumed more than it reserved has already cost the tenant that money, and crediting the difference would invent budget for the parent to spend a second time. Overspend is prevented during the run by `chargeRun` — which is the reason a run is charged as it goes rather than reconciled at the end — and a refused charge deducts nothing, so a caller that stops on a denial never finds its budget partly spent by the charge it rejected.
+A child that consumed more than it reserved has already cost the tenant that money, and crediting the difference back would invent budget for the parent to spend a second time. Settling on that rule needs records of live runs rather than values a caller passes around, so it moved to [`dsh-run-ledger`](2026-09-03-run-ledger-settles-exactly.md) along with the charge that accumulates a run's spend; what stays here is the reservation, the emptiness check, and the values all three share.
 
 ### Requests are refused, never shrunk
 
@@ -44,7 +44,7 @@ A negative, fractional, or unsafe-integer budget is a storage or arithmetic defe
 
 R3's second bullet is now depth (inherited), grants (inherited), and budgets (here), which is a smaller remaining scope than the bullet implied. The scheduler that persists a run's remaining allowance and refuses to start an exhausted run is still unbuilt, and this module deliberately does not reach for it: it is arithmetic over values a caller holds, with no store, no clock, and no service.
 
-Two consequences are worth stating because they bind other work. `wallMs` is charged by the caller, so a run that never charges its elapsed time is never stopped for exceeding it. And `costMicroUsd` is enforceable only if something computes cost — `TokenUsage` carries none, and `dsh-llm-claude-cli` drops the CLI's own `total_cost_usd` for exactly that reason, so today a caller must price tokens itself. Both are recorded as limitations rather than implied as working.
+Two consequences are worth stating because they bind other work. `wallMs` is charged by the caller, so a run that never charges its elapsed time is never stopped for exceeding it. And `costMicroUsd` is enforceable only where something reports cost: `TokenUsage.costMicroUsd` now carries a provider-reported figure and `dsh-llm-claude-cli` supplies it, while an HTTP route reports none and leaves a caller pricing tokens itself. Both are recorded as limitations rather than implied as working.
 
 A reservation is also not a lease: nothing expires an unsettled one, so a child lost without settling holds its parent's allowance until a caller reconciles it. That needs the durable run records R3 owns.
 

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-04-a-link-where-a-pool-root-goes.md
+2026-09-04-a-link-where-a-pool-root-goes.md: 2b3432dc5b5d43e9572fe3361ca5c851740b5ff4
+2026-09-04-a-link-where-a-pool-root-goes.zh.md: f0d0e59b7abae41c9346527aa1feb5e3f31ca4e2

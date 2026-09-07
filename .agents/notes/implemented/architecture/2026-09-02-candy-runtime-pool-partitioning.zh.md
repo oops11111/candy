@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`@deepseek-ai/dsh-runtime-pool`(`packages/control-plane/runtime-pool`)拥有这个键与这个目录。`runtimePoolKey` 把身份三元组摘要为 64 个小写十六进制字符;`runtimePoolRoot` 把一个池直接放在绝对基准目录之下。摘要的输入带有长度前缀,因此 `('ab', 'c')` 与 `('a', 'bc')` 不会因移动字段边界而碰撞;而十六进制不具备使原始 id 作为路径段不安全的遍历、长度或大小写折叠性质。
+`@deepseek-ai/dsh-runtime-pool`(`packages/control-plane/runtime-pool`)拥有这个键与这个目录。`runtimePoolKey` 把身份三元组摘要为 64 个小写十六进制字符;`runtimePoolRoot` 把一个池直接放在绝对基准目录之下，并按基准目录自身的 POSIX 或 Win32 语法拼接，因此控制平面能为一台分隔符与自己不同的主机解析出池根目录。摘要的输入带有长度前缀,因此 `('ab', 'c')` 与 `('a', 'bc')` 不会因移动字段边界而碰撞;而十六进制不具备使原始 id 作为路径段不安全的遍历、长度或大小写折叠性质。
 
 `RuntimePoolKey` 没有自由形式的构造函数。持有它的唯一途径是签发它的 `runtimePoolKey`,以及在重新接纳存储键之前先检查语法的 `parseRuntimePoolKey`。因此约束是类型的性质,而不是每个调用点都要重复的检查:`runtimePoolRoot` 不可能收到一个能越出基准目录的键。与 `dsh-control-plane` 中的不透明 id 不同,在这里做校验是有依据而非发明的,因为该语法正是本包自己的摘要。
 

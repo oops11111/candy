@@ -316,7 +316,7 @@ interface AppIdentity {
 
 ## `TokenUsage`
 
-Per-call token accounting. Counts are **disjoint**: `inputTokens` is uncached input only; cached input is reported separately, and billed input is the sum of the three. Adapters whose providers fold cache hits into a single prompt total (DeepSeek's `prompt_tokens`) subtract them back out. Optional `totalTokens` is an exact aggregate prompt-plus-output count preserved from the provider or reconstructed from authoritative aggregate counters; adapters omit it when unavailable or inconsistent. `reasoningTokens`, when present, is informational detail already included in `outputTokens`; totals must not add it again.
+Per-call token accounting. Counts are **disjoint**: `inputTokens` is uncached input only; cached input is reported separately, and billed input is the sum of the three. Adapters whose providers fold cache hits into a single prompt total (DeepSeek's `prompt_tokens`) subtract them back out. Optional `totalTokens` is an exact aggregate prompt-plus-output count preserved from the provider or reconstructed from authoritative aggregate counters; adapters omit it when unavailable or inconsistent. `reasoningTokens`, when present, is informational detail already included in `outputTokens`; totals must not add it again. Optional `costMicroUsd` is what the provider itself billed for the whole call, carried only when it reports one — an adapter never prices the counts beside it, so an absent field means the provider stayed silent rather than that the call was free.
 
 ```ts type-equiv
 /**
@@ -341,6 +341,21 @@ interface TokenUsage {
   cacheReadTokens?: number
   cacheWriteTokens?: number
   reasoningTokens?: number
+  /**
+   * What the provider says this call cost, in integer micro-USD.
+   *
+   * Present only when the provider reports a billed figure of its own. An
+   * adapter never derives one from a price list: a computed number would be
+   * indistinguishable from a reported one and wrong wherever the deployment's
+   * contract is not list price. Absent therefore means "not reported", which
+   * is not the same as zero, and a consumer that treats it as zero undercounts
+   * every provider that stays silent.
+   *
+   * The figure is the provider's total for the whole call, so a provider that
+   * runs auxiliary models of its own bills those here too; it is not the price
+   * of the counts in this same object.
+   */
+  costMicroUsd?: number
 }
 ```
 

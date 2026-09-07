@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-06-a-rotation-that-locked-every-tenant-out.md
+2026-09-06-a-rotation-that-locked-every-tenant-out.md: c8e98db464e63318a99e573aa448fc2678eed5f5
+2026-09-06-a-rotation-that-locked-every-tenant-out.zh.md: 5588bb8a5e354a96bd243ca776dd24b785ea86fd

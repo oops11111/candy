@@ -37,6 +37,9 @@ describe('a recorded text turn', () => {
           cacheReadTokens: 3289,
           cacheWriteTokens: 8273,
           reasoningTokens: 0,
+          // 0.0347348 USD, the recorded run's own billed total across every
+          // model the CLI ran for it.
+          costMicroUsd: 34_735,
         },
       },
       { type: 'finish', reason: { kind: 'stop' } },
@@ -79,6 +82,14 @@ describe('a recorded authentication failure', () => {
     })
   })
 
+  it('reports the failed run as having cost nothing, rather than reporting nothing', () => {
+    const usage = replay('auth-failure.jsonl').find(chunk => chunk.type === 'usage')
+
+    // The CLI billed zero for a run whose every request was refused. A charge
+    // of zero and an unknown charge are different facts to a budget.
+    expect(usage).toMatchObject({ usage: { costMicroUsd: 0 } })
+  })
+
   it('does not report the failure text as model output', () => {
     // The CLI synthesizes an assistant frame whose content is the failure
     // message. Reading those frames would put it in the transcript as a turn.
@@ -117,5 +128,46 @@ describe('a recorded authentication failure', () => {
     // Recorded without --bare: the CLI authenticated through the host's own
     // login and reported apiKeySource "none".
     expect(verdicts).toEqual([false])
+  })
+})
+
+describe('a recorded run fed a conversation on stdin', () => {
+  it('answers each user message as its own turn rather than replaying one', () => {
+    const decoder = new ClaudeCliLineDecoder()
+    const frames = decoder.push(recorded('injected-history.jsonl'))
+
+    // The input was user, assistant, user. Two init frames and two terminal
+    // frames: the CLI opened a session per user message and finished each one.
+    expect(frames.filter(frame => frame.type === 'system' && frame.subtype === 'init')).toHaveLength(2)
+    expect(frames.filter(frame => frame.type === 'result')).toHaveLength(2)
+  })
+
+  it('discards the injected assistant turn without reporting it', () => {
+    // No frame carries the assistant text that was written to stdin, and no
+    // frame reports it as rejected: the CLI accepted the line and dropped it.
+    expect(recorded('injected-history.jsonl')).not.toContain('Understood. Your favorite color is teal.')
+  })
+
+  it('bills the injected history as a model call of its own', () => {
+    const results = recorded('injected-history.jsonl')
+      .split('\n').filter(Boolean)
+      .map(line => JSON.parse(line) as { type?: string; usage?: { input_tokens: number; output_tokens: number } })
+      .filter(frame => frame.type === 'result')
+
+    // The first user message was not context for the second; it was a paid
+    // turn that produced 76 output tokens nobody asked for.
+    expect(results[0]?.usage).toMatchObject({ input_tokens: 3889, output_tokens: 76 })
+  })
+
+  it('answers the caller with the first turn and drops the last one', () => {
+    const chunks = replay('injected-history.jsonl')
+    const text = chunks.filter(chunk => chunk.type === 'text-delta').map(chunk => chunk.text).join('')
+
+    // The translator settles on the first terminal frame, so a stream carrying
+    // two turns reaches the caller as one: the reply to the conversation's
+    // first message, while the reply to its last message — 'Teal.', the answer
+    // the caller asked for — is discarded after being paid for.
+    expect(chunks.filter(chunk => chunk.type === 'finish')).toHaveLength(1)
+    expect(text).toBe("Got it \u2014 your favorite color is teal. I'll keep that in mind for our conversation.")
   })
 })

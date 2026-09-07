@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId, redactApiKey } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -658,11 +658,13 @@ export class DeepSeekAdapter extends LlmAdapter {
       if (!response.ok) {
         let message = `DeepSeek API error (HTTP ${response.status})`
         let providerError: WireError['error']
-        const rawResponse = await response.text()
+        // The provider's text is quoted into the failure and its cause, and a
+        // rejected-credential error may name the key it rejected.
+        const rawResponse = redactApiKey(await response.text(), apiKey)
         try {
           const parsed = JSON.parse(rawResponse) as WireError
           providerError = parsed.error
-          if (providerError?.message) message = providerError.message
+          if (providerError?.message) message = redactApiKey(providerError.message, apiKey)
         } catch {
           // The HTTP status remains authoritative when a gateway returns malformed JSON.
         }

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-02-candy-runtime-pool-partitioning.md
-2026-09-02-candy-runtime-pool-partitioning.md: 4546a222099e42e47dd3073ad3d02f383fd4bfe8
-2026-09-02-candy-runtime-pool-partitioning.zh.md: 92c4d997841f3ece4e8e9b911095af8d3da39016
+2026-09-02-candy-runtime-pool-partitioning.md: 7d4f6c9d3f506ae033e778c7ac230f3a87a4aaf9
+2026-09-02-candy-runtime-pool-partitioning.zh.md: 695bdbe2a0b15d5cf9c36c0b2d065bf4b5500006

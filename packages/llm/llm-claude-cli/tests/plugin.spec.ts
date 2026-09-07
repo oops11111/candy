@@ -7,8 +7,8 @@ import * as LlmClaudeCli from '../src/index.ts'
 /** A subprocess service that never runs anything; registration needs no process. */
 class UnusedSubprocess extends SubprocessRuntime {
   override resolveExecutable(command: string): Promise<string> { return Promise.resolve(command) }
-  override spawnTerminal(): Promise<never> { throw new Error('unused') }
-  override spawn(_spec: SubprocessSpawnSpec): SubprocessHandle { throw new Error('unused') }
+  protected override spawnTerminalSession(): Promise<never> { throw new Error('unused') }
+  protected override spawnProcess(_spec: SubprocessSpawnSpec): SubprocessHandle { throw new Error('unused') }
 }
 
 afterEach(() => { vi.unstubAllEnvs() })
@@ -34,6 +34,8 @@ describe('resolveAdapterOptions', () => {
       graceMs: LlmClaudeCli.DEFAULT_GRACE_MS,
       maxBudgetUsd: undefined,
       requireCredentialIsolation: true,
+      maxOutputBytes: LlmClaudeCli.DEFAULT_MAX_OUTPUT_BYTES,
+      maxStderrBytes: LlmClaudeCli.DEFAULT_MAX_STDERR_BYTES,
     })
   })
 
@@ -45,6 +47,8 @@ describe('resolveAdapterOptions', () => {
       graceMs: 250,
       maxBudgetUsd: 0.5,
       requireCredentialIsolation: false,
+      maxOutputBytes: 2_048,
+      maxStderrBytes: 512,
     }, { CANDY_TENANT_KEY: 'sk-ant-other' })).toEqual({
       executable: '/opt/claude',
       cwd: '/workspace',
@@ -52,6 +56,8 @@ describe('resolveAdapterOptions', () => {
       graceMs: 250,
       maxBudgetUsd: 0.5,
       requireCredentialIsolation: false,
+      maxOutputBytes: 2_048,
+      maxStderrBytes: 512,
     })
   })
 

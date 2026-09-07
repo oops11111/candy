@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-06-a-roster-with-no-notion-of-a-tenant.md
+2026-09-06-a-roster-with-no-notion-of-a-tenant.md: 97dbf0dcf27df1c4a921ba1c748a71a2e94f4f8f
+2026-09-06-a-roster-with-no-notion-of-a-tenant.zh.md: c4069ca5af78012cebcfc72899b3a54c28e96c30

@@ -161,6 +161,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when no configured root supplies that id.'],
       },
       {
+        signature: 'guard(guard: AgentPresetGuard): () => void',
+        description: 'Register a guard consulted by resolveMountable before every `mount()` and `recompose()`. Any guard may refuse by returning a reason; no guard can force-allow a preset another guard refused.',
+        parameters: [{ name: 'guard', description: 'synchronous check; a returned string refuses the preset.' }],
+        returns: 'the disposer that unregisters the guard.',
+      },
+      {
         signature: 'async mount(agentCtx: Context, id?: string): Promise<AgentPreset>',
         description: 'Compose one agent from a preset: ensure the preset\'s standing mount, then parent the agent\'s scope key to it so the mount\'s registrations and listeners cover this agent.\n\nCall from the agent factory\'s `setup(agentCtx)`; a rejection there rolls the agent creation back, so a broken preset never yields a half-composed session.',
         parameters: [{ name: 'agentCtx', description: 'the agent\'s scope context.' }, { name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
@@ -669,6 +675,143 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'start', description: 'first surface seq, inclusive.' }, { name: 'end', description: 'last surface seq, inclusive.' }, { name: 'agent', description: 'context whose session is mutated and whose routing options guide summarization.' }, { name: 'signal', description: 'optional cancellation; model-backed implementations must forward it.' }],
         returns: 'the appended event seqs, summary, replaced range, and token accounting.',
         throws: ['when compaction is active or the range is missing, reversed, or unbalanced.'],
+      },
+    ],
+  },
+  {
+    key: 'controlPlaneStore',
+    summary: 'Durable provider accounts and tenant allowances.',
+    description: 'Durable provider accounts and tenant allowances.\n\nReads are synchronous against the domain\'s in-memory state and are exposed as promises because the ports they satisfy are asynchronous. Writes reach the medium before memory, so a read never sees a record the medium does not hold.',
+    methods: [
+      {
+        signature: 'listByUser(userId: UserId): Promise<readonly ProviderAccountEntry[]>',
+        description: 'Every account one tenant owns, deleted ones included.\n\nA deleted account is retained rather than removed: `dsh-provider-accounts` keeps its id blocked so a later account cannot inherit its history.',
+        parameters: [{ name: 'userId', description: 'the tenant to list.' }],
+        returns: 'that tenant\'s accounts, in no defined order.',
+      },
+      {
+        signature: 'find(id: ProviderAccountId): Promise<ProviderAccountEntry | undefined>',
+        description: 'One account by id.',
+        parameters: [{ name: 'id', description: 'the account to read.' }],
+        returns: 'the account and its sealed credential, or undefined.',
+      },
+      {
+        signature: 'accountOf(id: ProviderAccountId): ProviderAccountRecord | undefined',
+        description: 'One account\'s record, read without awaiting.\n\nfind is the port `dsh-provider-accounts` consumes and stays async because another backend need not answer from memory. This runtime decides whether an in-flight call may still spend, on the synchronous path a waterfall listener runs on, and it needs the record rather than the sealed credential beside it.',
+        parameters: [{ name: 'id', description: 'the account to read.' }],
+        returns: 'its secret-free record, or undefined when none is held.',
+      },
+      {
+        signature: 'async save(entry: ProviderAccountEntry): Promise<void>',
+        description: 'Write one account, replacing any record under the same id.',
+        parameters: [{ name: 'entry', description: 'the account and its sealed credential.' }],
+        returns: 'resolution after the write reaches the medium.',
+      },
+      {
+        signature: 'async findCredential(claims: { userId: UserId; accountId: ProviderAccountId }): Promise<CredentialEnvelope | undefined>',
+        description: 'Look up the sealed credential a run\'s claims name.\n\nThe account is read by id and its recorded tenant must be the one the claims carry. An account that names another tenant is not returned: the vault would refuse to open it, and refusing here keeps a mismatch out of the one call that could otherwise be handed the wrong envelope.',
+        parameters: [{ name: 'claims', description: 'the tenant and account a verified assertion names.' }],
+        returns: 'the sealed envelope, or undefined when there is no such account for that tenant.',
+      },
+      {
+        signature: 'tenantAllowance(userId: UserId): Promise<TenantAllowance | undefined>',
+        description: 'One tenant\'s grant and what its settled runs have consumed of it.\n\nThis is the durable half of the root-run answer to `dsh-run-admission`\'s `findBudget`. It is deliberately not that answer: what a new run may start against is this record less the reservation of every run of that tenant still open, and which runs are open lives in a `RunLedger` rather than here. `dsh-tenant-allowance`\'s `remainingAllowance` composes the two, and `dsh-run-scheduler` is where they meet.',
+        parameters: [{ name: 'userId', description: 'the tenant to read.' }],
+        returns: 'the tenant\'s allowance, or undefined when none is recorded — which denies the run, because a tenant the store does not know is not a tenant with unlimited budget.',
+      },
+      {
+        signature: 'async setTenantGrant(userId: UserId, grant: RunBudget): Promise<TenantAllowance>',
+        description: 'Set what one tenant is granted, keeping what it has already consumed.\n\nRaising or lowering a grant does not return spent tokens: an operator who doubles a quota mid-period means the tenant may now spend twice as much in total, not that its history was erased. A tenant with no record is opened with nothing consumed.',
+        parameters: [{ name: 'userId', description: 'the tenant.' }, { name: 'grant', description: 'the allowance that tenant\'s runs draw on.' }],
+        returns: 'the stored allowance, after the write reaches the medium.',
+        throws: ['RangeError when the grant is not made of non-negative safe integers.'],
+      },
+      {
+        signature: 'consumeTenantAllowance(userId: UserId, runId: RunId, spent: RunSpend): Promise<TenantAllowance | undefined>',
+        description: 'Add one settled run\'s spending to what its tenant has consumed, at most once.\n\nThe settlement `dsh-run-ledger` reports for a root run already covers its whole subtree, so one call per tree is the whole of a tenant\'s charge.\n\nCharging the tenant and deleting the settled run record are two writes this medium cannot make one, so a crash between them leaves a settled record a recovering runtime finds and charges again. The run\'s id is written into the same record as the charge, by the same atomic update, and a repeat of the same id is a no-op — so recovery may re-drive an interrupted settlement without knowing how far it got.\n\nThat guarantee needs one settlement at a time per tenant: two interleaved settlements leave the id of the later one, and a crash would then charge the earlier one twice. `dsh-run-scheduler` serializes them.',
+        parameters: [{ name: 'userId', description: 'the tenant that ran it.' }, { name: 'runId', description: 'the settled root run, which this charge is recorded under.' }, { name: 'spent', description: 'what that run and its descendants consumed.' }],
+        returns: 'the tenant\'s allowance after the charge — unchanged when this run was already charged — or undefined when no allowance is recorded for that tenant and the charge therefore landed nowhere.',
+        throws: ['RangeError when the spend is not made of non-negative safe integers.'],
+      },
+      {
+        signature: 'runsOf(runtime: string): Promise<readonly DurableRunRecord[]>',
+        description: 'Every run one runtime has open or part-way through settling.\n\nOnly that runtime\'s own records: two runtimes sharing this medium would otherwise recover each other\'s live runs and settle them at boot.',
+        parameters: [{ name: 'runtime', description: 'the reading runtime\'s own audience identifier.' }],
+        returns: 'its records, in no defined order.',
+      },
+      {
+        signature: 'findRun(runId: RunId): DurableRunRecord | undefined',
+        description: 'One run\'s record by id, whatever runtime opened it.\n\nA child run is checked against its parent\'s identity, and the parent is named by the claims rather than found by scanning.',
+        parameters: [{ name: 'runId', description: 'the run to read.' }],
+        returns: 'its record, or undefined when none is held.',
+      },
+      {
+        signature: 'runsOfSession(runtime: string, sessionId: SessionId): readonly DurableRunRecord[]',
+        description: 'Every run of this runtime that drives one harness session.\n\nA model request carries the session it was assembled for, so this is the lookup that turns a stream into the run it is charged to. More than one result means the control plane minted two runs for one session, which is a bookkeeping error rather than a choice a caller may resolve.',
+        parameters: [{ name: 'runtime', description: 'the reading runtime\'s own audience identifier.' }, { name: 'sessionId', description: 'the session a request names.' }],
+        returns: 'the matching records, in no defined order.',
+      },
+      {
+        signature: 'async openRun(run: DurableRunRecord): Promise<void>',
+        description: 'Write the record of one newly opened run.',
+        parameters: [{ name: 'run', description: 'the run\'s accounting, tenant, runtime, and settlement state.' }],
+        returns: 'resolution after the write reaches the medium.',
+      },
+      {
+        signature: 'async recordRunSpend(runId: RunId, spent: RunSpend): Promise<void>',
+        description: 'Update what one run has spent, leaving every other field as it is.\n\nA whole-record write would erase DurableRunRecord.absorbed, whose whole purpose is to survive until the settled child it names is deleted.',
+        parameters: [{ name: 'runId', description: 'the run being charged.' }, { name: 'spent', description: 'everything charged to it so far.' }],
+        returns: 'resolution after the write reaches the medium; a run with no record is a no-op, because only a live ledger can say it exists.',
+      },
+      {
+        signature: 'async renewRun(runId: RunId, leaseExpiresAt: number): Promise<void>',
+        description: 'Push one run\'s lease out, leaving every other field as it is.\n\nThe stored lease is what a later reader — this runtime after a restart, an operator, another runtime sharing this audience — uses to tell a run still being driven from one whose runtime went away. A renewal held only in a live ledger would leave that reader a record that looks abandoned while the run is working.',
+        parameters: [{ name: 'runId', description: 'the run whose hold should be held longer.' }, { name: 'leaseExpiresAt', description: 'the new release time, in epoch milliseconds.' }],
+        returns: 'resolution after the write reaches the medium; a run with no record is a no-op, because only a live ledger can say it exists.',
+      },
+      {
+        signature: 'async absorbChild(parentRunId: RunId, childRunId: RunId, spent: RunSpend): Promise<void>',
+        description: 'Fold one settled child\'s charge into its parent, at most once.\n\nThe parent\'s allowance is what a child\'s spend is charged to, exactly as a tenant\'s is for a root, so this is consumeTenantAllowance one level lower and carries the same marker for the same reason: crediting the parent and deleting the child are two writes, and a crash between them must not credit the parent twice.',
+        parameters: [{ name: 'parentRunId', description: 'the delegating run.' }, { name: 'childRunId', description: 'the settled child, recorded as absorbed.' }, { name: 'spent', description: 'the child\'s charge, already capped at what it reserved.' }],
+        returns: 'resolution after the write reaches the medium; a parent with no record is a no-op.',
+      },
+      {
+        signature: 'async markRunSettled(runId: RunId, spent: RunSpend): Promise<DurableRunRecord>',
+        description: 'Write down what settling one run charges, before that charge is applied.\n\nThis is the durable decision point of a settlement: after it, a recovering runtime knows the run is finished and how much it owes, whatever else was interrupted.',
+        parameters: [{ name: 'runId', description: 'the run being settled.' }, { name: 'spent', description: 'what it and its descendants consumed.' }],
+        returns: 'the marked record, which carries the tenant the charge belongs to.',
+        throws: ['DomainError when no record is held for that run — a run open in a ledger always has one, so an absent record is a lost write rather than a run to settle silently.'],
+      },
+      {
+        signature: 'deleteRun(runId: RunId): Promise<boolean>',
+        description: 'Remove one run\'s record.',
+        parameters: [{ name: 'runId', description: 'the run to forget.' }],
+        returns: 'true when a record was removed, false when it was already absent.',
+      },
+      {
+        signature: 'async recordAudit( subject: AuditSubject, records: readonly RunAuditRecord[], retain: number, ): Promise<readonly RunAuditRecord[]>',
+        description: 'Append records to one subject\'s trail, keeping the most recent `retain`.\n\nThe cap is the caller\'s because it is a deployment\'s retention choice, not a property of the medium. It is also the whole of the retention policy: a trail is a window on recent activity, and the record that falls out of it is gone.',
+        parameters: [{ name: 'subject', description: 'the tenant or runtime the records belong to.' }, { name: 'records', description: 'what happened, oldest first.' }, { name: 'retain', description: 'most records to keep for this subject; at least one.' }],
+        returns: 'the trail as stored, after the write reaches the medium.',
+        throws: ['RangeError when `retain` is not a positive safe integer, which is a deployment error rather than a record to drop.'],
+      },
+      {
+        signature: 'findGrant(id: WorkspaceGrantId): Promise<WorkspaceGrantRecord | undefined>',
+        description: 'Read the grant an execution assertion names.\n\nAnswering `undefined` denies the run: a grant this store does not hold is never an unlimited one, which is the rule {@link',
+        parameters: [{ name: 'id', description: 'the grant id the assertion carries.' }],
+        returns: 'the grant, or `undefined` when none is stored under that id.',
+      },
+      {
+        signature: 'async saveGrant(record: WorkspaceGrantRecord): Promise<void>',
+        description: 'Write one grant, replacing any record under the same id.\n\nA revocation is this same call with `revokedAt` set: the record is the authority an assertion only names, so removing it would leave a run naming a grant that reads as never-issued rather than as withdrawn.',
+        parameters: [{ name: 'record', description: 'the grant to store.' }],
+        returns: 'resolution once the medium holds it.',
+      },
+      {
+        signature: 'auditsOf(subject: AuditSubject): readonly RunAuditRecord[]',
+        description: 'One subject\'s recorded activity, oldest first.',
+        parameters: [{ name: 'subject', description: 'the tenant or runtime to read.' }],
+        returns: 'its retained records; empty when nothing is recorded for it.',
       },
     ],
   },
@@ -1284,6 +1427,101 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select whether plan mode should be active. Between turns the method appends the change immediately because no in-turn pre-step will run until another prompt starts a turn. The open-turn fold is the idle signal: agent status stays `running` through post-turn checkpointing, when no further in-turn pre-step runs. During an open turn the selection remains pending until the next accepted in-turn pre-step. Repeated selection of the current or already-pending state is a no-op.',
         parameters: [{ name: 'agent', description: 'The agent to switch.' }, { name: 'active', description: 'Whether plan mode should be active.' }],
         returns: 'what happened: `committed` (logged now), `queued` (awaiting the next accepted in-turn pre-step), `cancelled` (an opposite pending selection was cleared; the logged state already matches), or `noop` (already in that state).',
+      },
+    ],
+  },
+  {
+    key: 'runScheduler',
+    summary: 'Live run state for one Candy runtime, and the composition that starts a run.',
+    description: 'Live run state for one Candy runtime, and the composition that starts a run.\n\nOne instance owns one ledger and one replay store, so every run this runtime admits is accounted against the same delegation trees and the same spent nonces. Two instances would each believe they held the whole allowance.',
+    methods: [
+      {
+        signature: 'readonly ledger: RunLedger = new RunLedger()',
+        description: 'Open runs and their holds, for every tree this runtime is running.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly replay: RunReplayStore = new RunReplayStore()',
+        description: 'Nonces spent by assertions still admissible here.',
+        parameters: [],
+      },
+      {
+        signature: 'start( token: string, share: (run: { budget: RunBudget }) => RunBudget = run => run.budget, now: number = Date.now(), ): Promise<RunStartOutcome>',
+        description: 'Admit one request, fund the run it names, and place it in its pool.',
+        parameters: [{ name: 'token', description: 'the execution assertion exactly as received.' }, { name: 'share', description: 'the allowance to open the run with; a root run is normally opened with what admission answered, and a child with the share its parent delegates.' }, { name: 'now', description: 'epoch milliseconds; defaults to this runtime\'s clock.' }],
+        returns: 'the started run, or the step that refused it, with every audit record the attempt produced.',
+      },
+      {
+        signature: 'charge(runId: RunId, spend: RunSpend): Promise<RunLedgerResult<RunChargeResult>>',
+        description: 'Record what one run consumed since its last charge.',
+        parameters: [{ name: 'runId', description: 'the open run.' }, { name: 'spend', description: 'what the invocation consumed.' }],
+        returns: 'the updated record and the dimensions now used up, or why the charge was refused.',
+      },
+      {
+        signature: 'tenantOf(sessionId: SessionId): UserId | undefined',
+        description: 'The tenant of a session\'s one open, usable run.\n\nSynchronous, unlike runIdentityFor: resolving a tenant reads the same in-memory run index findSessionRun already reads for metering and requires no credential open, so a caller wiring a synchronous policy hook elsewhere in the harness — an `AgentPresets` guard, for instance — can consult it directly instead of threading a `Promise` through a call path that has no other reason to be async.',
+        parameters: [{ name: 'sessionId', description: 'the session naming the run to resolve.' }],
+        returns: 'the run\'s tenant, or `undefined` when this runtime has no single open, usable run for that session.',
+      },
+      {
+        signature: 'meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk>',
+        description: 'Meter one provider stream against an open run.\n\nThis is where an allowance stops being an accounting figure. The call is refused before the provider is reached when the run has nothing left, cut when it outruns the wall time the run still had, and charged — durably — before its terminal chunk reaches the consumer, so the next call is admitted against a ledger that already knows about this one.\n\nA cut ends the call, not the run: the record stays open with what the call consumed, and whoever started the run decides what happens next.',
+        parameters: [{ name: 'runId', description: 'the open run this call belongs to.' }, { name: 'source', description: 'the provider\'s stream for one call.' }],
+        returns: 'the same chunks, ending early when the run cannot afford the rest.',
+      },
+      {
+        signature: 'async runIdentityFor(sessionId: SessionId): Promise<RunIdentityResult>',
+        description: 'Resolve what a provider binding needs to launch one call for the run driving a session: an opened credential, the pool it may use, and this call\'s own spend ceiling.\n\nThis is the reach `dsh-run-admission` gives a run once, at start, made available again for every later call the same run makes. Nothing here is cached from that first admission: the account is read fresh, and the credential is opened fresh, so a binding built on this method inherits the same property `meterRequest` already does — a revocation that happens between two calls of one run stops the second rather than only the next metered chunk.\n\nThe opened secret is not retained here, and this method does not itself launch anything: a caller that never calls it, and the ledger\'s own per-call metering, are both unaffected by whether anything ever does.',
+        parameters: [{ name: 'sessionId', description: 'the session a provider binding\'s call was assembled for.' }],
+        returns: 'the launch identity, or the reason none could be resolved.',
+      },
+      {
+        signature: 'async startChildRun( parentSessionId: SessionId, childSessionId: SessionId, share: (run: { budget: RunBudget }) => RunBudget, now: number = Date.now(), ): Promise<StartChildRunResult>',
+        description: 'Mint and admit a child run for a session delegated from an already-open run, inheriting the delegating run\'s tenant, account, provider, device, workspace grant and conversation.\n\nThis is the one place this runtime mints an execution assertion rather than only verifying one it was handed. It needs no external issuing authority because it authenticates nothing new: a delegated child\'s identity is exactly its parent\'s, already verified when the parent\'s own run was admitted, so re-deriving it here — sessionId, runId and nonce freshly generated, everything else copied — is not a new grant of authority, only a restatement of one already held. The minted token is never transmitted or persisted; it exists only to drive the same `start()` admission path a caller-supplied token would, so a child run is funded, ledgered and audited exactly as a root run is, including the parent-subset budget and concurrency accounting `dsh-run-budget` already enforces for any assertion naming a `parentRunId`.',
+        parameters: [{ name: 'parentSessionId', description: 'the session whose open run the child delegates from.' }, { name: 'childSessionId', description: 'the session the new child run drives.' }, { name: 'share', description: 'the allowance to open the child with, computed from the parent\'s own remaining budget. Required rather than defaulted: how much of a parent\'s budget a delegated child should receive is a policy choice this runtime has no basis to guess.' }, { name: 'now', description: 'epoch milliseconds; defaults to this runtime\'s clock.' }],
+        returns: 'the child\'s start outcome, or the reason the parent session itself could not be resolved to one open, usable run.',
+      },
+      {
+        signature: 'close(runId: RunId): Promise<RunLedgerResult<RunSettlement>>',
+        description: 'Close one run and its descendants, and charge its tenant for what the tree consumed.\n\nClosing a root is the one point a tenant\'s durable allowance moves. A child settles into its parent\'s record instead, and reaches the tenant when that parent\'s root closes, so a tree is charged once rather than once per run.',
+        parameters: [{ name: 'runId', description: 'the run to settle.' }],
+        returns: 'the settlement, or why it could not be closed.',
+      },
+      {
+        signature: 'async closeSessionRun(sessionId: SessionId): Promise<RunSettlement | undefined>',
+        description: 'Close the one open run driving a session, for a caller that knows the session rather than the run.\n\nA delegated child is the case this exists for: whatever opened its run named it by session, and the settlement it is reacting to names the same session. Waiting for the lease instead would hold the parent\'s allowance and one of its concurrency slots for minutes after the child finished, so a parent that delegates in sequence would run out of slots it is no longer using.\n\nA session this runtime has no single open run for is not an error: there is nothing here to close, exactly as tenantOf answers nothing for the same session.',
+        parameters: [{ name: 'sessionId', description: 'the session whose run should be settled.' }],
+        returns: 'the settlement, or `undefined` when nothing was closed — this runtime has no single open run for that session, or a concurrent close settled it between resolving the run and reaching the queue.',
+      },
+      {
+        signature: 'registerDisposer(runId: RunId, dispose: () => void | Promise<void>): () => void',
+        description: 'Register a disposer to run once, when `runId` is settled.\n\nThe producer is whatever holds a live resource this run started and the ledger cannot reach: a spawned process, bound to the run at the moment it is created. Settlement ends the run\'s accounting whichever way it comes about — a normal finish, an expired lease, an account no longer able to authorize it, or an ancestor\'s tree closing around it — and this is what lets that same event reach the resource.\n\nAt most one disposer is held per run: a later registration replaces an earlier one rather than accumulating, which is correct for a run that makes several sequential calls, since only the live one still needs releasing. A caller whose resource already ended on its own unregisters with the returned function, so a stale disposer is never invoked for a process that already exited.',
+        parameters: [{ name: 'runId', description: 'the run whose settlement should trigger disposal.' }, { name: 'dispose', description: 'releases the resource; a rejection is logged and never allowed to fail the settlement that triggered it.' }],
+        returns: 'unregisters this disposer without invoking it.',
+      },
+      {
+        signature: 'disposableSpawn<Spec, Handle extends { readonly done: Promise<unknown>; terminate(): void }>( runId: RunId, spawn: (spec: Spec) => Handle, ): (spec: Spec) => Handle',
+        description: 'Wrap a process-spawning function so every handle it returns is registered against `runId`\'s lifetime and unregistered once that process exits on its own.\n\nThis is the whole of the disposal wiring a provider binding needs: compose it around the `spawn` function an adapter is given, and settlement reaches every process that function ever starts for this run, without the binding knowing anything about settlement itself.',
+        parameters: [{ name: 'runId', description: 'the run each spawned handle\'s disposer is registered against.' }, { name: 'spawn', description: 'the underlying spawn function, called unchanged.' }],
+        returns: 'a spawn function with the same signature.',
+      },
+      {
+        signature: 'async sweep(now: number): Promise<readonly RunSettlement[]>',
+        description: 'Release every hold whose lease has passed and drop nonce records that can no longer deny anything.\n\nThe clock calls this; a caller with its own decision timestamp may call it directly. Eviction changes no decision — `spend` already treats an expired record as absent — so this only bounds what the runtime holds.',
+        parameters: [{ name: 'now', description: 'epoch milliseconds.' }],
+        returns: 'the runs whose holds were released.',
+      },
+      {
+        signature: 'auditsOfTenant(userId: UserId): readonly RunAuditRecord[]',
+        description: 'Read back what one tenant\'s scheduling attempts did here, oldest first.',
+        parameters: [{ name: 'userId', description: 'the tenant to read.' }],
+        returns: 'its retained records.',
+      },
+      {
+        signature: 'auditsOfRuntime(): readonly RunAuditRecord[]',
+        description: 'Read back the attempts this runtime refused before it knew whose they were.\n\nAn assertion that fails to verify names no tenant this runtime may believe, so its record is filed here rather than dropped — it is the clearest attack signal admission can observe.',
+        parameters: [],
+        returns: 'this runtime\'s retained unattributed records, oldest first.',
       },
     ],
   },
@@ -2146,6 +2384,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Named provider registry with one-shot runs, durable discovery, and continuable-child operations.',
     methods: [
       {
+        signature: 'onBeforeDelegate(hook: ChildDelegationHook): () => void',
+        description: 'Register a hook consulted by prepareDelegatedChild before every in-process one-shot child is created. Any hook may refuse by throwing.',
+        parameters: [{ name: 'hook', description: 'async check; may throw or reject to refuse the delegation.' }],
+        returns: 'the disposer that unregisters the hook.',
+      },
+      {
+        signature: 'async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<ChildDelegationRollback>',
+        description: 'Run every registered onBeforeDelegate hook, in registration order, before an in-process driver creates a child. Called once per residency epoch, before `ctx.agents.create()` or `ctx.agents.resume()`, so a hook\'s asynchronous setup completes before the child exists to make its first request.\n\nThe returned rollback undoes what the hooks set up, in reverse order, and belongs to the caller\'s creation transaction: an epoch that never publishes must run it, or a hook\'s setup outlives the child it was for. A hook that refuses is unwound here instead, since the caller never receives a rollback it could run.',
+        parameters: [{ name: 'parent', description: 'the delegating parent agent.' }, { name: 'childId', description: 'the session id the child will be created with.' }],
+        returns: 'the rollback for every hook that set something up.',
+        throws: ['whatever the first hook that refuses throws or rejects with, after the hooks before it have been rolled back.'],
+      },
+      {
         signature: 'async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>',
         description: 'Establish one durable continuable child and deliver its initial prompt. Resolves when the child\'s inbox accepts that prompt, without waiting for the turn to start or for the message to reach the Session log; any earlier failure rejects with no ids and rolls back the child entirely.',
         parameters: [{ name: 'spec', description: 'provider, delegation request, and caller cancellation.' }],
@@ -2252,13 +2503,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a canonical executable path.',
       },
       {
-        signature: 'abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle',
+        signature: 'spawn(spec: SubprocessSpawnSpec): SubprocessHandle',
         description: 'Start one managed child process from a fully-specified spec; this seam applies no defaults.',
         parameters: [{ name: 'spec', description: 'argv, directory, stdio dispositions, grace, cancellation, and environment.' }],
         returns: 'the live process handle (streams/readers, signalling, outcome promise).',
       },
       {
-        signature: 'abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>',
+        signature: 'async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>',
         description: 'Allocate a real terminal and start one owned process session. This is the only non-pipe process primitive: implementations own terminal byte I/O, foreground groups, signals, and complete session-tree cleanup.',
         parameters: [{ name: 'spec', description: 'fully specified argv, cwd, environment, dimensions, grace, and allocation cancellation.' }],
         returns: 'the live terminal handle after allocation succeeds.',
@@ -3225,6 +3476,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'info', description: 'the provider and published child identity.' }],
   },
   {
+    name: 'subprocess/launched',
+    mode: 'emit',
+    signature: '\'subprocess/launched\'(launch: SubprocessLaunched): void',
+    summary: 'One managed child process was started, emitted once per launch by the seam every spawner routes through, after the handle exists and its pid is known.',
+    description: 'One managed child process was started, emitted once per launch by the seam every spawner routes through, after the handle exists and its pid is known.\n\nThe payload names the executable and where it ran, never the arguments or the environment. Attribution — which tenant, which run — belongs to a consumer that has it; this seam has no notion of either.',
+    parameters: [{ name: 'launch', description: 'executable, working directory, pid (`-1` when the spawn failed), and whether the child owns a terminal.' }],
+  },
+  {
     name: 'system-prompt/assemble',
     mode: 'waterfall',
     signature: '\'system-prompt/assemble\'(this: Scoped<SystemPrompt>, assembly: PromptAssembly, context: AssembleContext, next: () => Promise<PromptAssembly>): Promise<PromptAssembly>',
@@ -3361,6 +3620,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
   {
+    name: 'AdmittedRun',
+    declaration: 'export interface AdmittedRun {\n    readonly claims: ExecutionAssertionClaims;\n    readonly secret: Uint8Array;\n    toJSON: () => Omit<AdmittedRun, \'secret\' | \'toJSON\'> & {\n        secret: string;\n    };\n    readonly poolKey: RuntimePoolKey;\n    readonly poolRoot: string;\n    readonly budget: RunBudget;\n    readonly workspace: WorkspaceGrantRecord;\n}',
+  },
+  {
     name: 'Agent',
     declaration: 'export interface Agent {\n    readonly id: SessionId;\n}',
   },
@@ -3399,6 +3662,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentPresetDocument',
     declaration: 'export interface AgentPresetDocument {\n    readonly agentPreset: string;\n    readonly trust: PresetTrust;\n    readonly content: string;\n    readonly name?: string;\n    readonly description?: string;\n}',
+  },
+  {
+    name: 'AgentPresetGuard',
+    declaration: 'export type AgentPresetGuard = (agentCtx: Context, id: string) => string | undefined;',
   },
   {
     name: 'AgentPresetRoster',
@@ -3501,6 +3768,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
   },
   {
+    name: 'AuditSubject',
+    declaration: 'export type AuditSubject = Branded<\'AuditSubject\'>;',
+  },
+  {
     name: 'AuthorizationEntry',
     declaration: 'export interface AuthorizationEntry {\n    key: CredentialKey;\n    label: string;\n    methods: readonly AuthorizationMethod[];\n    inFlight: boolean;\n}',
   },
@@ -3571,6 +3842,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BrandedNumber',
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BudgetDimension',
+    declaration: 'export type BudgetDimension = \'tokens\' | \'wallMs\' | \'costMicroUsd\' | \'children\';',
+  },
+  {
+    name: 'ChildDelegationHook',
+    declaration: 'export type ChildDelegationHook = (parent: Agent, childId: SessionId) => Promise<ChildDelegationRollback | void> | ChildDelegationRollback | void;',
+  },
+  {
+    name: 'ChildDelegationRollback',
+    declaration: 'export type ChildDelegationRollback = () => Promise<void> | void;',
   },
   {
     name: 'ChunkRow',
@@ -3709,6 +3992,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
   },
   {
+    name: 'ConversationId',
+    declaration: 'export type ConversationId = Branded<\'ConversationId\'>;',
+  },
+  {
     name: 'CordisDynamicPackageId',
     declaration: 'export type CordisDynamicPackageId = Branded<\'CordisDynamicPackageId\'>;',
   },
@@ -3797,12 +4084,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateTeamTaskRequest {\n    readonly subject: string;\n    readonly description: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n}',
   },
   {
+    name: 'CredentialAuditEvent',
+    declaration: 'export interface CredentialAuditEvent {\n    readonly action: \'seal\' | \'open\' | \'rewrap\' | \'revoke\';\n    readonly userId: UserId;\n    readonly accountId: ProviderAccountId;\n    readonly keyVersion: CredentialKeyVersion;\n    readonly at: number;\n    readonly outcome: \'ok\' | CredentialRejection;\n}',
+  },
+  {
+    name: 'CredentialEnvelope',
+    declaration: 'export interface CredentialEnvelope {\n    readonly envelopeVersion: number;\n    readonly userId: UserId;\n    readonly accountId: ProviderAccountId;\n    readonly keyVersion: CredentialKeyVersion;\n    readonly iv: string;\n    readonly ciphertext: string;\n    readonly authTag: string;\n    readonly sealedAt: number;\n    readonly rewrappedAt: number | undefined;\n    readonly revokedAt: number | undefined;\n}',
+  },
+  {
     name: 'CredentialInfo',
     declaration: 'export interface CredentialInfo {\n    configured: boolean;\n    source?: string;\n    writable: boolean;\n}',
   },
   {
     name: 'CredentialKey',
     declaration: 'export type CredentialKey = Branded<\'CredentialKey\'>;',
+  },
+  {
+    name: 'CredentialKeyVersion',
+    declaration: 'export type CredentialKeyVersion = Branded<\'CredentialKeyVersion\'>;',
   },
   {
     name: 'CredentialRecord',
@@ -3821,6 +4120,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
   },
   {
+    name: 'CredentialRejection',
+    declaration: 'export type CredentialRejection = \'revoked\' | \'unknown-key\' | \'binding-mismatch\' | \'unsupported-version\' | \'corrupt\';',
+  },
+  {
     name: 'DeepSeekLlmApiExtensionMap',
     declaration: 'export interface DeepSeekLlmApiExtensionMap {\n}',
   },
@@ -3835,6 +4138,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DeepSeekLlmApiJson',
     declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
+  },
+  {
+    name: 'DeviceId',
+    declaration: 'export type DeviceId = Branded<\'DeviceId\'>;',
   },
   {
     name: 'DiffCallView',
@@ -3925,6 +4232,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DshEnvironmentKey = `${typeof DSH_ENV_PREFIX}${string}`;',
   },
   {
+    name: 'DurableRunRecord',
+    declaration: 'export interface DurableRunRecord {\n    readonly record: RunRecord;\n    readonly userId: TenantId;\n    readonly sessionId: SessionId;\n    readonly accountId: ProviderAccountId;\n    readonly deviceId: DeviceId;\n    readonly workspaceGrantId: WorkspaceGrantId;\n    readonly conversationId: ConversationId;\n    readonly runtime: string;\n    readonly settledSpent: RunSpend | undefined;\n    readonly absorbed: RunId | undefined;\n}',
+  },
+  {
     name: 'DynamicCordisPackage',
     declaration: 'export interface DynamicCordisPackage {\n    pluginId: CordisDynamicPluginId;\n    packageId: CordisDynamicPackageId;\n    pluginRunId: CordisDynamicPluginRunId;\n    name: string;\n}',
   },
@@ -3951,6 +4262,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
+  },
+  {
+    name: 'ExecutionAssertionClaims',
+    declaration: 'export interface ExecutionAssertionClaims {\n    readonly issuer: string;\n    readonly audience: string;\n    readonly userId: UserId;\n    readonly deviceId: DeviceId;\n    readonly accountId: ProviderAccountId;\n    readonly provider: ProviderKind;\n    readonly workspaceGrantId: WorkspaceGrantId;\n    readonly conversationId: ConversationId;\n    readonly sessionId: SessionId;\n    readonly runId: RunId;\n    readonly parentRunId: RunId | undefined;\n    readonly nonce: string;\n    readonly issuedAt: number;\n    readonly expiresAt: number;\n}',
+  },
+  {
+    name: 'ExecutionAssertionRejection',
+    declaration: 'export type ExecutionAssertionRejection = \'malformed\' | \'unsupported-version\' | \'signature\' | \'issuer\' | \'audience\' | \'not-yet-valid\' | \'expired\' | \'lifetime\';',
   },
   {
     name: 'FiberState',
@@ -4565,6 +4884,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PromptSectionOrderName = keyof typeof SECTION_ORDERS;',
   },
   {
+    name: 'ProviderAccountEntry',
+    declaration: 'export interface ProviderAccountEntry {\n    readonly record: ProviderAccountRecord;\n    readonly credential: CredentialEnvelope;\n}',
+  },
+  {
+    name: 'ProviderAccountId',
+    declaration: 'export type ProviderAccountId = Branded<\'ProviderAccountId\'>;',
+  },
+  {
+    name: 'ProviderAccountRecord',
+    declaration: 'export interface ProviderAccountRecord {\n    readonly id: ProviderAccountId;\n    readonly userId: UserId;\n    readonly provider: ProviderKind;\n    readonly label: string;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly validatedAt: number | undefined;\n    readonly revokedAt: number | undefined;\n    readonly deletedAt: number | undefined;\n    readonly isDefault: boolean;\n}',
+  },
+  {
+    name: 'ProviderKind',
+    declaration: 'export type ProviderKind = \'deepseek-api\' | \'claude-cli\' | \'codex-cli\';',
+  },
+  {
     name: 'ProviderRequestId',
     declaration: 'export type ProviderRequestId = Branded<\'ProviderRequestId\'>;',
   },
@@ -4673,8 +5008,88 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
   {
+    name: 'RunAuditRecord',
+    declaration: 'export type RunAuditRecord = z.infer<typeof storedAuditRecord>;',
+  },
+  {
+    name: 'RunBudget',
+    declaration: 'export interface RunBudget {\n    readonly tokens: number;\n    readonly wallMs: number;\n    readonly costMicroUsd: number;\n    readonly children: number;\n}',
+  },
+  {
+    name: 'RunBudgetDenial',
+    declaration: 'export interface RunBudgetDenial {\n    readonly dimension: BudgetDimension;\n    readonly requested: number;\n    readonly available: number;\n}',
+  },
+  {
+    name: 'RunChargeResult',
+    declaration: 'export interface RunChargeResult {\n    readonly record: RunRecord;\n    readonly exhausted: readonly BudgetDimension[];\n}',
+  },
+  {
+    name: 'RunId',
+    declaration: 'export type RunId = Branded<\'RunId\'>;',
+  },
+  {
+    name: 'RunIdentity',
+    declaration: 'export interface RunIdentity {\n    readonly runId: RunId;\n    readonly provider: ProviderKind;\n    readonly poolRoot: string;\n    readonly secret: Uint8Array;\n    readonly remaining: RunBudget;\n}',
+  },
+  {
+    name: 'RunIdentityRejection',
+    declaration: 'export type RunIdentityRejection = SessionRunRejection | {\n    readonly reason: \'no-credential\';\n    readonly runId: RunId;\n    readonly accountId: ProviderAccountId;\n} | {\n    readonly reason: CredentialRejection;\n    readonly runId: RunId;\n    readonly accountId: ProviderAccountId;\n};',
+  },
+  {
+    name: 'RunIdentityResult',
+    declaration: 'export type RunIdentityResult = {\n    readonly ok: true;\n    readonly value: RunIdentity;\n} | {\n    readonly ok: false;\n    readonly rejection: RunIdentityRejection;\n};',
+  },
+  {
+    name: 'RunLedger',
+    declaration: 'export class RunLedger {\n    openRoot(runId: RunId, budget: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    openChild(parentRunId: RunId, runId: RunId, request: RunBudget, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    charge(runId: RunId, spend: RunSpend): RunLedgerResult<RunChargeResult>;\n    renew(runId: RunId, leaseExpiresAt: number): RunLedgerResult<RunRecord>;\n    close(runId: RunId): RunLedgerResult<RunSettlement>;\n    expire(now: number): RunSettlement[];\n    remaining(runId: RunId): RunBudget | undefined;\n    get(runId: RunId): RunRecord | undefined;\n    open(): RunRecord[];\n    settlementOf(runId: RunId): RunSettlementPreview | undefined;\n    restore(records: readonly RunRecord[]): void;\n}',
+  },
+  {
+    name: 'RunLedgerRejection',
+    declaration: 'export type RunLedgerRejection = {\n    readonly reason: \'unknown-run\';\n    readonly runId: RunId;\n} | {\n    readonly reason: \'duplicate-run\';\n    readonly runId: RunId;\n} | {\n    readonly reason: \'parent-exhausted\';\n    readonly denial: RunBudgetDenial;\n};',
+  },
+  {
+    name: 'RunLedgerResult',
+    declaration: 'export type RunLedgerResult<T> = {\n    readonly ok: true;\n    readonly value: T;\n} | {\n    readonly ok: false;\n    readonly rejection: RunLedgerRejection;\n};',
+  },
+  {
     name: 'RunnerFailureRule',
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
+  },
+  {
+    name: 'RunRecord',
+    declaration: 'export interface RunRecord {\n    readonly runId: RunId;\n    readonly parentRunId: RunId | undefined;\n    readonly reserved: RunBudget;\n    readonly spent: RunSpend;\n    readonly leaseExpiresAt: number;\n}',
+  },
+  {
+    name: 'RunRejection',
+    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'lineage\';\n    readonly reason: \'tenant-mismatch\' | \'account-mismatch\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'workspace\';\n    readonly reason: WorkspaceGrantRejection;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'session\';\n    readonly reason: \'already-driven\';\n    readonly holder: RunId;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
+  },
+  {
+    name: 'RunReplayStore',
+    declaration: 'export class RunReplayStore {\n    spend(claims: ExecutionAssertionClaims, now: number): boolean;\n    evict(now: number): number;\n    get size(): number;\n}',
+  },
+  {
+    name: 'RunSettlement',
+    declaration: 'export interface RunSettlement extends RunSettlementPreview {\n    readonly parentRemaining: RunBudget | undefined;\n}',
+  },
+  {
+    name: 'RunSettlementPreview',
+    declaration: 'export interface RunSettlementPreview {\n    readonly runId: RunId;\n    readonly spent: RunSpend;\n    readonly closed: readonly RunId[];\n}',
+  },
+  {
+    name: 'RunSpend',
+    declaration: 'export interface RunSpend {\n    readonly tokens: number;\n    readonly wallMs: number;\n    readonly costMicroUsd: number;\n}',
+  },
+  {
+    name: 'RunStartOutcome',
+    declaration: 'export type RunStartOutcome = {\n    readonly started: true;\n    readonly value: StartedRun;\n    readonly audits: readonly CredentialAuditEvent[];\n} | {\n    readonly started: false;\n    readonly rejection: RunStartRejection;\n    readonly audits: readonly CredentialAuditEvent[];\n};',
+  },
+  {
+    name: 'RunStartRejection',
+    declaration: 'export type RunStartRejection = {\n    readonly stage: \'admission\';\n    readonly rejection: RunRejection;\n} | {\n    readonly stage: \'ledger\';\n    readonly rejection: RunLedgerRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
+  },
+  {
+    name: 'RuntimePoolKey',
+    declaration: 'export type RuntimePoolKey = Branded<\'RuntimePoolKey\'>;',
   },
   {
     name: 'SandboxEnforcement',
@@ -5073,6 +5488,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionResultRange {\n    from?: number;\n    to?: number;\n}',
   },
   {
+    name: 'SessionRunRejection',
+    declaration: 'export type SessionRunRejection = {\n    readonly reason: \'no-open-run\';\n} | {\n    readonly reason: \'claimed-by-several\';\n    readonly runIds: readonly RunId[];\n} | {\n    readonly reason: \'account-unusable\';\n    readonly runId: RunId;\n    readonly accountId: ProviderAccountId;\n};',
+  },
+  {
     name: 'SessionSearchCursor',
     declaration: 'export type SessionSearchCursor = Branded<\'SessionSearchCursor\'>;',
   },
@@ -5377,6 +5796,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SpillSource {\n    toolName: string;\n    callId: ToolCallId;\n    label: string;\n}',
   },
   {
+    name: 'StartChildRunResult',
+    declaration: 'export type StartChildRunResult = {\n    readonly ok: true;\n    readonly outcome: RunStartOutcome;\n} | {\n    readonly ok: false;\n    readonly rejection: SessionRunRejection;\n};',
+  },
+  {
+    name: 'StartedRun',
+    declaration: 'export interface StartedRun {\n    readonly run: AdmittedRun;\n    readonly reserved: RunBudget;\n}',
+  },
+  {
     name: 'StorageBackend',
     declaration: 'export interface StorageBackend {\n    readonly kv?: KvFacet;\n    close(): Promise<void>;\n}',
   },
@@ -5458,7 +5885,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentRuntime',
-    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    @Remote(\'list\')\n    async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>;\n    @Remote(\'prompt\')\n    async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>;\n    @Remote(\'interruptByParent\')\n    interruptByParent(childSessionId: SessionId, parentSessionId: SessionId, mode: \'continuable\'): SubagentInterruptReceipt;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[];\n    async start(name: string, request: SubagentStartRequest): Promise<SubagentRun>;\n}',
+    declaration: 'export class SubagentRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    onBeforeDelegate(hook: ChildDelegationHook): () => void;\n    async prepareDelegatedChild(parent: Agent, childId: SessionId): Promise<ChildDelegationRollback>;\n    async startContinuable(spec: ContinuableStartSpec): Promise<ContinuableStart>;\n    async sendMessage(sender: Agent, targetId: SessionId, content: ContentBlock[], options: SubagentSendMessageOptions): Promise<MessageId>;\n    interrupt(targetSessionId: SessionId, authority: SubagentInterruptAuthority): void;\n    async drainContinuableDescendants(parents: readonly Agent[]): Promise<void>;\n    async drainContinuableChildren(parent: Agent, childIds: readonly SessionId[]): Promise<void>;\n    listChildren(parentSessionId: SessionId, signal?: AbortSignal): Promise<SubagentListEntry[]>;\n    listDescendants(rootSessionId: SessionId, signal?: AbortSignal): Promise<SubagentDescendantListEntry[]>;\n    @Remote(\'list\')\n    async remoteExportList(parentSessionId: SessionId, signal: AbortSignal): Promise<SubagentCatalog>;\n    @Remote(\'prompt\')\n    async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>;\n    @Remote(\'interruptByParent\')\n    interruptByParent(childSessionId: SessionId, parentSessionId: SessionId, mode: \'continuable\'): SubagentInterruptReceipt;\n    registerProvider(provider: SubagentProvider): () => void;\n    getProvider(name: string): SubagentProvider | undefined;\n    list(): string[] /* …truncated — full shape in source */',
   },
   {
     name: 'SubagentSendMessageOptions',
@@ -5487,6 +5914,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SubprocessHandle',
     declaration: 'export interface SubprocessHandle {\n    readonly pid: number;\n    readonly stdin: Writable | undefined;\n    readonly stdout: Readable | undefined;\n    readonly stderr: Readable | undefined;\n    readonly collected: SubprocessCollectedOutputs;\n    readonly done: Promise<SubprocessOutcome>;\n    terminate(): void;\n    waitForExit(signal?: AbortSignal): Promise<boolean>;\n}',
+  },
+  {
+    name: 'SubprocessLaunched',
+    declaration: 'export interface SubprocessLaunched {\n    readonly executable: string;\n    readonly cwd: string;\n    readonly pid: number;\n    readonly kind: SubprocessLaunchKind;\n}',
+  },
+  {
+    name: 'SubprocessLaunchKind',
+    declaration: 'export type SubprocessLaunchKind = \'process\' | \'terminal\';',
   },
   {
     name: 'SubprocessOutcome',
@@ -5605,6 +6040,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TeamWaitResult {\n    readonly timedOut: boolean;\n}',
   },
   {
+    name: 'TenantAllowance',
+    declaration: 'export interface TenantAllowance {\n    readonly grant: RunBudget;\n    readonly consumed: RunSpend;\n}',
+  },
+  {
     name: 'TerminalBackend',
     declaration: 'export interface TerminalBackend {\n    readonly type: string;\n    spawn(spec: TerminalBackendSpawnSpec): Promise<TerminalBackendSession>;\n}',
   },
@@ -5698,7 +6137,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'TokenUsage',
-    declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    totalTokens?: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n}',
+    declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    totalTokens?: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n    costMicroUsd?: number;\n}',
   },
   {
     name: 'ToolCallKind',
@@ -5921,6 +6360,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
   },
   {
+    name: 'UserId',
+    declaration: 'export type UserId = Branded<\'UserId\'>;',
+  },
+  {
     name: 'UserMessage',
     declaration: 'export interface UserMessage extends Message {\n    readonly role: \'user\';\n}',
   },
@@ -6123,6 +6566,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceFollowIncrement',
     declaration: 'export type WorkspaceFollowIncrement = {\n    readonly type: \'upsert\';\n    readonly workspace: WorkspaceView;\n} | {\n    readonly type: \'remove\';\n    readonly workspaceId: WorkspaceId;\n} | {\n    readonly type: \'order\';\n    readonly workspaceIds: readonly WorkspaceId[];\n} | {\n    readonly type: \'archived\';\n    readonly archivedSessionIds: readonly SessionId[];\n};',
+  },
+  {
+    name: 'WorkspaceGrantId',
+    declaration: 'export type WorkspaceGrantId = Branded<\'WorkspaceGrantId\'>;',
+  },
+  {
+    name: 'WorkspaceGrantRecord',
+    declaration: 'export interface WorkspaceGrantRecord {\n    readonly id: WorkspaceGrantId;\n    readonly userId: UserId;\n    readonly deviceId: DeviceId;\n    readonly roots: readonly string[];\n    readonly mode: SandboxMode;\n    readonly version: number;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly revokedAt: number | undefined;\n}',
+  },
+  {
+    name: 'WorkspaceGrantRejection',
+    declaration: 'export type WorkspaceGrantRejection = \'not-found\' | \'revoked\' | \'tenant-mismatch\' | \'device-mismatch\' | \'not-inherited\';',
   },
   {
     name: 'WorkspaceInsertBeforeRequest',

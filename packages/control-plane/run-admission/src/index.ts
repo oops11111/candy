@@ -32,6 +32,16 @@ import {
   type CredentialRejection,
 } from '@deepseek-ai/dsh-credential-vault'
 import {
+  hasRemainingBudget,
+  type RunBudget,
+} from '@deepseek-ai/dsh-run-budget'
+import type { ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import {
+  admitWorkspaceGrant,
+  type WorkspaceGrantRecord,
+  type WorkspaceGrantRejection,
+} from '@deepseek-ai/dsh-workspace-grant'
+import {
   runtimePoolKey,
   runtimePoolRoot,
   type RuntimePoolKey,
@@ -61,13 +71,98 @@ export interface RunAdmissionPolicy {
   /** Absolute directory holding every runtime pool's root. */
   readonly poolBase: string
   /**
+   * Look up the allowance this run will be started against.
+   *
+   * For a root run that is the tenant's remaining allowance. For a child run —
+   * one whose claims carry a `parentRunId` — it is the PARENT's remaining
+   * allowance, which a deployment reads from its `dsh-run-ledger`. Answering
+   * the tenant's budget for a child would make this check meaningless: a tenant
+   * with plenty left can have an exhausted parent, and the child would then be
+   * refused only when its allowance is reserved — one step after its
+   * single-use nonce was spent and its credential opened.
+   *
+   * The check is "has this run anything at all to spend", not a promise that a
+   * particular child request will fit. A parent with one token left admits a
+   * child that `RunLedger.openChild` then refuses, which is the residue of
+   * checking an allowance before its size is known.
+   *
+   * Returning `undefined` denies the run: a tenant the budget store does not
+   * know is not a tenant with unlimited budget. A deployment that means
+   * "unmetered" says so with an explicit large allowance rather than by
+   * omitting the record.
+   */
+  readonly findBudget: (claims: ExecutionAssertionClaims) => Promise<RunBudget | undefined>
+  /**
    * Record one assertion's nonce as spent.
    *
    * Returns true when this nonce had not been seen, and false when it had —
-   * which denies the run. The store is tenant-partitioned and durable in a
-   * real deployment; this module never retries a spent nonce.
+   * which denies the run. This module never retries a spent nonce, so the
+   * store is the whole of replay protection: it decides in one indivisible
+   * step, holds a record while its assertion stays admissible, and partitions
+   * by tenant. `dsh-run-replay` satisfies all three for one process; a
+   * deployment running more than one needs a durable store that still does.
    */
   readonly spendNonce: (claims: ExecutionAssertionClaims) => Promise<boolean>
+  /**
+   * Report the run already driving the session these claims name.
+   *
+   * A model request carries the session it was assembled for and nothing else
+   * that could identify a run, so a session driven by two runs at once is
+   * spend nobody can attribute. This refuses the second run where the conflict
+   * is created, rather than leaving every later call in that session to be
+   * refused one at a time.
+   *
+   * It runs before the nonce is spent, so a run refused here can be retried
+   * with the same assertion once the session is free — a nonce burned on a
+   * conflict the caller did not cause would make the refusal permanent.
+   *
+   * A deployment whose control plane mints one session per run answers
+   * `undefined` always; `dsh-run-scheduler` answers from its own runtime's run
+   * records. A child run is not exempt: it needs a session of its own for the
+   * same reason its parent does.
+   */
+  readonly findSessionRun: (claims: ExecutionAssertionClaims) => Promise<RunId | undefined>
+  /**
+   * Report the identity the parent run these claims name was admitted for.
+   *
+   * A child inherits a subset of its parent's grants and may not widen any of
+   * them, so a child naming another tenant or another account is refused: the
+   * parent held exactly one of each, and neither of a pair is a subset of the
+   * other. Without the check, a child of one tenant runs on the other's
+   * credential while its spend settles into the parent's tree — the parent's
+   * tenant funds work it never authorized, and the child's tenant is billed
+   * nothing.
+   *
+   * Answering `undefined` for a parent this deployment does not know leaves
+   * the refusal to the budget lookup, which already denies a child whose
+   * parent holds no allowance.
+   *
+   * It is asked only about a run that has a parent, so it takes that parent's
+   * id rather than the claims naming it.
+   */
+  readonly findParentIdentity: (
+    parentRunId: RunId,
+  ) => Promise<{
+    readonly userId: UserId
+    readonly accountId: ProviderAccountId
+    /** The workspace grant the parent run was admitted with; a child may name no other. */
+    readonly workspaceGrantId: WorkspaceGrantId
+  } | undefined>
+  /**
+   * Read the workspace grant these claims name.
+   *
+   * An assertion carries a grant id and nothing else about the filesystem, so
+   * this is what turns that id into authority a run actually holds. Answering
+   * `undefined` denies the run: a grant the deployment does not hold is never
+   * an unlimited one.
+   *
+   * The record's roots are not read here. They are spelled for the device that
+   * issued them, and deciding whether a path lies under one is that device's
+   * filesystem semantics; this step decides only that the run may hold the
+   * grant at all, and the enforcement of its roots belongs where the file
+   * operation happens.
+   */
+  readonly findWorkspaceGrant: (id: WorkspaceGrantId) => Promise<WorkspaceGrantRecord | undefined>
   /** Look up the sealed credential for the tenant and account the assertion names. */
   readonly findCredential: (claims: ExecutionAssertionClaims) => Promise<CredentialEnvelope | undefined>
 }
@@ -76,14 +171,50 @@ export interface RunAdmissionPolicy {
 export interface AdmittedRun {
   /** The verified assertion claims; the source of every identity below. */
   readonly claims: ExecutionAssertionClaims
-  /** The opened provider credential. The caller owns its lifetime. */
+  /**
+   * The opened provider credential. The caller owns its lifetime.
+   *
+   * It does not survive `JSON.stringify`: the property is not enumerable, and
+   * {@link AdmittedRun.toJSON} replaces it with a marker. Logging an admitted
+   * run is the first thing an operator does with one, and a plain object would
+   * put a tenant's decrypted provider key in that log a byte at a time.
+   * Reading `run.secret` is unaffected, which is what a caller launching the
+   * provider does.
+   */
   readonly secret: Uint8Array
+  /**
+   * The run without its credential, for anything that serializes it.
+   *
+   * @returns every other field, with `secret` replaced by a marker.
+   */
+  toJSON: () => Omit<AdmittedRun, 'secret' | 'toJSON'> & { secret: string }
   /** The pool this run's provider process belongs to. */
   readonly poolKey: RuntimePoolKey
   /** The one directory that pool owns. */
   readonly poolRoot: string
-  /** The vault's record of opening the credential, for the caller's audit store. */
-  readonly credentialAudit: CredentialAuditEvent
+  /**
+   * The allowance this run was admitted against, exactly as `findBudget`
+   * answered it.
+   *
+   * For a root run it is what the run may spend, and a caller opens it in a
+   * ledger with this. For a child run it is the parent's remaining allowance —
+   * the ceiling on what could be delegated, not what the child gets, which the
+   * caller decides when it reserves the child's own share.
+   *
+   * Nothing here decrements it: admission is one read, and a spend needs the
+   * durable write this module does not own.
+   */
+  readonly budget: RunBudget
+  /**
+   * The workspace grant this run was admitted against, exactly as
+   * `findWorkspaceGrant` answered it.
+   *
+   * It carries the roots and the file-effect ceiling a caller enforces at the
+   * filesystem, and the `version` those were read at — so a check made later,
+   * against a grant an operator has since narrowed, can tell that it has
+   * moved rather than silently honouring what the run was given.
+   */
+  readonly workspace: WorkspaceGrantRecord
 }
 
 /**
@@ -91,31 +222,92 @@ export interface AdmittedRun {
  *
  * The stage is for operator diagnostics; every value denies the run, and a
  * caller cannot retry into a weaker check.
+ *
+ * Every stage past `assertion` carries the verified claims, because a denial
+ * a caller cannot attribute is not a record of anything: a replayed nonce is
+ * this module's clearest attack signal, and reporting only that some token was
+ * replayed leaves the tenant, account, and run out of the caller's log. The
+ * claims travel on the stage rather than beside it so that reading them is
+ * possible exactly where they exist. The `assertion` stage carries none: it
+ * denied the token before any claim was verified, and the unverified payload
+ * is the caller-supplied identity this control plane refuses to repeat.
  */
 export type RunRejection =
   | { readonly stage: 'assertion'; readonly reason: ExecutionAssertionRejection }
-  | { readonly stage: 'replay'; readonly reason: 'nonce-already-spent' }
-  | { readonly stage: 'credential'; readonly reason: 'not-found' | CredentialRejection }
+  | {
+    readonly stage: 'budget'
+    readonly reason: 'no-budget' | 'exhausted'
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'lineage'
+    readonly reason: 'tenant-mismatch' | 'account-mismatch'
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'workspace'
+    readonly reason: WorkspaceGrantRejection
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'session'
+    readonly reason: 'already-driven'
+    /** The run already driving the session these claims name. */
+    readonly holder: RunId
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'replay'
+    readonly reason: 'nonce-already-spent'
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
+    readonly stage: 'credential'
+    readonly reason: 'not-found' | CredentialRejection
+    readonly claims: ExecutionAssertionClaims
+  }
 
-/** The outcome of one scheduling attempt. */
+/**
+ * The outcome of one scheduling attempt.
+ *
+ * Both branches carry `audits`, and that is the point: a credential the vault
+ * refused to open for this tenant is what an operator needs afterwards, so no
+ * path here discards a record the vault produced. `openCredential` returns an
+ * audit on its failing branch as well as its succeeding one; dropping the
+ * failing one would lose exactly the cross-tenant access attempt the vault
+ * detected.
+ *
+ * `audits` holds vault records only, so it is empty for a denial that never
+ * reached the vault. Those denials are not unrecorded: a refused token, an
+ * exhausted budget, and a replayed nonce are reported through `rejection`,
+ * which carries the verified claims for every stage that has them.
+ */
 export type RunAdmission =
-  | { readonly admitted: true; readonly run: AdmittedRun }
-  | { readonly admitted: false; readonly rejection: RunRejection }
+  | { readonly admitted: true; readonly run: AdmittedRun; readonly audits: readonly CredentialAuditEvent[] }
+  | {
+    readonly admitted: false
+    readonly rejection: RunRejection
+    /** Every vault record the attempt produced; empty when it was refused before the vault was reached. */
+    readonly audits: readonly CredentialAuditEvent[]
+  }
 
 /**
  * Admit one run, or say which step denied it.
  *
  * Steps run in this order, and the order is the contract. The assertion is
  * verified first, so nothing downstream sees an unauthenticated claim. The
- * nonce is spent second, so a replayed token cannot drive repeated credential
- * reads even though it would fail later anyway. The credential is opened
- * third, under the binding the claims carry. The pool is resolved last,
- * because it needs no secret.
+ * budget is read second: it is the one denial a caller can fix and retry, so
+ * it must not burn the nonce, and it touches no secret. The nonce is spent
+ * third, serializing concurrent duplicates so two copies of one token cannot
+ * both reach the credential. The credential is opened fourth, under the
+ * binding the claims carry. The pool is resolved last, because it needs no
+ * secret.
  *
  * @param request - the scheduling attempt, carrying only a token.
  * @param policy - the runtime's expectation, keys, pool base, and stores.
  * @param now - epoch milliseconds from the caller's clock.
- * @returns the admitted run, or the first rejection that denied it.
+ * @returns the admitted run or the first rejection that denied it, either way
+ * with every audit record the attempt produced.
  * @throws RangeError when the assertion secret, a keyring key, or the pool
  * base is unusable, since each is a deployment error rather than a denied run.
  */
@@ -126,22 +318,69 @@ export async function admitRun(
 ): Promise<RunAdmission> {
   const assertion = admitExecutionAssertion(request.token, policy.assertionSecret, policy.expectation, now)
   if (!assertion.admitted) {
-    return { admitted: false, rejection: { stage: 'assertion', reason: assertion.rejection } }
+    return { admitted: false, rejection: { stage: 'assertion', reason: assertion.rejection }, audits: [] }
   }
   const { claims } = assertion
 
+  // Budget is checked before the nonce is spent, and the order is deliberate.
+  // An exhausted budget is the one denial here a caller can fix and retry —
+  // topping up and presenting the same still-valid assertion — so burning its
+  // single-use token would turn a recoverable refusal into a round trip to the
+  // control plane. It is also a cheap read that touches no secret.
+  const parent = claims.parentRunId === undefined
+    ? undefined
+    : await policy.findParentIdentity(claims.parentRunId)
+  const lineage = parentMismatch(parent, claims)
+  if (lineage !== undefined) {
+    return { admitted: false, rejection: { stage: 'lineage', reason: lineage, claims }, audits: [] }
+  }
+
+  // Filesystem authority is resolved beside the other inherited grants and
+  // before the nonce, so a run refused for a revoked or foreign grant can be
+  // retried once an operator reissues one.
+  const workspace = admitWorkspaceGrant({
+    userId: claims.userId,
+    deviceId: claims.deviceId,
+    grantId: claims.workspaceGrantId,
+    parentGrantId: parent?.workspaceGrantId,
+  }, await policy.findWorkspaceGrant(claims.workspaceGrantId))
+  if (!workspace.admitted) {
+    return { admitted: false, rejection: { stage: 'workspace', reason: workspace.rejection, claims }, audits: [] }
+  }
+
+  const budget = await policy.findBudget(claims)
+  if (budget === undefined) {
+    return { admitted: false, rejection: { stage: 'budget', reason: 'no-budget', claims }, audits: [] }
+  }
+  if (!hasRemainingBudget(budget)) {
+    return { admitted: false, rejection: { stage: 'budget', reason: 'exhausted', claims }, audits: [] }
+  }
+
+  // The nonce is spent next rather than last: it serializes concurrent
+  // duplicates, so two copies of one token cannot both reach the credential.
+  const holder = await policy.findSessionRun(claims)
+  if (holder !== undefined) {
+    return { admitted: false, rejection: { stage: 'session', reason: 'already-driven', holder, claims }, audits: [] }
+  }
+
   if (!await policy.spendNonce(claims)) {
-    return { admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent' } }
+    return { admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent', claims }, audits: [] }
   }
 
   const envelope = await policy.findCredential(claims)
   if (envelope === undefined) {
-    return { admitted: false, rejection: { stage: 'credential', reason: 'not-found' } }
+    return { admitted: false, rejection: { stage: 'credential', reason: 'not-found', claims }, audits: [] }
   }
   const binding = { userId: claims.userId, accountId: claims.accountId }
   const opened = openCredential(envelope, binding, policy.keyring, now)
   if (!opened.opened) {
-    return { admitted: false, rejection: { stage: 'credential', reason: opened.rejection } }
+    // The vault recorded this refusal; a binding mismatch here is a tenant
+    // reaching for another tenant's credential, which must not go unlogged.
+    return {
+      admitted: false,
+      rejection: { stage: 'credential', reason: opened.rejection, claims },
+      audits: [opened.audit],
+    }
   }
 
   const poolKey = runtimePoolKey({
@@ -151,12 +390,59 @@ export async function admitRun(
   })
   return {
     admitted: true,
-    run: {
+    audits: [opened.audit],
+    run: admittedRun({
       claims,
       secret: opened.secret,
       poolKey,
       poolRoot: runtimePoolRoot(policy.poolBase, poolKey),
-      credentialAudit: opened.audit,
-    },
+      budget,
+      workspace: workspace.grant,
+    }),
   }
+}
+
+/** Stands in for the credential wherever an admitted run is serialized. */
+const REDACTED_SECRET = '[redacted]'
+
+/**
+ * Build one admitted run whose credential does not serialize.
+ *
+ * `secret` is defined non-enumerably and `toJSON` replaces it, so neither
+ * `JSON.stringify` nor a spread of the run's own enumerable keys carries the
+ * tenant's decrypted provider key into a log. Every other field is an ordinary
+ * property, because they are what a diagnostic is for.
+ *
+ * @param fields - the run's fields, credential included.
+ * @returns the admitted run, with the credential readable but not serializable.
+ */
+function admittedRun(fields: Omit<AdmittedRun, 'toJSON'>): AdmittedRun {
+  const { secret, ...rest } = fields
+  const run = {
+    ...rest,
+    toJSON: () => ({ ...rest, secret: REDACTED_SECRET }),
+  } as AdmittedRun
+  Object.defineProperty(run, 'secret', { value: secret, enumerable: false })
+  return run
+}
+
+
+/**
+ * The identity grant a child would widen, if any.
+ *
+ * A root run has no parent to inherit from, and a parent this deployment does
+ * not know is left to the budget lookup, which denies a child whose parent
+ * holds no allowance.
+ * @param parent - the parent run's admitted identity, absent for a root run
+ *   and for a parent this deployment does not hold.
+ * @param claims - the verified claims of the run being admitted.
+ * @returns the mismatched grant, or `undefined` when the child inherits both.
+ */
+function parentMismatch(
+  parent: { readonly userId: UserId; readonly accountId: ProviderAccountId } | undefined,
+  claims: ExecutionAssertionClaims,
+): 'tenant-mismatch' | 'account-mismatch' | undefined {
+  if (parent === undefined) return undefined
+  if (parent.userId !== claims.userId) return 'tenant-mismatch'
+  return parent.accountId === claims.accountId ? undefined : 'account-mismatch'
 }

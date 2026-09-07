@@ -1,5 +1,6 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import type { WorkspaceGrantRecord } from '@deepseek-ai/dsh-workspace-grant'
 import {
   CredentialKeyVersion,
   revokeCredential,
@@ -8,8 +9,10 @@ import {
   type CredentialKeyring,
 } from '@deepseek-ai/dsh-credential-vault'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
+import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import { runtimePoolKey, runtimePoolRoot } from '@deepseek-ai/dsh-runtime-pool'
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 import { describe, expect, it } from 'vitest'
 import { admitRun, type RunAdmissionPolicy } from '../src/index.ts'
 
@@ -19,6 +22,7 @@ const NOW = 1_800_000_000_000
 const LIFETIME = 60_000
 const POOL_BASE = '/srv/candy/pools'
 const API_KEY = Buffer.from('sk-alice-deepseek', 'utf8')
+const BUDGET: RunBudget = { tokens: 100_000, wallMs: 600_000, costMicroUsd: 5_000_000, children: 4 }
 
 const EXPECTATION = {
   issuer: 'candy-control-plane',
@@ -51,25 +55,55 @@ function claims(overrides: Partial<ExecutionAssertionClaims> = {}): ExecutionAss
   }
 }
 
+/** The grant the default claims name, held by the tenant and device they name. */
+const GRANT: WorkspaceGrantRecord = {
+  id: WorkspaceGrantId('grant-1'),
+  userId: UserId('user-alice'),
+  deviceId: DeviceId('device-1'),
+  roots: ['/srv/candy/alice'],
+  mode: 'workspace-write',
+  version: 1,
+  createdAt: NOW,
+  updatedAt: NOW,
+  revokedAt: undefined,
+}
+
+/** A second tenant's grant, so a case naming that tenant names its own. */
+const STRANGER_GRANT: WorkspaceGrantRecord = {
+  ...GRANT,
+  id: WorkspaceGrantId('grant-2'),
+  userId: UserId('user-bobby'),
+  roots: ['/srv/candy/bobby'],
+}
+
+/** The stored grants, read by id exactly as a deployment's store answers. */
+const GRANTS = new Map([[GRANT.id, GRANT], [STRANGER_GRANT.id, STRANGER_GRANT]])
+
 function sealedFor(subject: ExecutionAssertionClaims): CredentialEnvelope {
   return sealCredential(
     API_KEY, { userId: subject.userId, accountId: subject.accountId }, KEYRING, NOW,
   ).envelope
 }
 
-/** A policy whose stores answer for exactly one tenant, with a one-shot nonce set. */
+/**
+ * A policy whose credential store answers for exactly one tenant.
+ *
+ * The replay store is the real one rather than a double: a `Set` of nonces
+ * would pass every case here while conflating two tenants that were issued the
+ * same value, which is the contract `dsh-run-replay` exists to hold.
+ */
 function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy {
-  const spent = new Set<string>()
+  const replay = new RunReplayStore()
   return {
     expectation: EXPECTATION,
     assertionSecret: ASSERTION_SECRET,
     keyring: KEYRING,
     poolBase: POOL_BASE,
-    spendNonce: (subject) => {
-      if (spent.has(subject.nonce)) return Promise.resolve(false)
-      spent.add(subject.nonce)
-      return Promise.resolve(true)
-    },
+    findBudget: () => Promise.resolve(BUDGET),
+    spendNonce: subject => Promise.resolve(replay.spend(subject, NOW)),
+    findSessionRun: () => Promise.resolve(undefined),
+    findParentIdentity: () => Promise.resolve(undefined),
+    findWorkspaceGrant: id => Promise.resolve(GRANTS.get(id)),
     findCredential: subject => Promise.resolve(
       subject.userId === UserId('user-alice') ? sealedFor(subject) : undefined,
     ),
@@ -89,7 +123,7 @@ describe('admitRun', () => {
     expect(admission.run.claims).toEqual(subject)
     expect(Buffer.from(admission.run.secret).toString('utf8')).toBe('sk-alice-deepseek')
     expect(admission.run.poolRoot.startsWith(`${POOL_BASE}/`)).toBe(true)
-    expect(admission.run.credentialAudit).toMatchObject({ action: 'open', outcome: 'ok' })
+    expect(admission.audits).toMatchObject([{ action: 'open', outcome: 'ok' }])
   })
 
   it('places the run in the pool the signed provider names', async () => {
@@ -128,8 +162,42 @@ describe('admitRun', () => {
       findCredential: () => { looked = true; return Promise.resolve(undefined) },
     }), NOW)
 
-    expect(admission).toEqual({ admitted: false, rejection: { stage: 'assertion', reason: 'audience' } })
+    expect(admission).toEqual({ admitted: false, rejection: { stage: 'assertion', reason: 'audience' }, audits: [] })
     expect(looked).toBe(false)
+  })
+
+  it('names the tenant behind every denial past the assertion', async () => {
+    // A caller's whole account of a refused attempt is `rejection`; a denial it
+    // cannot attribute records that something was refused and not who by.
+    const subject = claims({ userId: UserId('user-bobby') })
+    const token = mintExecutionAssertion(subject, ASSERTION_SECRET)
+    const shared = policy()
+
+    const unknownCredential = await admitRun({ token }, shared, NOW)
+    const replayed = await admitRun({ token }, shared, NOW)
+    const unfunded = await admitRun(
+      { token: mintExecutionAssertion(subject, ASSERTION_SECRET) },
+      policy({ findBudget: () => Promise.resolve(undefined) }),
+      NOW,
+    )
+
+    for (const denial of [unknownCredential, replayed, unfunded]) {
+      expect(denial.admitted).toBe(false)
+      if (denial.admitted || denial.rejection.stage === 'assertion') throw new Error('expected an attributable denial')
+      expect(denial.rejection.claims).toEqual(subject)
+    }
+  })
+
+  it('attributes no identity to a token it never verified', async () => {
+    // The unverified payload is the caller-supplied tenant this control plane
+    // exists to refuse, so an assertion-stage denial names nobody.
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+
+    const admission = await admitRun({ token }, policy(), NOW + LIFETIME)
+
+    expect(admission).toEqual({
+      admitted: false, rejection: { stage: 'assertion', reason: 'expired' }, audits: [],
+    })
   })
 
   it('denies a replayed token on its second use', async () => {
@@ -141,8 +209,27 @@ describe('admitRun', () => {
 
     expect(first.admitted).toBe(true)
     expect(second).toEqual({
-      admitted: false, rejection: { stage: 'replay', reason: 'nonce-already-spent' },
+      admitted: false,
+      rejection: { stage: 'replay', reason: 'nonce-already-spent', claims: claims() },
+      audits: [],
     })
+  })
+
+  it('admits two tenants issued the same nonce value', async () => {
+    // A replay store keyed by the nonce alone passes every other case here and
+    // fails this one, letting whichever tenant arrives first deny the other.
+    const shared = policy({ findCredential: subject => Promise.resolve(sealedFor(subject)) })
+    const alice = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    const bobby = mintExecutionAssertion(
+      claims({ userId: UserId('user-bobby'), workspaceGrantId: STRANGER_GRANT.id }),
+      ASSERTION_SECRET,
+    )
+
+    const first = await admitRun({ token: alice }, shared, NOW)
+    const second = await admitRun({ token: bobby }, shared, NOW)
+
+    expect(first.admitted).toBe(true)
+    expect(second.admitted).toBe(true)
   })
 
   it('spends the nonce before reading a credential', async () => {
@@ -158,12 +245,15 @@ describe('admitRun', () => {
   })
 
   it('denies a tenant whose account has no stored credential', async () => {
-    const token = mintExecutionAssertion(claims({ userId: UserId('user-bobby') }), ASSERTION_SECRET)
+    const stranger = claims({ userId: UserId('user-bobby'), workspaceGrantId: STRANGER_GRANT.id })
+    const token = mintExecutionAssertion(stranger, ASSERTION_SECRET)
 
     const admission = await admitRun({ token }, policy(), NOW)
 
     expect(admission).toEqual({
-      admitted: false, rejection: { stage: 'credential', reason: 'not-found' },
+      admitted: false,
+      rejection: { stage: 'credential', reason: 'not-found', claims: stranger },
+      audits: [],
     })
   })
 
@@ -174,7 +264,7 @@ describe('admitRun', () => {
       findCredential: subject => Promise.resolve(revokeCredential(sealedFor(subject), NOW).envelope),
     }), NOW)
 
-    expect(admission).toEqual({
+    expect(admission).toMatchObject({
       admitted: false, rejection: { stage: 'credential', reason: 'revoked' },
     })
   })
@@ -187,7 +277,7 @@ describe('admitRun', () => {
       findCredential: () => Promise.resolve(foreign),
     }), NOW)
 
-    expect(admission).toEqual({
+    expect(admission).toMatchObject({
       admitted: false, rejection: { stage: 'credential', reason: 'binding-mismatch' },
     })
   })
@@ -205,7 +295,7 @@ describe('admitRun', () => {
       findCredential: () => Promise.resolve(relabelled),
     }), NOW)
 
-    expect(admission).toEqual({
+    expect(admission).toMatchObject({
       admitted: false, rejection: { stage: 'credential', reason: 'corrupt' },
     })
   })
@@ -215,6 +305,229 @@ describe('admitRun', () => {
 
     const admission = await admitRun({ token }, policy(), NOW + LIFETIME)
 
-    expect(admission).toEqual({ admitted: false, rejection: { stage: 'assertion', reason: 'expired' } })
+    expect(admission).toEqual({ admitted: false, rejection: { stage: 'assertion', reason: 'expired' }, audits: [] })
+  })
+})
+
+describe('the audit trail a denied run leaves', () => {
+  it('records the vault refusal when one tenant reaches for another\'s credential', async () => {
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    const foreign = sealedFor(claims({ userId: UserId('user-bobby') }))
+
+    const admission = await admitRun({ token }, policy({
+      findCredential: () => Promise.resolve(foreign),
+    }), NOW)
+
+    // The single most security-relevant event here: the vault detected it, so
+    // the admission must hand it on rather than drop it with the rejection.
+    expect(admission.audits).toEqual([{
+      action: 'open',
+      userId: UserId('user-alice'),
+      accountId: ProviderAccountId('account-1'),
+      keyVersion: KEY_VERSION,
+      at: NOW,
+      outcome: 'binding-mismatch',
+    }])
+  })
+
+  it('records the vault refusal for a revoked credential', async () => {
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+
+    const admission = await admitRun({ token }, policy({
+      findCredential: subject => Promise.resolve(revokeCredential(sealedFor(subject), NOW).envelope),
+    }), NOW)
+
+    expect(admission.audits).toMatchObject([{ action: 'open', outcome: 'revoked' }])
+  })
+
+  it('records the vault refusal for a tampered envelope', async () => {
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    const relabelled: CredentialEnvelope = {
+      ...sealedFor(claims({ userId: UserId('user-bobby') })),
+      userId: UserId('user-alice'),
+    }
+
+    const admission = await admitRun({ token }, policy({
+      findCredential: () => Promise.resolve(relabelled),
+    }), NOW)
+
+    expect(admission.audits).toMatchObject([{ action: 'open', outcome: 'corrupt' }])
+  })
+
+  it.each([
+    ['a token this runtime does not admit', () => policy(), () => claims({ audience: 'another-runtime' })],
+    ['a tenant with no stored credential', () => policy(), () => claims({ userId: UserId('user-bobby') })],
+  ])('records nothing for %s, which the vault never saw', async (_case, made, subject) => {
+    const admission = await admitRun({ token: mintExecutionAssertion(subject(), ASSERTION_SECRET) }, made(), NOW)
+
+    // An empty trail is honest here: no credential was touched, so the vault
+    // produced no record to carry.
+    expect(admission.audits).toEqual([])
+  })
+
+  it('carries the same record shape whether the run was admitted or denied', async () => {
+    const admitted = await admitRun(
+      { token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy(), NOW,
+    )
+    const denied = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findCredential: subject => Promise.resolve(revokeCredential(sealedFor(subject), NOW).envelope),
+    }), NOW)
+
+    // One store accepts both, so an operator queries a tenant's history
+    // without joining two shapes.
+    expect(Object.keys(admitted.audits[0] ?? {}).sort()).toEqual(Object.keys(denied.audits[0] ?? {}).sort())
+  })
+})
+
+describe('the budget a run is admitted against', () => {
+  it('hands the caller the allowance to charge against', async () => {
+    const admission = await admitRun(
+      { token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy(), NOW,
+    )
+
+    expect(admission.admitted).toBe(true)
+    if (!admission.admitted) return
+    expect(admission.run.budget).toEqual(BUDGET)
+  })
+
+  it.each([
+    ['tokens', { tokens: 0 }],
+    ['wall time', { wallMs: 0 }],
+    ['money', { costMicroUsd: 0 }],
+  ])('refuses a tenant that has run out of %s', async (_case, spent) => {
+    const admission = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => Promise.resolve({ ...BUDGET, ...spent }),
+    }), NOW)
+
+    expect(admission).toEqual({
+      admitted: false,
+      rejection: { stage: 'budget', reason: 'exhausted', claims: claims() },
+      audits: [],
+    })
+  })
+
+  it('admits a run whose only exhausted dimension is child slots', async () => {
+    // A run with no delegation left can still do its own work; only the
+    // consumable dimensions stop it.
+    const admission = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => Promise.resolve({ ...BUDGET, children: 0 }),
+    }), NOW)
+
+    expect(admission.admitted).toBe(true)
+  })
+
+  it('refuses a tenant the budget store does not know', async () => {
+    // An absent record is not an unlimited one; a deployment that means
+    // unmetered says so with an explicit allowance.
+    const admission = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => Promise.resolve(undefined),
+    }), NOW)
+
+    expect(admission).toEqual({
+      admitted: false,
+      rejection: { stage: 'budget', reason: 'no-budget', claims: claims() },
+      audits: [],
+    })
+  })
+
+  it('leaves the nonce unspent so a topped-up tenant can retry the same token', async () => {
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    let remaining: RunBudget = { ...BUDGET, tokens: 0 }
+    const shared = policy({ findBudget: () => Promise.resolve(remaining) })
+
+    const refused = await admitRun({ token }, shared, NOW)
+    expect(refused).toMatchObject({ rejection: { stage: 'budget' } })
+
+    // The tenant tops up and presents the same still-valid assertion.
+    remaining = BUDGET
+    const retried = await admitRun({ token }, shared, NOW)
+
+    expect(retried.admitted).toBe(true)
+  })
+
+  it('reads no credential for a run it refuses on budget', async () => {
+    let looked = false
+    const admission = await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => Promise.resolve({ ...BUDGET, tokens: 0 }),
+      findCredential: () => { looked = true; return Promise.resolve(undefined) },
+    }), NOW)
+
+    expect(admission.admitted).toBe(false)
+    expect(looked).toBe(false)
+  })
+
+  it('checks the budget and the session before spending the nonce, and the credential after', async () => {
+    // Both refusals must precede the nonce: a run denied for a conflict it did
+    // not cause can be retried with the same assertion, and a burned nonce
+    // would make that refusal permanent.
+    const order: string[] = []
+
+    await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findBudget: () => { order.push('budget'); return Promise.resolve(BUDGET) },
+      findSessionRun: () => { order.push('session'); return Promise.resolve(undefined) },
+      spendNonce: () => { order.push('nonce'); return Promise.resolve(true) },
+      findCredential: (subject) => { order.push('credential'); return Promise.resolve(sealedFor(subject)) },
+    }), NOW)
+
+    expect(order).toEqual(['budget', 'session', 'nonce', 'credential'])
+  })
+
+  it.each([
+    ['tenant-mismatch', { userId: UserId('user-bobby'), accountId: ProviderAccountId('account-1'), workspaceGrantId: GRANT.id }],
+    ['account-mismatch', { userId: UserId('user-alice'), accountId: ProviderAccountId('account-9'), workspaceGrantId: GRANT.id }],
+  ])('refuses a child that widens its parent\'s grant: %s', async (reason, parent) => {
+    // The parent held exactly one tenant and one account, and neither of a pair
+    // is a subset of the other.
+    let spent = false
+
+    const refused = await admitRun({
+      token: mintExecutionAssertion(claims({ parentRunId: RunId('run-parent') }), ASSERTION_SECRET),
+    }, policy({
+      findParentIdentity: () => Promise.resolve(parent),
+      spendNonce: () => { spent = true; return Promise.resolve(true) },
+    }), NOW)
+
+    expect(refused).toMatchObject({ admitted: false, rejection: { stage: 'lineage', reason } })
+    expect(spent).toBe(false)
+  })
+
+  it('admits a child whose parent this deployment does not know, leaving the budget to deny it', async () => {
+    // A parent with no record is a parent with no allowance, which the budget
+    // lookup already reports; inventing a lineage refusal would hide that.
+    const refused = await admitRun({
+      token: mintExecutionAssertion(claims({ parentRunId: RunId('run-parent') }), ASSERTION_SECRET),
+    }, policy({
+      findParentIdentity: () => Promise.resolve(undefined),
+      findBudget: () => Promise.resolve(undefined),
+    }), NOW)
+
+    expect(refused).toMatchObject({ admitted: false, rejection: { stage: 'budget', reason: 'no-budget' } })
+  })
+
+  it('checks a root run\'s lineage against nothing at all', async () => {
+    let asked = false
+
+    await admitRun({ token: mintExecutionAssertion(claims(), ASSERTION_SECRET) }, policy({
+      findParentIdentity: () => { asked = true; return Promise.resolve(undefined) },
+    }), NOW)
+
+    expect(asked).toBe(false)
+  })
+
+  it('refuses a run whose session another run already drives, and keeps its nonce', async () => {
+    const held = RunId('run-already-driving')
+    const token = mintExecutionAssertion(claims(), ASSERTION_SECRET)
+    let spent = false
+
+    const refused = await admitRun({ token }, policy({
+      findSessionRun: () => Promise.resolve(held),
+      spendNonce: () => { spent = true; return Promise.resolve(true) },
+    }), NOW)
+
+    expect(refused).toMatchObject({
+      admitted: false,
+      rejection: { stage: 'session', reason: 'already-driven', holder: held, claims: { userId: UserId('user-alice'), sessionId: brandString<SessionId>('session-1') } },
+    })
+    expect(spent).toBe(false)
   })
 })

@@ -7,6 +7,12 @@ A service can be a core spine service, a swappable capability seam, or a bundle/
 
 ```mermaid
 flowchart LR
+  pkg_run_scheduler["run-scheduler"]
+  svc_runScheduler["ctx.runScheduler<br/>One Candy runtime's live run state"]
+  pkg_control_plane_store["control-plane-store"]
+  svc_controlPlaneStore["ctx.controlPlaneStore<br/>Durable Candy provider accounts and tenant allowances"]
+  pkg_run_admission["run-admission"]
+  pkg_provider_accounts["provider-accounts"]
   pkg_attachment["attachment"]
   svc_attachments["ctx.attachments<br/>Durable binary attachment storage"]
   pkg_attachment_local["attachment-local"]
@@ -242,6 +248,7 @@ flowchart LR
   pkg_compaction --> svc_compaction
   pkg_compaction_basic --> svc_compaction
   pkg_compaction_tool_result_pruner --> svc_toolResultPruner
+  pkg_control_plane_store --> svc_controlPlaneStore
   pkg_cordis_host_runner --> svc_cordisInspect
   pkg_cordis_host_runner --> svc_dynamicCordisRunner
   pkg_credentials --> svc_credentials
@@ -276,6 +283,7 @@ flowchart LR
   pkg_plan_mode --> svc_planMode
   pkg_plugin_package_inventory_deepseek --> svc_deepseekLlmApiExtensions
   pkg_pwsh_local --> svc_shell
+  pkg_run_scheduler --> svc_runScheduler
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
@@ -354,6 +362,8 @@ flowchart LR
   svc_clientModules --> pkg_client_hmr
   svc_codeRuntime --> pkg_tools
   svc_compaction --> pkg_compaction_basic
+  svc_controlPlaneStore --> pkg_provider_accounts
+  svc_controlPlaneStore --> pkg_run_admission
   svc_cordisInspect --> pkg_tool_cordis
   svc_credentials --> pkg_api_settings_controller
   svc_credentials --> pkg_llm_deepseek
@@ -465,6 +475,8 @@ flowchart LR
 
 | ctx key | Role | Owner | Implementations | Direct consumers | Companion plugins | Note |
 | --- | --- | --- | --- | --- | --- | --- |
+| `ctx.runScheduler` | `core` | [`run-scheduler`](../packages/control-plane/run-scheduler) | - | - | - | Owns the ledger and replay store a run is admitted against, composes the admission policy from the store, and drives the clock that releases a hold no settlement claimed. It starts the run a caller asks for; whether a tenant may start another is a decision nothing makes yet. |
+| `ctx.controlPlaneStore` | `core` | [`control-plane-store`](../packages/control-plane/control-plane-store) | - | [`run-admission`](../packages/control-plane/run-admission), [`provider-accounts`](../packages/control-plane/provider-accounts) | - | Holds the account and allowance records the admission ports read; a child run is still admitted against its parent's remainder, which the in-memory run ledger holds. |
 | `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | [`api-session-controller`](../packages/api/session-controller), [`tool-fs`](../packages/fs/tool-fs), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-deepseek`](../packages/llm/llm-deepseek) | - | The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content. |
 | `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | Adapters register provider implementations; the loop and compaction call the provider-neutral stream service. |
 | `ctx.deepseekLlmApiExtensions` | `seam` | [`deepseek-llm-api-extensions`](../packages/llm/deepseek-llm-api-extensions) | [`session-log-deepseek`](../packages/session/session-log-deepseek), [`plugin-package-inventory-deepseek`](../packages/llm/plugin-package-inventory-deepseek) | [`llm-deepseek`](../packages/llm/llm-deepseek) | - | Plugins prepare independent top-level fields; the official adapter merges them and commits their delivery state after HTTP acceptance. |

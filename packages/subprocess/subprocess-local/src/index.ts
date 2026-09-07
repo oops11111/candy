@@ -143,7 +143,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       extensions.map(extension => resolve(process.cwd(), directory, command + extension)))
   }
 
-  spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
+  protected override spawnProcess(spec: SubprocessSpawnSpec): SubprocessHandle {
     const handle = spawnSubprocess(spec, this.internals)
     this.live.add(handle)
     // Release ownership only once the whole TREE is gone, not at direct-child
@@ -158,7 +158,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
 
   // Local PTY allocation is synchronous, but the provider contract permits remote asynchronous allocation.
   // oxlint-disable-next-line typescript/require-await -- Preserve promise rejection semantics at the async provider contract.
-  async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+  protected override async spawnTerminalSession(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
     const file = spec.argv[0]
     if (file === undefined || file.length === 0) {
       throw new Error('subprocess-local: terminal argv must contain a program')

@@ -6,6 +6,7 @@ import {
   initApiKeySource,
   isCredentialIsolated,
   SCRUBBED_ROUTING_VARIABLES,
+  SCRUBBED_STATE_VARIABLES,
 } from '../src/index.ts'
 
 const ISOLATION = { home: '/srv/candy/pools/abc', apiKey: 'sk-ant-tenant' }
@@ -120,6 +121,29 @@ describe('claudeCliEnvironment', () => {
 
   it('never leaves the tenant key among the tombstones', () => {
     expect(SCRUBBED_ROUTING_VARIABLES).not.toContain('ANTHROPIC_API_KEY')
+    expect(SCRUBBED_STATE_VARIABLES).not.toContain('HOME')
+  })
+
+  it('tombstones every state-directory variable', () => {
+    const env = claudeCliEnvironment(ISOLATION)
+
+    for (const name of SCRUBBED_STATE_VARIABLES) {
+      expect(env).toHaveProperty(name)
+      expect(env[name]).toBeUndefined()
+    }
+  })
+
+  it('removes the redirects that would move the child state out of the pinned home', () => {
+    const env = claudeCliEnvironment(ISOLATION)
+
+    // Each names a directory the child would use instead of one under HOME, so
+    // a deployment that exports one gives every tenant the same directory
+    // while HOME still reads as isolated.
+    expect(env).toHaveProperty('CLAUDE_CONFIG_DIR', undefined)
+    expect(env).toHaveProperty('XDG_CONFIG_HOME', undefined)
+    expect(env).toHaveProperty('XDG_CACHE_HOME', undefined)
+    expect(env).toHaveProperty('XDG_DATA_HOME', undefined)
+    expect(env).toHaveProperty('XDG_STATE_HOME', undefined)
   })
 
   it.each([

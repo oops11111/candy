@@ -78,9 +78,30 @@ agent-presets:
 
 会话只有在尚未产出任何内容——没有消息或工具调用——时才能切换到不同的 preset。此后组装在会话的生命周期内固定，因为在对话中途调换工具会留下新组装无法执行的已记录工具调用。已提交的切换会发出 `tools/change`，因为解析后的工具集在没有注册表编辑的情况下发生了变化。切换也会记入会话日志，因此恢复或 fork 的会话会按它运行的组装重建。
 
+### 限制一个 agent 可以加入哪些 preset
+
+`AgentPresets.guard(guard)` 注册一个同步检查，由 `mount()` 和 `recompose()` 在组装或重新链接一个 agent 之前咨询——这是唯一会安装 agent 绑定的两个操作，因此在这里注册的守卫无法被任何其他调用路径绕过。返回一个字符串即以该原因拒绝这个 preset；返回 `undefined` 则交给下一个守卫决定，且没有任何守卫能强行放行另一个守卫已经拒绝的 preset：
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent-presets'
+
+declare const ctx: Context
+
+const stop = ctx.agentPresets.guard((agentCtx, id) => {
+  // agentCtx.agent is the constructing or re-linking Agent; a consumer
+  // resolves whatever identity it needs from there.
+  return agentCtx.agent?.id === 'blocked-session' ? 'not permitted' : undefined
+})
+```
+
+本包不携带任何"是谁在问、为什么问"的概念——守卫就是一个部署添加这类概念的方式，而无需教会名册一个它本不需要的概念。[`dsh-tenant-preset-policy`](../../control-plane/tenant-preset-policy/README.zh.md) 是第一个消费方：它把一个 Candy 租户限制在名册的一个已配置子集内。`standingKeyFor()` 的冷读、无 agent 的路径永远不会咨询守卫，因为那条路径不会启动任何 agent 或会话,也就没有任何守卫可以对之做出判断的对象。
+
 ### 失败与恢复
 
 组装缺失、无法解析、不是具名插件行列表，或者引用了无法解析的模块的 preset 会被列为 broken，原因会指名出问题的行；组装此类 preset 会被提前拒绝，因此会话绝不会以半组装状态启动。能活到会话创建的，是模块能加载但随后拒绝的行——抛错的插件，或等待组装从未提供的服务的插件——它会让创建失败并回滚，且会指名每一个失败的行，包括组内的行。修复 preset 的文件或删除它，然后重试。
+
+被注册的守卫拒绝的 preset 也会以同样的方式失败，代码为 `agent-preset/refused`，消息中带着守卫自己给出的原因；一次被拒绝的 `recompose()` 会让 agent 恰好留在它先前的组装上，与任何其他失败的切换一样。
 
 -----
 
@@ -98,6 +119,7 @@ agent-presets:
 - **代际以组装文件为键。** 挂载记录组装文件的 stamp（mtime 与大小）；发现 stamp 过期的会话会开启下一个代际，而已加入的会话保持各自运行的那个代际——运行中的会话在文件被修改或删除后继续存活。
 - **preset 文件是输入，绝不是持久化目标。** 被挂载的子树把 `write()` 覆写为空操作，因此 loader 发起的写回绝不会重写共享的 preset 文件。
 - **发现过程拥有健康。** 组装缺失或不可加载的目录是携带原因的 broken 名单行，而不是被跳过——被跳过的目录仍占着它的 id，而任何界面都没有可删的东西。
+- **守卫是名册唯一的策略接缝。** `resolveMountable`——`mount()` 与 `recompose()` 背后唯一的必经关口——是每一个已注册守卫被咨询的地方，因此本包永远不携带任何 Candy 专属（或任何其他消费方专属）的"谁被允许用什么"的概念；消费方通过一个普通函数把这个概念教给它。
 
 ### 源码地图
 

@@ -83,6 +83,8 @@ Checks run in order: token structure, version, signature, claim shape, issuer, a
 
 The current time is a parameter rather than a read of the process clock, so a scheduler that already has a decision timestamp admits against that instant and tests need no clock control.
 
+`maxLifetimeMs` must be a positive safe integer, and `admitExecutionAssertion` throws a `RangeError` rather than admit against a ceiling it cannot enforce: a `NaN` ceiling — what `Number(...)` returns for an unset environment variable — makes every lifetime comparison false and admits whatever span an assertion claims, while a zero or negative ceiling denies every run under `lifetime`, a rejection that names the issuer's span rather than the misconfigured runtime. Neither failure is visible in an admission result, so both are refused at the call.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -103,6 +105,8 @@ The token is `v1.<base64url payload>.<base64url HMAC-SHA256>`, the format `dsh-c
 ### What the signature covers
 
 The HMAC is computed over the received payload text, so admission never re-serializes a decoded object: JSON key order, whitespace, and duplicate-key handling cannot change what was verified. Payload and signature must both be canonical base64url — text that re-encodes to something else carried padding, an alphabet, or trailing bits a minted token never has, and is rejected as malformed. Signature comparison is length-checked and then constant-time.
+
+The version prefix is inside the MAC alongside the payload. It decides how the payload is read, and a signature over the payload alone verifies under any prefix — so once a `v2` claim set exists, a `v2` token relabelled `v1` would still verify and then be decoded by the `v1` reader. That is exactly the reinterpretation the version prefix exists to prevent, and only signing the version makes the prefix mean anything. The separator is the one the token already uses and cannot appear inside either segment, since both are base64url.
 
 ### Why identity cannot be supplied by a caller
 

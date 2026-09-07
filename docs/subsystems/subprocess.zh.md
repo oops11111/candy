@@ -308,7 +308,7 @@ abstract resolveExecutable( command: string, env?: Readonly<Record<string, strin
  * @param spec - argv, directory, stdio dispositions, grace, cancellation, and environment.
  * @returns the live process handle (streams/readers, signalling, outcome promise).
  */
-abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
+spawn(spec: SubprocessSpawnSpec): SubprocessHandle
 
 /**
  * Allocate a real terminal and start one owned process session. This is the
@@ -317,8 +317,38 @@ abstract spawn(spec: SubprocessSpawnSpec): SubprocessHandle
  * @param spec - fully specified argv, cwd, environment, dimensions, grace, and allocation cancellation.
  * @returns the live terminal handle after allocation succeeds.
  */
-abstract spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
+async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle>
 ```
 
 Source: [`packages/subprocess/subprocess/src/index.ts`](../../packages/subprocess/subprocess/src/index.ts)
+
+<a id="subprocess-events"></a>
+
+### `subprocess/*` events
+
+<a id="subprocesslaunched--emit"></a>
+
+#### `subprocess/launched` — emit
+
+One managed child process was started, emitted once per launch by the seam every spawner routes through, after the handle exists and its pid is known.
+
+The payload names the executable and where it ran, never the arguments or the environment. Attribution — which tenant, which run — belongs to a consumer that has it; this seam has no notion of either.
+
+```ts cordis-catalog
+/**
+ * One managed child process was started, emitted once per launch by the
+ * seam every spawner routes through, after the handle exists and its pid
+ * is known.
+ *
+ * The payload names the executable and where it ran, never the arguments
+ * or the environment. Attribution — which tenant, which run — belongs to a
+ * consumer that has it; this seam has no notion of either.
+ * @param launch - executable, working directory, pid (`-1` when the spawn
+ * failed), and whether the child owns a terminal.
+ * @mode emit
+ */
+'subprocess/launched'(launch: SubprocessLaunched): void
+```
+
+Source: [`packages/subprocess/subprocess/src/events.ts`](../../packages/subprocess/subprocess/src/events.ts)
 <!-- END GENERATED cordis-surface -->

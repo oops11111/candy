@@ -44,7 +44,7 @@ Status: implemented
 
 ## Consequences
 
-这条路由对一次性调用确实可用，对循环确实不可用，而 README 就是这么写的。随之而来两项代价。成本核算丢失了：终止帧的 `total_cost_usd` 包含 CLI 自身的辅助调用，而 `TokenUsage` 没有对应字段，因此 `maxBudgetUsd` 能给一次运行封顶却不报告它花了多少。重试分类也缺席：每种失败都映射到 `CLI_EXIT` 或 CLI 自己的 `terminal_reason`，而 CLI 还会在报告之前内部重试 —— 那对 `dsh-llm-retry` 是不可见的。
+这条路由对一次性调用确实可用，对循环确实不可用，而 README 就是这么写的。随之而来两项代价。成本核算只在终止时发生：usage chunk 把终止帧的 `total_cost_usd` 作为 `costMicroUsd` 携带，因此一次在该帧之前就死掉的运行，无论花了多少都不报告成本，而 `maxBudgetUsd` 仍独立于所报告的内容给一次运行封顶。重试分类也缺席：每种失败都映射到 `CLI_EXIT` 或 CLI 自己的 `terminal_reason`，而 CLI 还会在报告之前内部重试 —— 那对 `dsh-llm-retry` 是不可见的。
 
 组装测试关掉了隔离默认值，因为唯一带有模型输出的夹具是在不加 `--bare` 的情况下录制的，因而报告的是环境中现成的凭据。这一点被记为开发备注而不是被隐藏：录制一次隔离的成功运行需要 API 密钥，而产出这些夹具的机器只有一个 OAuth 会话，而 `--bare` 有意忽略它。默认值本身是有覆盖的 —— 另有一个组装测试断言它恰好会拒绝那份夹具。
 

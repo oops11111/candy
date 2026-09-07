@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-05-a-revocation-that-only-stopped-the-next-run.md
+2026-09-05-a-revocation-that-only-stopped-the-next-run.md: 5fa8f68ae3c9da6485af6d6f9f19b1ce38124899
+2026-09-05-a-revocation-that-only-stopped-the-next-run.zh.md: 80cd9c12ea409a0eead994ef52525b456587531b

@@ -42,6 +42,27 @@ describe('mapUsage', () => {
     expect(mapUsage({ input_tokens: -1, output_tokens: 2 })).not.toHaveProperty('totalTokens')
   })
 
+  it('carries the reported cost as rounded integer micro-USD', () => {
+    expect(mapUsage({ input_tokens: 1, output_tokens: 1 }, 0.0347348))
+      .toMatchObject({ costMicroUsd: 34_735 })
+  })
+
+  it('reports a zero cost, which is not the same as reporting none', () => {
+    expect(mapUsage({}, 0)).toMatchObject({ costMicroUsd: 0 })
+    expect(mapUsage({})).not.toHaveProperty('costMicroUsd')
+  })
+
+  it.each([
+    ['negative', -0.5],
+    ['not finite', Number.POSITIVE_INFINITY],
+    ['not a number', Number.NaN],
+    ['past safe integer range once scaled', Number.MAX_SAFE_INTEGER],
+  ])('omits a cost that is %s rather than repairing it', (_case, cost) => {
+    // A repaired figure would be charged to a tenant as though the CLI had
+    // reported it.
+    expect(mapUsage({}, cost)).not.toHaveProperty('costMicroUsd')
+  })
+
   it('does not surface invalid counters on the public usage fields', () => {
     expect(mapUsage({
       input_tokens: -1,

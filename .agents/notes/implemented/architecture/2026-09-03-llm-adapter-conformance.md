@@ -12,7 +12,7 @@ Those properties were each adapter's private business, which meant they were eac
 
 ## Decision
 
-`@deepseek-ai/dsh-llm-adapter-contract` states them once, as a suite an adapter's own spec file runs against itself. It ships eight cases: exactly one terminal chunk on a normal run, a terminal chunk on a failing one, settlement when cancelled before and during a run, release of an abandoned run, and no verbatim credential in any chunk, reported failure, or thrown error. Both `dsh-llm-deepseek` and `dsh-llm-claude-cli` run it — one over HTTP, one over a spawned process — which is what makes it a shared contract rather than one adapter's private tests written twice.
+`@deepseek-ai/dsh-llm-adapter-contract` states them once, as a suite an adapter's own spec file runs against itself. It ships eight cases: exactly one terminal chunk on a normal run, a terminal chunk on a failing one, settlement when cancelled before and during a run, release of an abandoned run, and no verbatim credential in any chunk, reported failure, or thrown error. Every adapter on the seam runs it — `dsh-llm-deepseek` and `dsh-llm-pi-ai` over HTTP, `dsh-llm-claude-cli` over a spawned process — which is what makes it a shared contract rather than one adapter's private tests written three times.
 
 ### It runs at the seam, not at the adapter
 
@@ -36,7 +36,7 @@ A credential reaches a caller through whichever field its adapter did not think 
 
 ## Consequences
 
-Two adapters now assert these properties on every run of the suite, and a third (`dsh-llm-pi-ai`) does not yet — adding it needs scripted failing and open runs against its own gateway stand-in, which is recorded as a Dev Note rather than silently left undone.
+Every adapter on the seam now asserts these properties on every run of the suite. `dsh-llm-pi-ai` was the last to join and passed all eight cases unchanged, which is the outcome a shared contract wants: the suite states properties an adapter written without it already had, rather than codifying whatever the adapter written alongside it happened to do. Its subject cost one addition to that package's mock server — holding a response open instead of ending it — because the abandonment case is the one scenario no ordinary provider stand-in scripts.
 
 Three of the plan's named fixtures — timeout, quota, crash — collapse into one case. Each of them reaches an adapter as a failed run, and the suite asserts what an adapter must do with a failure rather than how it was caused. An adapter that distinguishes them owes its own tests for the distinction. Malformed output is likewise absent here: it is a parsing concern each adapter owns against its own wire format, and `dsh-claude-cli-protocol` already covers it for the CLI.
 

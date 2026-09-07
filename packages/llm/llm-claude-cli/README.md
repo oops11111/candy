@@ -48,7 +48,7 @@ One user turn of text, a system prompt, a model id, and a reasoning effort. Ever
 |---|---|
 | One user message, text blocks only | Runs |
 | `system`, `model`, `reasoningEffort` (`low`…`max`) | Runs; each maps to a CLI flag |
-| More than one message | Refused — the CLI replays no assistant history |
+| More than one message | Refused — the CLI replays no assistant history, as measured |
 | A non-text block | Refused — the positional prompt carries text only |
 | `tools` | Refused — the CLI accepts no caller-supplied schemas |
 | `maxTokens`, `temperature`, `stop` | Refused — the CLI has no flag for them |
@@ -72,6 +72,8 @@ export const adapter = new ClaudeCliAdapter({
   cwd: run.poolRoot,
   isolation: { home: run.poolRoot, apiKey: Buffer.from(run.secret).toString('utf8') },
   graceMs: 5_000,
+  maxOutputBytes: 16 * 1024 * 1024,
+  maxStderrBytes: 8 * 1024,
   spawn: spec => subprocess.spawn(spec),
   requireCredentialIsolation: true,
 })
@@ -96,7 +98,9 @@ export const adapter = new ClaudeCliAdapter({
 
 ### Why history is refused rather than flattened
 
-The CLI's `--input-format stream-json` accepts only user messages, and each one it accepts starts its own turn with its own terminal frame — a recorded two-message input produced two `result` frames. It therefore replays no assistant history and cannot serve one model call. The alternative, rendering the conversation into the prompt as text, means inventing a transcript format this repository has no evidence for; getting it wrong degrades model output silently, and nothing in the harness would show it. The decision waits for a consumer that needs it.
+The CLI's `--input-format stream-json` looks like the way to hand it a conversation. A recorded run fed a user message, an assistant message, and a second user message — [`injected-history.jsonl`](../claude-cli-protocol/tests/fixtures/injected-history.jsonl) — settles what it does instead: two sessions, two `result` frames, one billed turn per user message, and the assistant message accepted and dropped with no frame reporting it. Nothing on that input reaches the model as prior assistant content.
+
+Flattening onto it would therefore not merely lose history; it would answer the wrong question. The translator settles on the first terminal frame, so the caller would receive the reply to the conversation's *first* message while the reply to its last — the one asked for — was discarded after being paid for. The remaining alternative, rendering the conversation into the prompt as text, means inventing a transcript format this repository has no evidence for; getting it wrong degrades model output silently, and nothing in the harness would show it. The decision waits for a consumer that needs it.
 
 ### Exactly one terminal chunk, three ways to get there
 
@@ -105,6 +109,26 @@ The CLI's terminal frame ends a normal run. When stdout closes without one, the 
 A run cut short still reports the counts it did send — the translator keeps the last `message_delta` usage precisely so a killed process is accounted for rather than silently free.
 
 ### The isolation check is enforced here, not merely reported
+
+### Why a failure is redacted
+
+A `result` frame's text becomes the failure message verbatim, so a CLI that quotes its credential back — in an authentication error, or any diagnostic that echoes its environment — would put the tenant's key in the session log and in front of the model. This package holds the injected key, and [`dsh-claude-cli-protocol`](../claude-cli-protocol/README.md) translates frames without knowing it, so the substitution happens here or nowhere.
+
+Only diagnostic text is rewritten. Model output is the tenant's own content, and silently editing it would corrupt a legitimate answer about, say, the shape of a key. The substitution itself is [`dsh-llm`](../llm/README.md)'s `redactChunkApiKey`, so every adapter on the seam removes a credential the same way.
+
+### Why stderr is collected rather than inherited
+
+Redaction can only reach text this adapter carries. `stderr: 'inherit'` hands the child the parent's own descriptor, so the CLI writes straight to the host's stream and this adapter never sees a byte of it — and what the CLI writes there is diagnostics that quote the request that failed, which carried the tenant's key. A run failing authentication put the injected key on the operator's console, in the clear, while the identical text arriving on stdout was redacted.
+
+The stream is collected instead, under `maxStderrBytes`, and no spill file is configured: one tenant's diagnostics stay in that run's own memory rather than in a shared temp directory. Overflow keeps the tail, which is the opposite of the stdout ceiling and right for the same reason — a diagnostic ends with what failed, while a protocol stream cannot survive a gap at all.
+
+The tail is not discarded. A run whose process dies without a terminal frame has no other account of itself, so the tail joins that failure's message and leaves through the same redaction as every other chunk. A run that ends normally, is cancelled, or trips the stdout ceiling already says why, and its stderr is dropped.
+
+### Why the run carries a stdout ceiling
+
+The subprocess seam offers `'pipe'` for a caller that decodes its own protocol, and hands over the raw stream — so bounding it is this package's, and nothing else on this route bounds anything. Every byte read is accumulated: into a partial line while one is open, and into a content block once its frames parse. This route also refuses `maxTokens`, because the CLI has no output-token flag, so response length has no other ceiling either.
+
+`maxOutputBytes` is that ceiling, counted in bytes rather than code units so it bounds what the runtime actually holds. Exceeding it terminates the process and fails the run rather than truncating: truncation suits a tool result a model reads, and a half-written frame does not parse, so a response cut short would otherwise arrive looking complete. The default is 16 MiB — recorded runs frame a short turn in 8 KB, and a maximal response stays under about a megabyte, since the text is carried once in the `result` frame and again across the deltas.
 
 `dsh-claude-cli-protocol` can say whether the CLI authenticated with the injected key; only this package owns a run to fail. With `requireCredentialIsolation` (the default), an init frame naming another credential source throws mid-stream, so a run that reached the host's own login stops instead of completing and billing someone who never asked for it.
 
@@ -161,9 +185,10 @@ These are current package constraints, not a task backlog.
 
 - **The agent loop cannot use this route** — the loop sends conversation history and tool schemas on every request, and both are refused. The route serves one-shot calls, which is the shape of the seam's own auxiliary purposes (`compaction`, `session-title`). Serving the loop needs the history and tool decisions below, in that order.
 - **No tool round trip** — the CLI has no flag that accepts caller-supplied tool schemas; reaching them would mean exposing the harness's tools through an MCP server, which this package does not build. Tool-call blocks in CLI output are still translated, so the gap is inbound only.
-- **Cost is not reported** — the CLI's terminal frame carries `total_cost_usd` and per-model totals including its own auxiliary calls, and `TokenUsage` has no field for them, so a tenant's spend is not reconstructable from this route's chunks. `maxBudgetUsd` caps a run without reporting what it used.
+- **Cost arrives only at the end, and only as one number** — the usage chunk carries the CLI's `total_cost_usd` as `costMicroUsd`, so a run that dies before its terminal frame reports no cost however much it spent, and the per-model breakdown is dropped. `maxBudgetUsd` still caps a run independently of what is reported.
 - **No retry classification** — every failure maps to `CLI_EXIT` or the protocol package's `terminal_reason`, and no route-owned retry policy is declared, so `dsh-llm-retry` treats these failures with its defaults. The CLI also retries internally before reporting, which is invisible to that policy.
 - **`resolveModel` validates nothing** — the CLI publishes no catalogue and accepts both aliases and exact ids, so any model id is reported as resolvable and a wrong one surfaces as a CLI failure rather than a routing error.
+- **A successful run's diagnostics are dropped** — stderr is collected so the credential in it can be redacted, and the tail is surfaced only in the failure of a run that died without a terminal frame. An operator who watched the CLI's warnings scroll past on the host's own stream no longer sees them for a run that finished. Routing them to a logger, rather than only to a failure, waits for a consumer that reads one.
 - **One tenant per instance, by construction** — this is the isolation property, but it means a deployment serving many tenants owns constructing and disposing one adapter per pool; nothing here manages that lifecycle.
 
 <a id="dev-note"></a>

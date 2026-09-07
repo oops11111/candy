@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 `dsh-claude-cli-protocol` is what the Claude CLI's `--output-format stream-json` output means and what an invocation of it must say. It decodes the CLI's line-delimited stdout, translates the frames into the harness [`StreamChunk`](../llm/README.md) vocabulary, and composes the argument vector and environment overlay that make one run a plain streaming model endpoint spending exactly one tenant's key. It spawns nothing: the adapter that runs the CLI supplies the process, so everything here is testable against recorded output with no credential, no network, and no child process.
 
-The behavior was derived from `claude` 2.1.259 and the `@anthropic-ai/claude-agent-sdk` declarations shipped with it, not from documentation, and both test fixtures are real recorded runs. Three of the findings are load-bearing and none is guessable; they are described under [Understand the implementation](#understand-the-implementation).
+The behavior was derived from `claude` 2.1.259 and the `@anthropic-ai/claude-agent-sdk` declarations shipped with it, not from documentation, and every test fixture is a real recorded run. Three of the findings are load-bearing and none is guessable; they are described under [Understand the implementation](#understand-the-implementation).
 
 ## Table of Contents
 
@@ -87,7 +87,7 @@ The CLI announces which credential it authenticated with in its `system`/`init` 
 |---|---|
 | [`src/lines.ts`](src/lines.ts) | `ClaudeCliLineDecoder` and `ClaudeCliProtocolError`: stdout text to frames |
 | [`src/frames.ts`](src/frames.ts) | `ClaudeCliFrameTranslator`, `mapUsage`, `mapFinish`: frames to `StreamChunk`s |
-| [`src/launch.ts`](src/launch.ts) | `claudeCliArguments`, `claudeCliEnvironment`, `isCredentialIsolated`, `SCRUBBED_ROUTING_VARIABLES` |
+| [`src/launch.ts`](src/launch.ts) | `claudeCliArguments`, `claudeCliEnvironment`, `isCredentialIsolated`, `SCRUBBED_ROUTING_VARIABLES`, `SCRUBBED_STATE_VARIABLES` |
 | [`src/types.ts`](src/types.ts) | The subset of the CLI's frame union this package acts on |
 | — | No runtime invariant companion is published; this pure module owns no event stream or mutable runtime data, and its translation is enforced by unit tests over recorded runs. |
 
@@ -104,6 +104,18 @@ They arrive alongside the `stream_event` deltas that already delivered the same 
 Without it the CLI falls back to whatever ambient login the host has. A recorded run on a developer machine did exactly that, authenticating through the host's OAuth session and reporting `apiKeySource: "none"` — in a multi-tenant runtime, one tenant's request billed to the host. `--bare` restricts Anthropic authentication to `ANTHROPIC_API_KEY`, which is why it is not optional here.
 
 `--bare` does not govern *which provider* the CLI talks to, so it is not sufficient alone. An ambient `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, or `ANTHROPIC_BASE_URL` redirects the run to an endpoint authenticated with the host's own cloud credentials, ignoring the tenant key entirely. `SCRUBBED_ROUTING_VARIABLES` tombstones each one; together with `--bare` the injected key becomes the only credential the run can reach.
+
+### A pinned `HOME` is isolation only while nothing names a directory outside it
+
+`claudeCliEnvironment` separates two tenants by giving each child its own `HOME`, which the caller sets to that tenant's runtime pool root. That separation is indirect: it holds because the child's configuration, caches, and account state are located *relative to* `HOME`. A variable that names one of those directories outright breaks the derivation without touching `HOME`, so the environment still reads as isolated. `CLAUDE_CONFIG_DIR` relocates the CLI's own configuration and account state, and the XDG base directories name cache, config, data, and state roots. A server started from an operator's shell — or from another agent that exports one — would hand every tenant the same directory to read and write.
+
+`SCRUBBED_STATE_VARIABLES` tombstones them. The list covers the standard state-directory variables rather than only the ones a particular CLI version is known to read, because the two mistakes are not symmetric: a tombstoned name the CLI ignores changes nothing, since the fallback is the location under the pinned `HOME` that was wanted anyway, while a name left off the list is a directory two tenants share.
+
+### A conversation on stdin is answered turn by turn, not replayed
+
+`--input-format stream-json` looks like a way to hand the CLI a conversation, and it is not. A recorded run fed a user message, an assistant message, and a second user message opened *two* sessions and produced *two* terminal frames: each user message became a turn of its own, billed on its own, and the assistant message was accepted and dropped without a frame reporting it. The CLI has no input through which prior assistant content reaches the model.
+
+That matters here because the translator settles on the first terminal frame it sees. Replaying the recording shows what a caller would actually receive: the reply to the conversation's *first* message, with the reply to its last message — the one asked for — discarded after being paid for. The `injected-history.jsonl` fixture is that run, and it is why [`dsh-llm-claude-cli`](../llm-claude-cli/README.md) refuses a multi-message request rather than flattening it onto this input.
 
 ### Frame handling is open by default
 
@@ -168,10 +180,10 @@ These are current package constraints, not a task backlog.
 - **No process** — nothing here spawns, cancels, or reaps the CLI. The package supplies what an adapter needs to read and say; running the CLI, projecting a harness request onto its single positional prompt, and honoring `options.signal` belong to [`dsh-llm-claude-cli`](../llm-claude-cli/README.md), which consumes it.
 - **A single prompt, not a conversation** — `claudeCliArguments` composes one positional prompt. Replaying a multi-turn harness history needs the CLI's `--input-format stream-json`, whose input message format this package does not model.
 - **No tool round trip** — tool-call blocks are translated, but the invocation is composed with `--tools ""` because the harness executes tools itself. Returning a tool result to the CLI is part of the conversation gap above.
-- **Cost is dropped** — the terminal frame carries `total_cost_usd` and per-model totals that include the CLI's own auxiliary calls, which `TokenUsage` has no field for. A tenant's bill is therefore not reconstructable from the translated chunks alone.
+- **Only the invocation total is carried, not its breakdown** — `total_cost_usd` reaches `TokenUsage.costMicroUsd`, but the terminal frame's per-model `modelUsage` totals are dropped. A tenant's bill is reconstructable; which model earned which part of it is not.
 - **The isolation verdict is reported, not enforced** — `isCredentialIsolated` reads the CLI's announcement; nothing here fails a run whose answer is `false`, because this package never owns the process to fail.
 - **Pinned to one CLI version** — the fixtures and the frame vocabulary come from `claude` 2.1.259. The frame union is open, so a newer CLI adding frames is handled; one that renames a field this package acts on is not, and would surface as a translation that silently stops seeing content.
-- **Re-recording the fixtures needs a live CLI and a key** — both are real recorded runs, so refreshing them is a manual step: run the flags `claudeCliArguments` builds, then normalize session ids, uuids, host paths and account telemetry, and empty the payloads of ignored frames. `text-turn.jsonl` is deliberately recorded *without* `--bare`, so it pins the un-isolated `apiKeySource` this package exists to detect; re-recording it with `--bare` would silently retire that coverage.
+- **Re-recording the fixtures needs a live CLI and a key** — each is a real recorded run, so refreshing them is a manual step: run the flags `claudeCliArguments` builds, then normalize session ids, uuids, host paths and account telemetry, and empty the payloads of ignored frames. `text-turn.jsonl` is deliberately recorded *without* `--bare`, so it pins the un-isolated `apiKeySource` this package exists to detect; re-recording it with `--bare` would silently retire that coverage.
 
 ### Dev Note
 
