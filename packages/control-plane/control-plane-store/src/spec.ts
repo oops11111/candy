@@ -150,13 +150,23 @@ const storedRun = z.object({
 const storedAuditRecord = z.object({
   at: z.number(),
   runId: z.string().optional(),
+  /**
+   * The run `runId` was delegated from, absent for a root run.
+   *
+   * Two runs of one tenant are otherwise indistinguishable in the trail: the
+   * durable run record that holds the lineage is deleted at settlement, so
+   * without this the trail cannot say which run a child was spawned by, and
+   * a delegating agent's tree reads as unrelated runs that happened to
+   * overlap.
+   */
+  parentRunId: z.string().optional(),
   userId: z.string().optional(),
   accountId: z.string().optional(),
-  /** What the record is about: a scheduling attempt, a vault operation, or a launched process. */
-  event: z.enum(['started', 'refused', 'credential', 'launched']),
-  /** The step that refused, or the vault action that ran. */
+  /** What the record is about: a scheduling attempt, a settlement, a vault operation, or a launched process. */
+  event: z.enum(['started', 'settled', 'refused', 'credential', 'launched']),
+  /** The step that ran: the one that refused, the vault action, or `settle`. */
   action: z.string(),
-  /** `ok`, or the reason the step refused. */
+  /** `ok`, the reason the step refused, or how a settled run ended. */
   outcome: z.string(),
   /**
    * How many times this record happened, when the same thing happened more
@@ -187,7 +197,13 @@ export const controlPlaneDomainSpec = defineDomain({
   // 4 added a run's session and account. A version 3 run record cannot say
   // which session its model calls belong to or which account a child of it may
   // name, so it is discarded rather than recovered as either.
-  version: 4,
+  //
+  // 5 added a run's parent and its settlement to the audit trail. A version 4
+  // trail is not read as one: nothing in it says which run a child was
+  // delegated from, and every run that finished simply stops appearing, so a
+  // trail admitted as this version would answer both questions wrongly rather
+  // than not at all.
+  version: 5,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),

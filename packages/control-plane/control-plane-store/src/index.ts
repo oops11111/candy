@@ -71,7 +71,10 @@ function append(trail: readonly RunAuditRecord[], record: RunAuditRecord): RunAu
  * Whether two records describe the same thing happening again.
  *
  * The instant differs by definition and the count is what folding produces, so
- * neither takes part. Everything else identifies what happened and to whom.
+ * neither takes part. Nor does `parentRunId`, which is a property of `runId`:
+ * two records naming one run name one parent, and a record naming no run was
+ * refused before any lineage was believed. Everything else identifies what
+ * happened and to whom.
  *
  * @param last - the newest record in the trail.
  * @param record - the record being added.

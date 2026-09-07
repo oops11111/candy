@@ -358,4 +358,50 @@ describe('opening a run for a delegated child', () => {
     await expect(delegate(context, { prompt: [{ type: 'text', text: 'do X' }], parent }))
       .rejects.toThrow(/account can no longer authorize work/)
   })
+
+  it('records the child\'s parent and how its run ended in the tenant\'s audit trail', async () => {
+    // Two runs of one tenant look alike in the trail unless it says which one
+    // was delegated from the other, and a run whose record is deleted at
+    // settlement leaves no other trace of having finished.
+    root = await mkdtemp(join(tmpdir(), 'dsh-run-delegation-'))
+    const context = await boot(root, { childBudget: CHILD_BUDGET }, [textResponse('child answer')])
+    const now = Date.now()
+    await provision(context, now)
+    const session = SessionId('sess-audited')
+    const parentRunId = RunId('run-parent-audited')
+    await openRootRun(context, session, parentRunId, TENANT_GRANT, now)
+    const parent = await parentAgent(context, session)
+
+    // Registered after the plugin's own hook, so the child's run is open here.
+    let childRunId: RunId | undefined
+    const stop = context.subagents.onBeforeDelegate((_delegating, childId) => {
+      childRunId = context.controlPlaneStore.runsOfSession(AUDIENCE, childId)[0]?.record.runId
+    })
+
+    const run = await delegate(context, { prompt: [{ type: 'text', text: 'do X' }], parent })
+    expect((await run.result).stopReason).toBe('completed')
+    await run.dispose()
+    stop()
+
+    // The child's settlement is driven from a lifecycle listener whose promise
+    // the emitter deliberately does not await. Its own run being gone says the
+    // settlement is already on the scheduler's one write chain, so closing the
+    // parent behind it drains that chain before this reads the trail.
+    expect(context.controlPlaneStore.runsOfSession(AUDIENCE, run.id)).toEqual([])
+    await context.runScheduler.close(parentRunId)
+
+    const trail = context.runScheduler.auditsOfTenant(ALICE)
+    expect(childRunId).toBeDefined()
+    expect(trail).toContainEqual(expect.objectContaining({
+      runId: childRunId, parentRunId, event: 'started', action: 'start', outcome: 'ok',
+    }))
+    expect(trail).toContainEqual(expect.objectContaining({
+      runId: childRunId, parentRunId, event: 'settled', action: 'settle', outcome: 'closed',
+    }))
+    // The root run it was delegated from names no parent of its own.
+    expect(trail).toContainEqual(expect.objectContaining({ runId: parentRunId, event: 'started' }))
+    for (const record of trail.filter(entry => entry.runId === parentRunId)) {
+      expect(record.parentRunId).toBeUndefined()
+    }
+  })
 })

@@ -1341,6 +1341,87 @@ describe('a booted Candy scheduler', () => {
     expect((await ctx.controlPlaneStore.tenantAllowance(ALICE))?.consumed).toMatchObject({ tokens: 40 })
   })
 
+  it('names a closed run as closed, so a finished run is not simply absent from its trail', async () => {
+    // The durable run record is deleted at settlement. Without a record of the
+    // end, a trail shows a run starting and then nothing at all.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toContainEqual(expect.objectContaining({
+      runId: RunId('run-root'), userId: ALICE, accountId: ACCOUNT,
+      event: 'settled', action: 'settle', outcome: 'closed',
+    }))
+  })
+
+  it('names an expired lease as what ended an abandoned run', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+
+    await ctx.runScheduler.sweep(now + 300_001)
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toContainEqual(expect.objectContaining({
+      runId: RunId('run-root'), event: 'settled', outcome: 'expired',
+    }))
+  })
+
+  it('names a revoked account as what ended a run, not the lease it still had', async () => {
+    // The two reasons a sweep settles a run are answers to different
+    // questions, and an operator investigating a run that stopped early needs
+    // the one that actually applied.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await revokeProviderAccount(ctx.controlPlaneStore, ALICE, ACCOUNT, now + 1)
+
+    await ctx.runScheduler.sweep(now + 1_000)
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toContainEqual(expect.objectContaining({
+      runId: RunId('run-root'), event: 'settled', outcome: 'revoked',
+    }))
+  })
+
+  it('names a run its runtime restarted out from under as recovered', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const first = await boot(root)
+    const now = Date.now()
+    await provision(first, now)
+    await first.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    expect(second.runScheduler.auditsOfTenant(ALICE)).toContainEqual(expect.objectContaining({
+      runId: RunId('run-root'), event: 'settled', outcome: 'recovered',
+    }))
+  })
+
+  it('settles the run anyway when the trail cannot take its settlement record', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.runScheduler.charge(RunId('run-root'), { tokens: 15, wallMs: 2, costMicroUsd: 3 })
+    vi.spyOn(ctx.controlPlaneStore, 'recordAudit').mockRejectedValue(new Error('medium is gone'))
+
+    // The charge has already landed by the time the record is written, so a
+    // store that cannot take it must not turn a settled run into a failure.
+    expect(await ctx.runScheduler.close(RunId('run-root'))).toMatchObject({ ok: true })
+    expect(ctx.runScheduler.ledger.open()).toEqual([])
+    expect(await ctx.controlPlaneStore.tenantAllowance(ALICE)).toMatchObject({ consumed: { tokens: 15 } })
+  })
+
   it('leaves a run alone when its account is still usable and its lease holds', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)

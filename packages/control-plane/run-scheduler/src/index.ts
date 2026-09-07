@@ -773,7 +773,7 @@ export class RunScheduler extends Service {
    * @returns the settlement, or why it could not be closed.
    */
   close(runId: RunId): Promise<RunLedgerResult<RunSettlement>> {
-    return this.queue(() => this.settle(runId))
+    return this.queue(() => this.settle(runId, 'closed'))
   }
 
   /**
@@ -885,7 +885,8 @@ export class RunScheduler extends Service {
     for (const record of this.ledger.open()) {
       // A revoked account ends its run however live the session driving it is:
       // this decides authority, and only the branch below decides abandonment.
-      if (!this.spent(record.runId)) {
+      const revoked = this.spent(record.runId)
+      if (!revoked) {
         if (record.leaseExpiresAt > now) continue
         if (this.driven(record.runId)) {
           await this.queue(() => this.renew(record.runId, now))
@@ -894,7 +895,7 @@ export class RunScheduler extends Service {
       }
       // Re-read through `settle`: closing one run closes its descendants, and a
       // descendant already gone is no longer expired.
-      const outcome = await this.queue(() => this.settle(record.runId))
+      const outcome = await this.queue(() => this.settle(record.runId, revoked ? 'revoked' : 'expired'))
       if (outcome.ok) settled.push(outcome.value)
     }
     this.replay.evict(now)
@@ -1007,7 +1008,7 @@ export class RunScheduler extends Service {
    * settlement is about to stop billing for should stop running as soon as
    * that is decided, not once the durable writes that follow succeed.
    */
-  private async settle(runId: RunId): Promise<RunLedgerResult<RunSettlement>> {
+  private async settle(runId: RunId, cause: SettlementCause): Promise<RunLedgerResult<RunSettlement>> {
     const preview = this.ledger.settlementOf(runId)
     if (preview === undefined) return { ok: false, rejection: { reason: 'unknown-run', runId } }
     await this.disposeOf(runId)
@@ -1018,6 +1019,7 @@ export class RunScheduler extends Service {
     for (const descendant of preview.closed) await store.deleteRun(descendant)
     await store.deleteRun(runId)
     this.remember(marked.sessionId)
+    await this.fileSettlement(marked, cause)
     // Nothing between the preview and here removed the run, because every write
     // to a run record queues on the chain this call already holds.
     return this.ledger.close(runId)
@@ -1104,7 +1106,7 @@ export class RunScheduler extends Service {
     for (const run of held) remaining.push(await this.adopt(run, present))
     this.ledger.restore(remaining.map(run => run.record))
     for (const run of remaining) {
-      if (run.record.parentRunId === undefined) await this.settle(run.record.runId)
+      if (run.record.parentRunId === undefined) await this.settle(run.record.runId, 'recovered')
     }
   }
 
@@ -1176,6 +1178,44 @@ export class RunScheduler extends Service {
   }
 
   /**
+   * Record that one run ended, and how.
+   *
+   * The durable run record is deleted at settlement, so this is the only place
+   * the run's end survives: without it a trail shows a run starting and then
+   * nothing, and an operator cannot tell a run still working from one an
+   * expired lease or a revoked account ended minutes ago.
+   *
+   * Only the run this settlement was asked for is recorded. A descendant
+   * closed with it left its own `started` record naming this run as its
+   * parent, so the tree is readable from that end; a descendant settled in its
+   * own right — which is how a delegated child normally ends — reaches here as
+   * the run it was asked about.
+   *
+   * The write is awaited so the record is durable before the settlement is
+   * reported, and never rejects: a store that cannot take the record must not
+   * turn a completed settlement into a failure.
+   *
+   * @param run - the settled run, read before its record was deleted.
+   * @param cause - how the settlement came about, filed as the outcome.
+   */
+  private async fileSettlement(run: DurableRunRecord, cause: SettlementCause): Promise<void> {
+    const record: RunAuditRecord = {
+      at: Date.now(),
+      runId: run.record.runId,
+      ...lineage(run.record.parentRunId),
+      userId: run.userId,
+      accountId: run.accountId,
+      event: 'settled',
+      action: 'settle',
+      outcome: cause,
+    }
+    const retain = this.config.auditRetention ?? 200
+    await this.ctx.controlPlaneStore.recordAudit(tenantSubject(run.userId), [record], retain).catch((error: unknown) => {
+      this.ctx.logger.warn(`run-scheduler: could not record the settlement of run '${run.record.runId}': ${String(error)}`)
+    })
+  }
+
+  /**
    * Record one launched process against the run whose call started it.
    *
    * The seam that announces a launch knows the executable and nothing about
@@ -1193,6 +1233,7 @@ export class RunScheduler extends Service {
     const record: RunAuditRecord = {
       at: Date.now(),
       runId,
+      ...lineage(run.record.parentRunId),
       userId: run.userId,
       accountId: run.accountId,
       event: 'launched',
@@ -1224,7 +1265,7 @@ export class RunScheduler extends Service {
     const subject = run === undefined ? runtimeSubject(this.config.audience) : tenantSubject(run.userId)
     const record: RunAuditRecord = {
       at: Date.now(),
-      ...run === undefined ? {} : { runId, userId: run.userId, accountId: run.accountId },
+      ...run === undefined ? {} : { runId, ...lineage(run.record.parentRunId), userId: run.userId, accountId: run.accountId },
       event: 'refused',
       action: 'meter',
       outcome: code,
@@ -1271,6 +1312,7 @@ export class RunScheduler extends Service {
       yield [tenantSubject(claims.userId), {
         at,
         runId: claims.runId,
+        ...lineage(claims.parentRunId),
         userId: claims.userId,
         accountId: claims.accountId,
         event: 'started',
@@ -1309,6 +1351,28 @@ export class RunScheduler extends Service {
 }
 
 /**
+ * How one settlement came about, filed as the terminal record's outcome.
+ *
+ * `closed` is a caller ending a run it was driving, `expired` a lease that
+ * lapsed with no live session behind it, `revoked` an account that may no
+ * longer authorize the work, and `recovered` a run this runtime found open at
+ * boot from a process that is gone.
+ */
+type SettlementCause = 'closed' | 'expired' | 'revoked' | 'recovered'
+
+/**
+ * The lineage an audit record about one run carries.
+ *
+ * A root run contributes nothing rather than an explicit absence, so the
+ * record round-trips through the medium as the same value it was written as.
+ * @param parentRunId - the run this one was delegated from, if any.
+ * @returns the field to spread into the record.
+ */
+function lineage(parentRunId: RunId | undefined): { parentRunId?: RunId } {
+  return parentRunId === undefined ? {} : { parentRunId }
+}
+
+/**
  * The record one refused attempt leaves, and whom it belongs to.
  *
  * Every stage past the assertion carries verified claims, so its record names
@@ -1338,6 +1402,7 @@ function refusedByTenant(
   return [tenantSubject(claims.userId), {
     at,
     runId: claims.runId,
+    ...lineage(claims.parentRunId),
     userId: claims.userId,
     accountId: claims.accountId,
     event: 'refused',

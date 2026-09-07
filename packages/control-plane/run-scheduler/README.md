@@ -121,6 +121,10 @@ Every stage past the assertion works from verified claims, so its record names t
 
 A refused *call* is filed the same way, under `event: 'refused'` and `action: 'meter'`, with the failure code as its outcome.
 
+Every record about a run carries `parentRunId` when that run was delegated from another. The durable run record holding the lineage is deleted at settlement, so without it a delegating agent's tree reads back as unrelated runs of one tenant that happened to overlap.
+
+A settled run is filed under `event: 'settled'` and `action: 'settle'`, with how it ended as its outcome: `closed` for a caller ending a run it was driving, `expired` for a lease that lapsed with no live session behind it, `revoked` for an account that may no longer authorize the work, and `recovered` for a run this runtime found open at boot from a process that is gone. It is the only trace an ended run leaves — its durable record is deleted — and it is what separates a run still working from one something ended minutes ago. Only the run a settlement was asked for is recorded: a descendant closed with its ancestor is reachable from its own `started` record, which names that ancestor.
+
 A process launched during a metered call is filed too, under `event: 'launched'` with the executable as its action. `dsh-subprocess` announces every managed child it starts, and knows nothing about tenants; what supplies the rest is a run scope this service enters around each pull of a metered stream. A provider process is started deep inside an adapter, with no session and no run of its own to name — the call it was started during is the only thing that connects it to one.
 
 The scope is entered around each pull rather than around the stream. An async generator's body runs when its consumer asks for a chunk, in the consumer's context and not the one the generator was created in, so a scope wrapped around creation reaches none of the body and attributes nothing.

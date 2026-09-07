@@ -11,7 +11,7 @@ English | [中文](README.zh.md)
 
 [`dsh-provider-accounts`](../provider-accounts/README.md) defines its account store as a port, and [`dsh-run-admission`](../run-admission/README.md) requires a credential lookup and a budget lookup as ports. Every one of them was a parameter no deployment could fill, because nothing in the repository held the data.
 
-This service holds it: provider accounts with their sealed credentials, each tenant's allowance, one record per live run, and a trail of what each tenant's scheduling attempts did, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
+This service holds it: provider accounts with their sealed credentials, each tenant's allowance, one record per live run, and a trail of what each tenant's runs did, from the attempt that opened one to the settlement that ended it, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
 
 It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once.
 
