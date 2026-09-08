@@ -1,6 +1,13 @@
 import { UserId, UserSessionId } from '@deepseek-ai/dsh-control-plane'
 import { describe, expect, it, vi } from 'vitest'
-import { completeOAuthSignIn, type OAuthSignInStore } from '../src/index.ts'
+import {
+  authenticateOAuthHttpRequest,
+  clearOAuthSessionCookies,
+  completeOAuthSignIn,
+  oauthSessionCookies,
+  type OAuthSignInResult,
+  type OAuthSignInStore,
+} from '../src/index.ts'
 
 const NOW = 1_800_000_000_000
 
@@ -72,5 +79,45 @@ describe('completeOAuthSignIn', () => {
       { state: 'state-ok', code: 'code', now: NOW, sessionExpiresAt: NOW + 1 },
     )).toBeUndefined()
     expect(unenrolled.createUserSession).not.toHaveBeenCalled()
+  })
+})
+
+describe('OAuth HTTP session transport', () => {
+  const result: OAuthSignInResult = {
+    token: 'bearer', csrfToken: 'csrf',
+    record: {
+      id: UserSessionId('session-1'), userId: UserId('alice'), role: 'member',
+      identity: { issuer: 'issuer', subject: 'alice' },
+      createdAt: NOW, expiresAt: NOW + 60_000, revokedAt: undefined,
+    },
+  }
+
+  it('writes host-only secure cookies and clears them with matching attributes', () => {
+    const [session, csrf] = oauthSessionCookies(result, NOW)
+    expect(session).toContain('__Host-candy-session=bearer; Max-Age=60; Path=/;')
+    expect(session).toContain('Secure; HttpOnly; SameSite=Lax')
+    expect(csrf).toContain('__Host-candy-csrf=csrf; Max-Age=60; Path=/;')
+    expect(csrf).toContain('Secure; SameSite=Strict')
+    expect(clearOAuthSessionCookies()).toEqual([
+      '__Host-candy-session=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax',
+      '__Host-candy-csrf=; Max-Age=0; Path=/; Secure; SameSite=Strict',
+    ])
+  })
+
+  it('derives identity from the bearer and requires matching CSRF for mutations', () => {
+    const store = {
+      authenticateUserSession: vi.fn((token: string) => token === 'bearer' ? result.record : undefined),
+      verifyUserSessionCsrf: vi.fn((_id: UserSessionId, token: string) => token === 'csrf'),
+    }
+    const cookie = '__Host-candy-session=bearer; __Host-candy-csrf=csrf'
+    expect(authenticateOAuthHttpRequest(store, { method: 'GET', cookie, csrfHeader: undefined }, NOW))
+      .toBe(result.record)
+    expect(authenticateOAuthHttpRequest(store, { method: 'POST', cookie, csrfHeader: 'csrf' }, NOW))
+      .toBe(result.record)
+    expect(authenticateOAuthHttpRequest(store, { method: 'POST', cookie, csrfHeader: 'wrong' }, NOW))
+      .toBeUndefined()
+    expect(authenticateOAuthHttpRequest(store, {
+      method: 'DELETE', cookie: '__Host-candy-session=forged; __Host-candy-csrf=csrf', csrfHeader: 'csrf',
+    }, NOW)).toBeUndefined()
   })
 })

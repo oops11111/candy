@@ -47,6 +47,77 @@ export interface OAuthSignInResult {
   readonly record: UserSessionRecord
 }
 
+/** Minimal session reader required by an HTTP transport. */
+export interface OAuthHttpSessionStore {
+  authenticateUserSession(token: string, now: number): UserSessionRecord | undefined
+  verifyUserSessionCsrf(id: UserSessionRecord['id'], csrfToken: string): boolean
+}
+
+/** Headers relevant to Candy session authentication. */
+export interface OAuthHttpRequest {
+  readonly method: string
+  readonly cookie: string | undefined
+  readonly csrfHeader: string | undefined
+}
+
+const SESSION_COOKIE = '__Host-candy-session'
+const CSRF_COOKIE = '__Host-candy-csrf'
+
+function cookieValue(header: string | undefined, name: string): string | undefined {
+  if (header === undefined) return undefined
+  for (const segment of header.split(';')) {
+    const at = segment.indexOf('=')
+    if (at !== -1 && segment.slice(0, at).trim() === name) return segment.slice(at + 1).trim()
+  }
+  return undefined
+}
+
+/**
+ * Serialize the two cookies created by a successful OAuth callback.
+ * @param result - session bearer and independent CSRF token.
+ * @param now - response time used to derive a non-negative Max-Age.
+ * @returns authentication and CSRF Set-Cookie values, in that order.
+ */
+export function oauthSessionCookies(result: OAuthSignInResult, now: number): readonly [string, string] {
+  const maxAge = Math.max(0, Math.floor((result.record.expiresAt - now) / 1000))
+  const expires = new Date(result.record.expiresAt).toUTCString()
+  return [
+    `${SESSION_COOKIE}=${result.token}; Max-Age=${String(maxAge)}; Path=/; Expires=${expires}; Secure; HttpOnly; SameSite=Lax`,
+    `${CSRF_COOKIE}=${result.csrfToken}; Max-Age=${String(maxAge)}; Path=/; Expires=${expires}; Secure; SameSite=Strict`,
+  ]
+}
+
+/** Cookies that remove both browser credentials during logout. */
+export function clearOAuthSessionCookies(): readonly [string, string] {
+  return [
+    `${SESSION_COOKIE}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`,
+    `${CSRF_COOKIE}=; Max-Age=0; Path=/; Secure; SameSite=Strict`,
+  ]
+}
+
+/**
+ * Authenticate one HTTP request and enforce CSRF on unsafe methods.
+ * @param store - durable session and CSRF verifier.
+ * @param request - method and exact Cookie/header values from the HTTP owner.
+ * @param now - request receipt time.
+ * @returns server-derived user session, or undefined when authentication or CSRF fails.
+ */
+export function authenticateOAuthHttpRequest(
+  store: OAuthHttpSessionStore,
+  request: OAuthHttpRequest,
+  now: number,
+): UserSessionRecord | undefined {
+  const bearer = cookieValue(request.cookie, SESSION_COOKIE)
+  if (bearer === undefined) return undefined
+  const session = store.authenticateUserSession(bearer, now)
+  if (session === undefined) return undefined
+  const method = request.method.toUpperCase()
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return session
+  const csrfCookie = cookieValue(request.cookie, CSRF_COOKIE)
+  if (csrfCookie === undefined || request.csrfHeader === undefined || csrfCookie !== request.csrfHeader) return undefined
+  return store.verifyUserSessionCsrf(session.id, csrfCookie) ? session : undefined
+}
+
 /**
  * Complete one OAuth callback and create a revocable Candy user session.
  *
