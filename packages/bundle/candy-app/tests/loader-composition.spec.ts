@@ -30,6 +30,21 @@ import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import ControlPlaneStore from '@deepseek-ai/dsh-control-plane-store'
 import RunScheduler from '@deepseek-ai/dsh-run-scheduler'
+import {
+  ConversationId,
+  DeviceId,
+  ProviderAccountId,
+  RunId,
+  UserId,
+  WorkspaceGrantId,
+} from '@deepseek-ai/dsh-control-plane'
+import { CredentialKeyVersion, type CredentialKeyring } from '@deepseek-ai/dsh-credential-vault'
+import { mintExecutionAssertion } from '@deepseek-ai/dsh-execution-assertion'
+import Llm, { type StreamChunk } from '@deepseek-ai/dsh-llm'
+import * as LlmReplay from '@deepseek-ai/dsh-llm-replay'
+import { createProviderAccount, revokeProviderAccount } from '@deepseek-ai/dsh-provider-accounts'
+import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import ProviderCredentialChecks from '@deepseek-ai/dsh-provider-credential-checks'
 import * as DeepSeekCredentialCheck from '@deepseek-ai/dsh-deepseek-credential-check'
 import WorkspaceGrantExecution from '@deepseek-ai/dsh-workspace-grant-execution'
@@ -205,6 +220,78 @@ async function status(port: number, authority: string, path: string): Promise<nu
 }
 
 describe('the shipped Candy deployment layer', () => {
+  it('runs one tenant DeepSeek account through login, replay, metering, and revocation', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-candy-app-'))
+    await mkdir(join(root, 'pools'), { recursive: true })
+    const ctx = await boot(root)
+    const now = Date.now()
+    const userId = UserId('user-alice')
+    const accountId = ProviderAccountId('deepseek-account')
+    const sessionId = SessionId('deepseek-session')
+    const runId = RunId('deepseek-run')
+    const key = process.env.CANDY_CREDENTIAL_KEY
+    const version = process.env.CANDY_CREDENTIAL_KEY_VERSION
+    if (key === undefined || version === undefined) throw new Error('the Candy test environment did not stage its credential key')
+    const keyring: CredentialKeyring = {
+      currentVersion: CredentialKeyVersion(version),
+      keys: new Map([[CredentialKeyVersion(version), Buffer.from(key, 'utf8')]]),
+    }
+
+    const login = await ctx.controlPlaneStore.createUserSession(
+      userId, 'member', { issuer: 'https://identity.example', subject: 'alice' }, now, now + 60_000,
+    )
+    await expect(ctx.controlPlaneStore.authenticateUserSession(login.token, now)).resolves.toMatchObject({ userId })
+    await createProviderAccount(ctx.controlPlaneStore, keyring, {
+      id: accountId, userId, provider: 'deepseek-api', label: 'DeepSeek', secret: Buffer.from('replay-only-secret'),
+    }, now)
+    const budget: RunBudget = { tokens: 1_000, wallMs: 60_000, costMicroUsd: 100_000, children: 0 }
+    const deviceId = DeviceId('device-1')
+    const workspaceGrantId = WorkspaceGrantId('grant-1')
+    await ctx.controlPlaneStore.setTenantGrant(userId, budget)
+    await ctx.controlPlaneStore.saveGrant({
+      id: workspaceGrantId, userId, deviceId, roots: [root], mode: 'workspace-write', version: 1,
+      createdAt: now, updatedAt: now, revokedAt: undefined,
+    })
+
+    await ctx.plugin(SessionStore)
+    ctx.sessions.create(sessionId, { meta: { cwd: root } })
+    await ctx.plugin(Llm)
+    const replayFile = join(root, 'deepseek-replay.jsonl')
+    const replayChunks: StreamChunk[] = [
+      { type: 'text-delta', index: 0, text: 'done' },
+      { type: 'usage', usage: { inputTokens: 30, outputTokens: 12, costMicroUsd: 900 } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    await writeFile(replayFile, [
+      JSON.stringify({ type: 'session', version: 0, id: 'recorded', createdAt: now }),
+      ...replayChunks.map((chunk, index) => JSON.stringify({
+        type: 'assistant/chunk', seq: index + 1, time: now, data: { turn: 1, step: 1, chunk },
+      })),
+      '',
+    ].join('\n'))
+    await ctx.plugin(LlmReplay, {
+      file: replayFile,
+      providers: [{ id: 'deepseek-official', models: [{ id: 'deepseek-chat' }] }],
+    })
+    const token = mintExecutionAssertion({
+      issuer: 'candy-control-plane', audience: 'candy-runtime-debian-1', userId, deviceId, accountId,
+      provider: 'deepseek-api', workspaceGrantId, conversationId: ConversationId('conversation-1'), sessionId,
+      runId, parentRunId: undefined, nonce: 'deepseek-once', issuedAt: now, expiresAt: now + 60_000,
+    }, Buffer.from(process.env.CANDY_ASSERTION_SECRET ?? '', 'utf8'))
+    expect((await ctx.runScheduler.start(token, undefined, now)).started).toBe(true)
+
+    const call = () => ctx.llm.stream({ provider: 'deepseek-official', model: 'deepseek-chat', sessionId, messages: [] })
+    const first: StreamChunk[] = []
+    for await (const chunk of call()) first.push(chunk)
+    expect(first.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+    expect(ctx.runScheduler.ledger.get(runId)?.spent).toMatchObject({ tokens: 42, costMicroUsd: 900 })
+
+    await revokeProviderAccount(ctx.controlPlaneStore, userId, accountId, now + 1)
+    const second: StreamChunk[] = []
+    for await (const chunk of call()) second.push(chunk)
+    expect(second).toMatchObject([{ type: 'finish', reason: { failure: { code: 'CREDENTIAL_REVOKED' } } }])
+  })
+
   it('composes the control plane the browser routes need', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-candy-app-'))
 
