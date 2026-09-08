@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-control-plane` 为 Candy 控制平面唯一拥有权威的实体打上品牌：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId` 与 `ConversationId`，并定义了 `ProviderKind`——一次运行可执行的提供方封闭集合，以及 `RunLineage`——记录某次运行父级的记录。它是一个无外部依赖的身份基础包，没有 Cordis 服务，也没有存储：它的存在是为了让之后每一个控制平面包(租户/凭据模型、提供方适配器、编排授权检查、Web 账户 API,以及 Windows Harness Host 设备绑定)从一开始就共用同一套互不可替换的词汇,而不是各自发明自己的 `string` 类型租户 id。同样处于控制平面权威之下的 `SessionId`,则直接复用 [`dsh-session`](../../core/session/README.zh.md) 中已有的定义;本包从不重新定义它。
+`dsh-control-plane` 为 Candy 控制平面唯一拥有权威的实体打上品牌：`UserId`、`UserSessionId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId` 与 `ConversationId`，并定义由外部身份回调证明的 `OAuthIdentity` 二元组、Candy 自己分配的 `ControlPlaneRole`、`ProviderKind` 和 `RunLineage`。它是一个无外部依赖的身份基础包，没有 Cordis 服务，也没有存储：之后每一个控制平面包都共用这套互不可替换的词汇，而不是发明 `string` 类型身份。同样处于控制平面权威之下的 `SessionId` 直接复用 [`dsh-session`](../../core/session/README.zh.md) 中已有的定义；本包从不重新定义它。
 
 ## 目录
 
@@ -27,9 +27,10 @@ kind: "package-library"
 ### 为控制平面 id 打上品牌
 
 ```ts
-import { UserId, DeviceId, ProviderAccountId, WorkspaceGrantId, ConversationId } from '@deepseek-ai/dsh-control-plane'
+import { UserId, UserSessionId, DeviceId, ProviderAccountId, WorkspaceGrantId, ConversationId } from '@deepseek-ai/dsh-control-plane'
 
 const userId = UserId('user-1')
+const userSessionId = UserSessionId('user-session-1')
 const deviceId = DeviceId('device-1')
 const accountId = ProviderAccountId('account-1')
 const workspaceGrantId = WorkspaceGrantId('grant-1')
@@ -63,7 +64,7 @@ const childRun: RunLineage = { runId: RunId('run-2'), parentRunId: rootRun.runId
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `ProviderKind`、`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`、`RunId` 与 `RunLineage` |
+| [`src/index.ts`](src/index.ts) | OAuth 身份与角色类型、`ProviderKind`、品牌化控制面 id 和 `RunLineage` |
 | — | 未发布运行时不变式伴生模块;这个纯工具不拥有事件流或可变运行时数据;其值代数由单元测试强制保证。 |
 
 ### 为什么这里不重新定义 `SessionId`
@@ -96,6 +97,7 @@ const childRun: RunLineage = { runId: RunId('run-2'), parentRunId: rootRun.runId
 这些是当前包的约束,不是任务积压;每一条都是交付计划中本包刻意尚未开始的后续 R1 条目。
 
 - **没有校验语法**——每个构造函数只为输入打上品牌,不检查格式、唯一性或来源,因为目前还没有签发服务。在签发方存在之前在这里添加校验,只会发明一套没有依据的语法;签发方落地后由它拥有这项检查。
+- **没有 OAuth 验证或浏览器会话存储**——只有部署验证器认证回调后才能采用 `OAuthIdentity`，`ControlPlaneRole` 由 Candy 分配，不能从浏览器输入复制。可撤销会话存储和 Web 传输属于后续独立消费者。
 - **没有凭据、授权或账户存储**——本包只定义 id。加密凭据信封、执行断言的签发与校验、工作区授权记录都是尚未构建的独立 R1 工作。
 - **运行时池键在别处**——[Candy 运行时边界](../../../docs/candy-runtime-boundaries.zh.md) 把 `userId + provider + accountId` 定为运行时池隔离键,由 [`dsh-runtime-pool`](../runtime-pool/README.zh.md) 推导。它不放在本包,是因为它需要 `ProviderKind` 与一个摘要,而本包只保存 id 并保持无外部依赖。
 - **没有 Cordis 服务**——本包中没有任何东西注册到 `Context` 上;它像 `dsh-brand` 一样由 TypeScript 直接导入。

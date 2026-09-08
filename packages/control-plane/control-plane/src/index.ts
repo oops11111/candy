@@ -5,8 +5,8 @@
  *
  * These ids name the entities enumerated in
  * {@link https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/candy-runtime-boundaries.md | Candy Runtime Boundaries}:
- * `userId`, `deviceId`, `accountId`, `workspaceGrantId`, `conversationId`,
- * `sessionId`, and child-run ancestry. `sessionId` is `SessionId` from
+ * `userId`, user session, `deviceId`, `accountId`, `workspaceGrantId`,
+ * `conversationId`, `sessionId`, and child-run ancestry. `sessionId` is `SessionId` from
  * `@deepseek-ai/dsh-session`, reused unchanged — this package does not
  * redefine it, since dsh-session already owns that brand and its Harness
  * session-log semantics.
@@ -37,6 +37,34 @@ export type UserId = Branded<'UserId'>
  */
 export function UserId(id: string): UserId {
   return brandString<UserId>(id)
+}
+
+/** Identifies one revocable Candy browser session established after OAuth authentication. */
+export type UserSessionId = Branded<'UserSessionId'>
+
+/**
+ * Brand a string as a {@link UserSessionId}.
+ * @param id - the control-plane-issued browser-session id.
+ * @returns the same string, branded; no validation is performed.
+ */
+export function UserSessionId(id: string): UserSessionId {
+  return brandString<UserSessionId>(id)
+}
+
+/** Authorization assigned by Candy after external identity authentication. */
+export type ControlPlaneRole = 'member' | 'administrator'
+
+/**
+ * Stable external identity proven by an OAuth provider callback.
+ *
+ * The provider subject identifies the person only within its issuer. Candy
+ * maps this pair to a {@link UserId}; neither value carries a Candy role.
+ */
+export interface OAuthIdentity {
+  /** Exact issuer identifier accepted by the deployment's OAuth verifier. */
+  readonly issuer: string
+  /** Non-empty provider subject from the verified identity response. */
+  readonly subject: string
 }
 
 /** Identifies one paired device — a Windows Harness Host or a browser client — bound to one user. */
