@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tenant-route-policy` enforces exact provider/model grants for Candy-managed sessions through `LlmRuntime.guard()` at the final adapter boundary. DeepSeek Harness still owns model discovery, model selection and adapters; this package only resolves the request session through [`dsh-run-scheduler`](../run-scheduler/README.md) and answers the Candy-specific authorization question. A managed tenant absent from configuration is denied. A request with no session, or a session with no uniquely resolvable Candy run, remains under ordinary Harness behavior.
+`dsh-tenant-route-policy` enforces exact provider/model grants for Candy-managed sessions through `LlmRuntime.guard()` at the final adapter boundary. DeepSeek Harness still owns model discovery, model selection and adapters; this package only resolves the request session through [`dsh-run-scheduler`](../run-scheduler/README.md), reads its durable authority from [`dsh-control-plane-store`](../control-plane-store/README.md), and answers the Candy-specific authorization question. A managed tenant with no stored policy is denied. A request with no session, or a session with no uniquely resolvable Candy run, remains under ordinary Harness behavior.
 
 ## Table of Contents
 
@@ -23,39 +23,41 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Load the policy beside `dsh-llm` and `dsh-run-scheduler`:
+Load the policy beside `dsh-llm`, `dsh-run-scheduler` and `dsh-control-plane-store`:
 
 ```yaml
 - name: '@deepseek-ai/dsh-tenant-route-policy'
-  config:
-    allowlists:
-      user-alice:
-        - provider: claude-cli
-          model: sonnet
-        - provider: codex-cli
-          model: gpt-5.6-sol
 ```
 
-Both fields are exact, case-sensitive ids. An allowed pair reaches the normal Harness waterfall and adapter. Any other pair for that managed tenant is durably audited as `refused/route/TENANT_ROUTE_NOT_ALLOWED`, then returns one terminal `error` finish with code `TENANT_ROUTE_NOT_ALLOWED`; the adapter is never called. An empty list and a missing tenant entry both mean deny.
+Provision the complete allowlist through the control-plane authority:
+
+```ts
+await ctx.controlPlaneStore.setTenantModelRoutes(userId, [
+  { provider: 'claude-cli', model: 'sonnet' },
+  { provider: 'codex-cli', model: 'gpt-5.6-sol' },
+])
+```
+
+Both fields are exact, case-sensitive ids. An allowed pair reaches the normal Harness waterfall and adapter. Any other pair for that managed tenant is durably audited as `refused/route/TENANT_ROUTE_NOT_ALLOWED`, then returns one terminal `error` finish with code `TENANT_ROUTE_NOT_ALLOWED`; the adapter is never called. An empty stored list and a missing tenant policy both mean deny. Replacing the record affects the next call in that runtime and survives restart.
 
 -----
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The plugin registers one `LlmRuntime.guard()`. A session-aware prepared call invokes it before adapter preparation; final dispatch invokes it again after routing middleware has chosen the final pair. The guard reads the session id, asks `RunScheduler.tenantOf` for the live tenant and checks that tenant's configured pairs. Direct model selection, preset changes and a later routing rewrite therefore cannot bypass it or trigger an unauthorized provider preflight. Calls that are not attached to a Candy run pass through because Candy has no tenant authority to apply to them.
+The plugin registers one `LlmRuntime.guard()`. A session-aware prepared call invokes it before adapter preparation; final dispatch invokes it again after routing middleware has chosen the final pair. The guard reads the session id, asks `RunScheduler.tenantOf` for the live tenant and checks that tenant's current stored pairs. Direct model selection, preset changes and a later routing rewrite therefore cannot bypass it or trigger an unauthorized provider preflight. Calls that are not attached to a Candy run pass through because Candy has no tenant authority to apply to them.
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Config schema, exact-pair comparison and terminal refusal |
-| [`tests/policy.spec.ts`](tests/policy.spec.ts) | Pins allowed, denied, closed-default, unmanaged and cross-tenant behavior |
+| [`src/index.ts`](src/index.ts) | Durable policy lookup, exact-pair comparison and terminal refusal |
+| [`tests/policy.spec.ts`](tests/policy.spec.ts) | Pins allowed, denied, dynamic, closed-default, unmanaged and cross-tenant behavior |
 
 -----
 
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 
-- Allowlists are deployment configuration, not durable records with an admin API.
+- The durable store API exists, but no authenticated operator Web/API surface exposes it yet.
 - This package authorizes a requested route; it does not select a fallback. A safe cross-provider fallback also needs authority over the second provider account and a distinguishable usable route.
 
 -----

@@ -3,7 +3,7 @@ import Llm, { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepse
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as TenantRoutePolicy from '../src/index.ts'
-import { TENANT_ROUTE_NOT_ALLOWED, type Config } from '../src/index.ts'
+import { TENANT_ROUTE_NOT_ALLOWED } from '../src/index.ts'
 
 class RecordingAdapter extends LlmAdapter {
   calls: GenerateOptions[] = []
@@ -23,9 +23,12 @@ afterEach(async () => {
   ctx = undefined
 })
 
-async function boot(config: Config, tenantOf: (id: SessionId) => string | undefined = id => (
-  id === session ? 'tenant-alice' : undefined
-)): Promise<{ context: Context; adapter: RecordingAdapter; recordRouteRefusal: ReturnType<typeof vi.fn> }> {
+async function boot(
+  routesOf: (tenant: string) => readonly { provider: string; model: string }[] | undefined,
+  tenantOf: (id: SessionId) => string | undefined = id => (
+    id === session ? 'tenant-alice' : undefined
+  ),
+): Promise<{ context: Context; adapter: RecordingAdapter; recordRouteRefusal: ReturnType<typeof vi.fn> }> {
   const context = new Context()
   ctx = context
   await context.plugin(Llm)
@@ -33,7 +36,11 @@ async function boot(config: Config, tenantOf: (id: SessionId) => string | undefi
   context.llm.registerAdapter(['claude-cli', 'codex-cli'], adapter)
   const recordRouteRefusal = vi.fn(() => Promise.resolve())
   Object.defineProperty(context, 'runScheduler', { value: { tenantOf, recordRouteRefusal }, configurable: true })
-  TenantRoutePolicy.apply(context, config)
+  Object.defineProperty(context, 'controlPlaneStore', {
+    value: { tenantModelRoutes: routesOf },
+    configurable: true,
+  })
+  TenantRoutePolicy.apply(context)
   return { context, adapter, recordRouteRefusal }
 }
 
@@ -47,9 +54,7 @@ async function call(context: Context, provider: string, model: string, sessionId
 
 describe('tenant model-route policy', () => {
   it('allows the exact provider/model pair granted to the managed tenant', async () => {
-    const { context, adapter } = await boot({
-      allowlists: { 'tenant-alice': [{ provider: 'claude-cli', model: 'sonnet' }] },
-    })
+    const { context, adapter } = await boot(() => [{ provider: 'claude-cli', model: 'sonnet' }])
 
     const chunks = await call(context, 'claude-cli', 'sonnet')
 
@@ -58,9 +63,7 @@ describe('tenant model-route policy', () => {
   })
 
   it('refuses another model on an otherwise-allowed provider before adapter selection', async () => {
-    const { context, adapter, recordRouteRefusal } = await boot({
-      allowlists: { 'tenant-alice': [{ provider: 'claude-cli', model: 'sonnet' }] },
-    })
+    const { context, adapter, recordRouteRefusal } = await boot(() => [{ provider: 'claude-cli', model: 'sonnet' }])
 
     const chunks = await call(context, 'claude-cli', 'opus')
 
@@ -83,9 +86,7 @@ describe('tenant model-route policy', () => {
   })
 
   it('refuses another provider even when its model name matches', async () => {
-    const { context, adapter } = await boot({
-      allowlists: { 'tenant-alice': [{ provider: 'claude-cli', model: 'sonnet' }] },
-    })
+    const { context, adapter } = await boot(() => [{ provider: 'claude-cli', model: 'sonnet' }])
 
     await call(context, 'codex-cli', 'sonnet')
 
@@ -93,9 +94,7 @@ describe('tenant model-route policy', () => {
   })
 
   it('checks the final route after Harness routing middleware rewrites it', async () => {
-    const { context, adapter } = await boot({
-      allowlists: { 'tenant-alice': [{ provider: 'claude-cli', model: 'sonnet' }] },
-    })
+    const { context, adapter } = await boot(() => [{ provider: 'claude-cli', model: 'sonnet' }])
     context.on('llm/stream', (options, next) => {
       options.model = 'opus'
       return next()
@@ -109,8 +108,8 @@ describe('tenant model-route policy', () => {
     expect(adapter.calls).toHaveLength(0)
   })
 
-  it('denies a managed tenant missing from configuration', async () => {
-    const { context, adapter } = await boot({ allowlists: {} })
+  it('denies a managed tenant with no stored policy', async () => {
+    const { context, adapter } = await boot(() => undefined)
 
     const [terminal] = await call(context, 'claude-cli', 'sonnet')
 
@@ -121,7 +120,7 @@ describe('tenant model-route policy', () => {
   })
 
   it('keeps unmanaged sessions and calls without a session in Harness control', async () => {
-    const { context, adapter } = await boot({ allowlists: {} })
+    const { context, adapter } = await boot(() => undefined)
 
     await call(context, 'claude-cli', 'sonnet', unmanaged)
     await call(context, 'claude-cli', 'sonnet', null)
@@ -131,12 +130,27 @@ describe('tenant model-route policy', () => {
 
   it('does not let one tenant inherit another tenant route grant', async () => {
     const bobbySession = SessionId('session-bobby')
-    const { context, adapter } = await boot({
-      allowlists: { 'tenant-alice': [{ provider: 'claude-cli', model: 'sonnet' }] },
-    }, id => id === session ? 'tenant-alice' : id === bobbySession ? 'tenant-bobby' : undefined)
+    const { context, adapter } = await boot(
+      tenant => tenant === 'tenant-alice' ? [{ provider: 'claude-cli', model: 'sonnet' }] : undefined,
+      id => id === session ? 'tenant-alice' : id === bobbySession ? 'tenant-bobby' : undefined,
+    )
 
     await call(context, 'claude-cli', 'sonnet', session)
     const [terminal] = await call(context, 'claude-cli', 'sonnet', bobbySession)
+
+    expect(adapter.calls).toHaveLength(1)
+    expect(terminal).toMatchObject({
+      type: 'finish', reason: { kind: 'error', failure: { code: TENANT_ROUTE_NOT_ALLOWED } },
+    })
+  })
+
+  it('uses a policy update on the next call without restarting the plugin', async () => {
+    let routes: readonly { provider: string; model: string }[] = [{ provider: 'claude-cli', model: 'sonnet' }]
+    const { context, adapter } = await boot(() => routes)
+
+    await call(context, 'claude-cli', 'sonnet')
+    routes = [{ provider: 'codex-cli', model: 'gpt-5.4' }]
+    const [terminal] = await call(context, 'claude-cli', 'sonnet')
 
     expect(adapter.calls).toHaveLength(1)
     expect(terminal).toMatchObject({

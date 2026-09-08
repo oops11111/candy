@@ -11,6 +11,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { DatabaseSync } from 'node:sqlite'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
@@ -205,6 +206,60 @@ describe('a booted control-plane store', () => {
     expect(await ctx.controlPlaneStore.tenantAllowance(ALICE))
       .toEqual({ grant: BUDGET, consumed: { tokens: 0, wallMs: 0, costMicroUsd: 0 } })
     expect(await ctx.controlPlaneStore.tenantAllowance(BOBBY)).toBeUndefined()
+  })
+
+  it('persists exact tenant model routes across restart without crossing tenants', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+    const routes = [
+      { provider: 'claude-cli', model: 'sonnet' },
+      { provider: 'codex-cli', model: 'gpt-5.4' },
+    ]
+
+    await first.controlPlaneStore.setTenantModelRoutes(ALICE, routes)
+    expect(first.controlPlaneStore.tenantModelRoutes(BOBBY)).toBeUndefined()
+    await first.fiber.dispose()
+    context = undefined
+
+    const restarted = await boot(root)
+    expect(restarted.controlPlaneStore.tenantModelRoutes(ALICE)).toEqual(routes)
+    expect(restarted.controlPlaneStore.tenantModelRoutes(BOBBY)).toBeUndefined()
+  })
+
+  it('adds the route table to an existing version-8 database without losing its records', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+    await first.controlPlaneStore.save(account())
+    await first.fiber.dispose()
+    context = undefined
+
+    // A version-8 deployment created before route policies has every existing
+    // table and the same unit stamp, but no independently materialized route table.
+    const database = new DatabaseSync(join(root, 'candy.db'))
+    database.exec('DROP TABLE "u_candy_control_plane_tenant_routes"')
+    database.close()
+
+    const upgraded = await boot(root)
+    expect(await upgraded.controlPlaneStore.find(ACCOUNT)).toMatchObject({ record: account().record })
+    expect(upgraded.controlPlaneStore.tenantModelRoutes(ALICE)).toBeUndefined()
+    await expect(upgraded.controlPlaneStore.setTenantModelRoutes(ALICE, [
+      { provider: 'claude-cli', model: 'sonnet' },
+    ])).resolves.toEqual([{ provider: 'claude-cli', model: 'sonnet' }])
+  })
+
+  it('persists deny-all and rejects malformed tenant model-route policies', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+
+    expect(await ctx.controlPlaneStore.setTenantModelRoutes(ALICE, [])).toEqual([])
+    expect(ctx.controlPlaneStore.tenantModelRoutes(ALICE)).toEqual([])
+    await expect(ctx.controlPlaneStore.setTenantModelRoutes(ALICE, [
+      { provider: 'claude-cli', model: 'sonnet' },
+      { provider: 'claude-cli', model: 'sonnet' },
+    ])).rejects.toThrow(/duplicate tenant model route/)
+    await expect(ctx.controlPlaneStore.setTenantModelRoutes(ALICE, [
+      { provider: ' ', model: 'sonnet' },
+    ])).rejects.toThrow(/non-blank provider and model ids/)
   })
 
   it('adds a settled run to what the tenant has consumed, leaving the grant alone', async () => {

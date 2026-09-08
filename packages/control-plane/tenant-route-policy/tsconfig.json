@@ -10,7 +10,7 @@
   "references": [
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
-    { "path": "../../../vendor/schemastery" },
+    { "path": "../control-plane-store" },
     { "path": "../../llm/llm" },
     { "path": "../run-scheduler" }
   ]

@@ -45,11 +45,13 @@ import {
   type StoredAuditTrail,
   type StoredRun,
   type StoredTenantAllowance,
+  type StoredTenantRoutePolicy,
   type StoredWorkspaceGrant,
+  type TenantModelRoute,
 } from './spec.ts'
 
 export { controlPlaneDomainSpec, runtimeSubject, tenantSubject } from './spec.ts'
-export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredRun, StoredTenantAllowance, StoredWorkspaceGrant } from './spec.ts'
+export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredRun, StoredTenantAllowance, StoredTenantRoutePolicy, StoredWorkspaceGrant, TenantModelRoute } from './spec.ts'
 
 /**
  * Add one record to a trail, folding it into the last when it says the same
@@ -103,7 +105,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Durable provider accounts and tenant allowances.
+ * Durable provider accounts, tenant allowances and model-route policies.
  *
  * Reads are synchronous against the domain's in-memory state and are exposed
  * as promises because the ports they satisfy are asynchronous. Writes reach
@@ -134,6 +136,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
   private grants!: KvTable<WorkspaceGrantId, StoredWorkspaceGrant>
   private managedSessions!: KvTable<SessionId, { runtime: string }>
   private spentNonces!: KvTable<string, { expiresAt: number }>
+  private tenantRoutes!: KvTable<UserId, StoredTenantRoutePolicy>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -150,6 +153,50 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     this.grants = domain.table('grants')
     this.managedSessions = domain.table('managed_sessions')
     this.spentNonces = domain.table('spent_nonces')
+    this.tenantRoutes = domain.table('tenant_routes')
+  }
+
+  /**
+   * Read one tenant's complete model-route allowlist.
+   *
+   * Missing means no policy was provisioned and therefore no route is
+   * allowed. An empty returned list is an explicit deny-all policy; callers
+   * enforce both cases identically but operators can still distinguish them.
+   * @param userId - the tenant whose model authority is requested.
+   * @returns a defensive copy of the routes, or undefined when not provisioned.
+   */
+  tenantModelRoutes(userId: UserId): readonly TenantModelRoute[] | undefined {
+    const stored = this.tenantRoutes.get(userId)
+    return stored?.routes.map(route => ({ ...route }))
+  }
+
+  /**
+   * Replace one tenant's complete model-route allowlist.
+   *
+   * Exact duplicate routes and blank fields are rejected instead of silently
+   * normalized, because either usually means an operator supplied a malformed
+   * security policy. An empty list is valid and persists a deny-all policy.
+   * @param userId - the tenant whose model authority is replaced.
+   * @param routes - exact provider/model pairs that tenant may call.
+   * @returns a defensive copy after the write reaches the medium.
+   * @throws TypeError for blank fields or duplicate exact routes.
+   */
+  async setTenantModelRoutes(userId: UserId, routes: readonly TenantModelRoute[]): Promise<readonly TenantModelRoute[]> {
+    const stored: TenantModelRoute[] = []
+    const seen = new Set<string>()
+    for (const route of routes) {
+      if (route.provider.trim() === '' || route.model.trim() === '') {
+        throw new TypeError('dsh-control-plane-store: tenant model routes require non-blank provider and model ids')
+      }
+      const key = `${route.provider}\u0000${route.model}`
+      if (seen.has(key)) {
+        throw new TypeError(`dsh-control-plane-store: duplicate tenant model route ${JSON.stringify(`${route.provider}/${route.model}`)}`)
+      }
+      seen.add(key)
+      stored.push({ provider: route.provider, model: route.model })
+    }
+    await this.tenantRoutes.put(userId, { routes: stored })
+    return stored.map(route => ({ ...route }))
   }
 
   /**

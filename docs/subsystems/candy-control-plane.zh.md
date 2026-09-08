@@ -72,11 +72,35 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.controlPlaneStore` — `ControlPlaneStore`
 
-Durable provider accounts and tenant allowances.
+Durable provider accounts, tenant allowances and model-route policies.
 
 Reads are synchronous against the domain's in-memory state and are exposed as promises because the ports they satisfy are asynchronous. Writes reach the medium before memory, so a read never sees a record the medium does not hold.
 
 ```ts cordis-catalog
+/**
+ * Read one tenant's complete model-route allowlist.
+ *
+ * Missing means no policy was provisioned and therefore no route is
+ * allowed. An empty returned list is an explicit deny-all policy; callers
+ * enforce both cases identically but operators can still distinguish them.
+ * @param userId - the tenant whose model authority is requested.
+ * @returns a defensive copy of the routes, or undefined when not provisioned.
+ */
+tenantModelRoutes(userId: UserId): readonly TenantModelRoute[] | undefined
+
+/**
+ * Replace one tenant's complete model-route allowlist.
+ *
+ * Exact duplicate routes and blank fields are rejected instead of silently
+ * normalized, because either usually means an operator supplied a malformed
+ * security policy. An empty list is valid and persists a deny-all policy.
+ * @param userId - the tenant whose model authority is replaced.
+ * @param routes - exact provider/model pairs that tenant may call.
+ * @returns a defensive copy after the write reaches the medium.
+ * @throws TypeError for blank fields or duplicate exact routes.
+ */
+async setTenantModelRoutes(userId: UserId, routes: readonly TenantModelRoute[]): Promise<readonly TenantModelRoute[]>
+
 /**
  * Atomically consume one tenant-scoped assertion nonce on the durable
  * medium. A digest keeps the per-record JSON layout's path-safe key contract

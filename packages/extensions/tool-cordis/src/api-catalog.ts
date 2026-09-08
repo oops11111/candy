@@ -680,9 +680,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'controlPlaneStore',
-    summary: 'Durable provider accounts and tenant allowances.',
-    description: 'Durable provider accounts and tenant allowances.\n\nReads are synchronous against the domain\'s in-memory state and are exposed as promises because the ports they satisfy are asynchronous. Writes reach the medium before memory, so a read never sees a record the medium does not hold.',
+    summary: 'Durable provider accounts, tenant allowances and model-route policies.',
+    description: 'Durable provider accounts, tenant allowances and model-route policies.\n\nReads are synchronous against the domain\'s in-memory state and are exposed as promises because the ports they satisfy are asynchronous. Writes reach the medium before memory, so a read never sees a record the medium does not hold.',
     methods: [
+      {
+        signature: 'tenantModelRoutes(userId: UserId): readonly TenantModelRoute[] | undefined',
+        description: 'Read one tenant\'s complete model-route allowlist.\n\nMissing means no policy was provisioned and therefore no route is allowed. An empty returned list is an explicit deny-all policy; callers enforce both cases identically but operators can still distinguish them.',
+        parameters: [{ name: 'userId', description: 'the tenant whose model authority is requested.' }],
+        returns: 'a defensive copy of the routes, or undefined when not provisioned.',
+      },
+      {
+        signature: 'async setTenantModelRoutes(userId: UserId, routes: readonly TenantModelRoute[]): Promise<readonly TenantModelRoute[]>',
+        description: 'Replace one tenant\'s complete model-route allowlist.\n\nExact duplicate routes and blank fields are rejected instead of silently normalized, because either usually means an operator supplied a malformed security policy. An empty list is valid and persists a deny-all policy.',
+        parameters: [{ name: 'userId', description: 'the tenant whose model authority is replaced.' }, { name: 'routes', description: 'exact provider/model pairs that tenant may call.' }],
+        returns: 'a defensive copy after the write reaches the medium.',
+        throws: ['TypeError for blank fields or duplicate exact routes.'],
+      },
       {
         signature: 'async spendNonce( claims: ExecutionAssertionClaims, now: number, ): Promise<boolean>',
         description: 'Atomically consume one tenant-scoped assertion nonce on the durable medium. A digest keeps the per-record JSON layout\'s path-safe key contract without weakening the collision boundary held by `replayKey`.',
@@ -6074,6 +6087,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TenantAllowance',
     declaration: 'export interface TenantAllowance {\n    readonly grant: RunBudget;\n    readonly consumed: RunSpend;\n}',
+  },
+  {
+    name: 'TenantModelRoute',
+    declaration: 'export type TenantModelRoute = z.infer<typeof storedTenantRoute>;',
   },
   {
     name: 'TerminalBackend',

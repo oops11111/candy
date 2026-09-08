@@ -2665,30 +2665,6 @@ export interface Config {
 
 Source: [`packages/control-plane/tenant-preset-policy/src/index.ts:33`](../packages/control-plane/tenant-preset-policy/src/index.ts)
 
-<a id="deepseek-aidsh-tenant-route-policy"></a>
-
-## `@deepseek-ai/dsh-tenant-route-policy`
-
-Requires: `llm` · `runScheduler`
-
-```ts config-catalog
-/** Per-tenant route grants enforced by this deployment. */
-export interface Config {
-  /** Exact provider/model routes keyed by tenant id. Missing tenants are denied. */
-  readonly allowlists: Readonly<Record<string, readonly AllowedRoute[]>>
-}
-
-/** One exact provider/model route a tenant may call. */
-export interface AllowedRoute {
-  /** Registered provider id selecting the adapter. */
-  readonly provider: string
-  /** Exact model id accepted by that provider route. */
-  readonly model: string
-}
-```
-
-Source: [`packages/control-plane/tenant-route-policy/src/index.ts:32`](../packages/control-plane/tenant-route-policy/src/index.ts)
-
 <a id="deepseek-aidsh-terminal-bash"></a>
 
 ## `@deepseek-ai/dsh-terminal-bash`
@@ -3576,6 +3552,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-storage` ([`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts))
 - `@deepseek-ai/dsh-subagent` ([`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts))
 - `@deepseek-ai/dsh-subprocess-local` ([`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts))
+- `@deepseek-ai/dsh-tenant-route-policy` — requires `llm` · `runScheduler` · `controlPlaneStore` ([`packages/control-plane/tenant-route-policy/src/index.ts`](../packages/control-plane/tenant-route-policy/src/index.ts))
 - `@deepseek-ai/dsh-terminal` ([`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts))
 - `@deepseek-ai/dsh-tool-ask-user` — requires `tools` · `userQuestions` ([`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts))
 - `@deepseek-ai/dsh-tool-call-timeout-policy` — requires `tools` ([`packages/guard/timeout-policy/src/index.ts`](../packages/guard/timeout-policy/src/index.ts))

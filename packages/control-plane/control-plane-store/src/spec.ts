@@ -204,6 +204,15 @@ const storedManagedSession = z.object({ runtime: z.string() })
 /** One tenant-scoped assertion nonce and the end of its admissible lifetime. */
 const storedReplayNonce = z.object({ expiresAt: z.number() })
 
+/** One exact provider/model route a tenant is allowed to call. */
+const storedTenantRoute = z.object({
+  provider: z.string(),
+  model: z.string(),
+})
+
+/** One tenant's complete model-route allowlist; an empty list explicitly denies all routes. */
+const storedTenantRoutePolicy = z.object({ routes: z.array(storedTenantRoute) })
+
 /** The durable declaration the control-plane store opens. */
 export const controlPlaneDomainSpec = defineDomain({
   name: 'candy_control_plane',
@@ -237,6 +246,11 @@ export const controlPlaneDomainSpec = defineDomain({
   // a settled Candy session from an unmanaged session after a restart.
   // 8 adds durable spent nonces. A version 7 store has no replay history, so
   // accepting it would reopen every assertion admitted before the restart.
+  // Tenant model-route policies add a new table without changing any existing
+  // record shape, so they remain on version 8. This is deliberate: SQLite
+  // rejects a unit-version mismatch and can materialize the new table while
+  // preserving every account, grant, run, audit and nonce already stored.
+  // An older store has no route records, which is the correct fail-closed state.
   version: 8,
   layout: 'per-record',
   tables: {
@@ -247,6 +261,7 @@ export const controlPlaneDomainSpec = defineDomain({
     grants: domainTable<WorkspaceGrantId, z.infer<typeof storedGrantRecord>>(storedGrantRecord),
     managed_sessions: domainTable<SessionId, z.infer<typeof storedManagedSession>>(storedManagedSession),
     spent_nonces: domainTable<string, z.infer<typeof storedReplayNonce>>(storedReplayNonce),
+    tenant_routes: domainTable<UserId, z.infer<typeof storedTenantRoutePolicy>>(storedTenantRoutePolicy),
   },
 })
 
@@ -334,6 +349,12 @@ export function fromStoredEntry(stored: z.infer<typeof storedEntry>): ProviderAc
 
 /** The stored allowance form, for a caller writing one. */
 export type StoredTenantAllowance = z.infer<typeof storedAllowance>
+
+/** One exact provider/model route in a tenant's durable allowlist. */
+export type TenantModelRoute = z.infer<typeof storedTenantRoute>
+
+/** The stored form of one tenant's complete model-route policy. */
+export type StoredTenantRoutePolicy = z.infer<typeof storedTenantRoutePolicy>
 
 /** Rebuild one grant from the medium. */
 function fromStoredGrant(stored: StoredTenantAllowance['grant']): RunBudget {

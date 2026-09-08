@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-07-the-route-at-the-last-door.md
-2026-09-07-the-route-at-the-last-door.md: 1663afb96876b19b2a921e66a6b03f1d301869db
-2026-09-07-the-route-at-the-last-door.zh.md: e1c0654adbb135bc5dbcfa9da0d89ec636916c8e
+2026-09-07-the-route-at-the-last-door.md: f19721793bcebf30e4b743b0556992974d28e502
+2026-09-07-the-route-at-the-last-door.zh.md: 377ba97007365c7b5a166fea05dc7764d4d00e84

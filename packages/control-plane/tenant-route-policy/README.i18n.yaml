@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/control-plane/tenant-route-policy/README.md
-README.md: f00413e0ed4ecf02d539443b04c487d181a4cd24
-README.zh.md: a6e3ea2091b3b4dc231ba2cfb5acc574fd0ec9bd
+README.md: 69437b71804b8e6b8705eff54498c6daa431d3b6
+README.zh.md: 3dbfdf065b6823212218a39fed3c839c31269a02
