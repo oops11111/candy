@@ -43,7 +43,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
 import { RunId, type ProviderAccountId, type ProviderKind, type UserId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import {
-  CredentialKeyVersion,
+  assembleKeyring,
   openCredential,
   type CredentialAuditEvent,
   type CredentialKeyring,
@@ -138,9 +138,6 @@ export const Config: z<Config> = z.object({
   endedSessionMemory: z.number().step(1).min(1).default(1_000),
   auditRetention: z.number().step(1).min(1).default(200),
 })
-
-/** Bytes a credential key must carry, matching what the vault seals with. */
-const CREDENTIAL_KEY_BYTES = 32
 
 /** Why a session did not resolve to one open, usable run. */
 export type SessionRunRejection =
@@ -292,30 +289,13 @@ export class RunScheduler extends Service {
     super(ctx, 'runScheduler')
     const environment = process.env
     this.assertionSecret = requireSecret(environment, config.assertionSecretEnv ?? 'CANDY_ASSERTION_SECRET')
-    const key = requireSecret(environment, config.credentialKeyEnv ?? 'CANDY_CREDENTIAL_KEY')
-    if (key.byteLength !== CREDENTIAL_KEY_BYTES) {
-      throw new RangeError(
-        `dsh-run-scheduler: the credential key must be ${String(CREDENTIAL_KEY_BYTES)} bytes, got ${String(key.byteLength)}`,
-      )
-    }
-    const currentVersion = CredentialKeyVersion(config.credentialKeyVersion)
-    const keys = new Map([[currentVersion, key]])
-    for (const retired of config.retiredCredentialKeys ?? []) {
-      const version = CredentialKeyVersion(retired.version)
-      // Both of these would silently decide which key a version means, and the
-      // wrong answer is a tenant whose credential opens with someone's key or
-      // not at all, so neither is resolved here.
-      if (version === currentVersion) {
-        throw new Error(
-          `dsh-run-scheduler: credential key version '${retired.version}' is both current and retired, so it names two keys`,
-        )
-      }
-      if (keys.has(version)) {
-        throw new Error(`dsh-run-scheduler: credential key version '${retired.version}' is retired twice`)
-      }
-      keys.set(version, requireSecret(environment, retired.env))
-    }
-    this.keyring = { currentVersion, keys }
+    this.keyring = assembleKeyring({
+      component: 'dsh-run-scheduler',
+      environment,
+      currentVersion: config.credentialKeyVersion,
+      currentEnv: config.credentialKeyEnv ?? 'CANDY_CREDENTIAL_KEY',
+      retired: config.retiredCredentialKeys ?? [],
+    })
   }
 
   /**

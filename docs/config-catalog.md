@@ -1713,6 +1713,35 @@ export interface Config {
 
 Source: [`packages/llm/plugin-package-inventory-deepseek/src/index.ts:31`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
 
+<a id="deepseek-aidsh-provider-account-api"></a>
+
+## `@deepseek-ai/dsh-provider-account-api`
+
+Requires: `webServer` · `controlPlaneStore` · `providerCredentialChecks`
+
+```ts config-catalog
+/** Deployment-owned facts this API needs beyond what the envelope carries. */
+export interface Config {
+  /** Exact externally visible HTTPS origin, matching what sign-in was configured with. */
+  publicOrigin: string
+  /** Keyring version a newly sealed credential is stamped with. */
+  credentialKeyVersion: string
+  /** Environment variable holding the current credential key. */
+  credentialKeyEnv: string
+  /** Retained key versions this deployment still opens, so an older envelope stays readable. */
+  retiredCredentialKeys: {
+    /** Version the envelopes sealed under this key name. */
+    version: string
+    /** Environment variable holding that key. */
+    env: string
+  }[]
+  /** Most audit records kept per tenant. */
+  auditRetention: number
+}
+```
+
+Source: [`packages/control-plane/provider-account-api/src/index.ts:71`](../packages/control-plane/provider-account-api/src/index.ts)
+
 <a id="deepseek-aidsh-pwsh-local"></a>
 
 ## `@deepseek-ai/dsh-pwsh-local`
@@ -3603,6 +3632,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-host-plugin-inventory` — requires `loader` ([`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts))
 - `@deepseek-ai/dsh-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
 - `@deepseek-ai/dsh-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
+- `@deepseek-ai/dsh-provider-credential-checks` ([`packages/control-plane/provider-credential-checks/src/index.ts`](../packages/control-plane/provider-credential-checks/src/index.ts))
 - `@deepseek-ai/dsh-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
 - `@deepseek-ai/dsh-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
 - `@deepseek-ai/dsh-session-checkpoint-policy` — requires `llm` · `sessionPersistence` · `sessions` · `tools` ([`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts))

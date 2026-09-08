@@ -884,6 +884,21 @@ describe('a booted Candy scheduler', () => {
     })
   })
 
+  it('files a route refusal with no run of its own against the runtime', async () => {
+    // A session this runtime holds no run for names no tenant it may believe,
+    // so the record goes where an unverifiable assertion's does.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    await provision(ctx, Date.now())
+
+    await ctx.runScheduler.recordRouteRefusal(SESSION, 'TENANT_ROUTE_NOT_ALLOWED', 'route denied')
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toEqual([])
+    expect(ctx.runScheduler.auditsOfRuntime().at(-1)).toMatchObject({
+      event: 'refused', action: 'route', outcome: 'TENANT_ROUTE_NOT_ALLOWED',
+    })
+  })
+
   it('records a route-policy refusal against the managed tenant before it is reported', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)

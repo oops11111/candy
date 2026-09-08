@@ -40,6 +40,8 @@ export type ApiRejection =
   | 'method-not-allowed'
   /** The body is not the JSON this route reads. */
   | 'malformed-body'
+  /** The handler threw; the caller is told nothing about what. */
+  | 'handler-failed'
 
 /**
  * What a handler answers with.

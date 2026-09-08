@@ -33,6 +33,8 @@ control-plane 组提供共享且互不可替换的身份，以及使用这些身
 | [`provider-accounts`](provider-accounts/README.zh.md) | 拥有租户提供方账户元数据、加密凭据生命周期、默认选择与不含密钥的账户视图 |
 | [`run-budget`](run-budget/README.zh.md) | 通过让每个子运行的额度从父运行那里扣除，为委派树的 token、时间、金额与并发设界 |
 | [`workspace-grant`](workspace-grant/README.zh.md) | 把断言所指名的工作区授权 id 解析成一次运行所持有的根目录与文件效应上限,并拒绝指名了任何其他授权的子代 |
+| [`provider-credential-checks`](provider-credential-checks/README.zh.md) | 提供方集成用来说出一份已存储凭据是否仍然有效的注册表 |
+| [`provider-account-api`](provider-account-api/README.zh.md) | 挂载在已认证管理信封上的六个提供方账户操作 |
 | [`run-ledger`](run-ledger/README.zh.md) | 记录每次开启中的运行持有什么、花掉了什么，并精确而非估算地结算被遗弃的占用 |
 | [`run-replay`](run-replay/README.zh.md) | 以一个不可分割的步骤把断言的 nonce 记为已消费，并恰好在该断言仍可被准入期间保留它 |
 | [`tenant-allowance`](tenant-allowance/README.zh.md) | 把租户的授予额度与其已结算运行的消耗并排持有，使一份授予额度只为一个租户拨款，而不是为它启动的每一次运行拨款 |

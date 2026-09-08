@@ -244,6 +244,71 @@ function audit(
   return { action, userId: binding.userId, accountId: binding.accountId, keyVersion, at, outcome }
 }
 
+/** One key version a rotation left behind, and where its key is read from. */
+export interface RetiredKeySource {
+  /** Version the envelopes sealed under this key name. */
+  readonly version: string
+  /** Environment variable holding that key, exactly {@link CREDENTIAL_KEY_BYTES} bytes. */
+  readonly env: string
+}
+
+/** Bytes a credential key must carry, matching what {@link sealCredential} seals with. */
+export const CREDENTIAL_KEY_BYTES = 32
+
+/**
+ * Assemble one deployment's keyring from its environment.
+ *
+ * Two deployments read the same variables for the same reason: a runtime that
+ * opens a tenant's credential and a management API that seals a new one must
+ * agree on which version means which key, or a credential sealed by one is
+ * unopenable by the other.
+ *
+ * A version that is both current and retired, or retired twice, would silently
+ * decide which key it means, and the wrong answer is a tenant whose credential
+ * opens with somebody else's key or not at all. Neither is resolved here.
+ *
+ * @param source - the reading component's own name, the environment, the
+ *   current version and its variable, and any retired versions still opened.
+ * @returns the keyring, with the current version first.
+ * @throws Error when a named variable is unset, a key is the wrong length, or
+ * a version names two keys.
+ */
+export function assembleKeyring(source: {
+  readonly component: string
+  readonly environment: Readonly<Record<string, string | undefined>>
+  readonly currentVersion: string
+  readonly currentEnv: string
+  readonly retired?: readonly RetiredKeySource[]
+}): CredentialKeyring {
+  const read = (name: string): Buffer => {
+    const value = source.environment[name]
+    if (value === undefined || value.length === 0) {
+      throw new Error(`${source.component}: ${name} is not set, so this component has no key to seal or open with`)
+    }
+    const key = Buffer.from(value, 'utf8')
+    if (key.byteLength !== CREDENTIAL_KEY_BYTES) {
+      throw new RangeError(
+        `${source.component}: the credential key in ${name} must be ${String(CREDENTIAL_KEY_BYTES)} bytes, `
+        + `got ${String(key.byteLength)}`,
+      )
+    }
+    return key
+  }
+  const currentVersion = CredentialKeyVersion(source.currentVersion)
+  const keys = new Map([[currentVersion, read(source.currentEnv)]])
+  for (const retired of source.retired ?? []) {
+    const version = CredentialKeyVersion(retired.version)
+    if (version === currentVersion) {
+      throw new Error(`${source.component}: credential key version '${retired.version}' is both current and retired, so it names two keys`)
+    }
+    if (keys.has(version)) {
+      throw new Error(`${source.component}: credential key version '${retired.version}' is retired twice`)
+    }
+    keys.set(version, read(retired.env))
+  }
+  return { currentVersion, keys }
+}
+
 /**
  * Seal one secret for a tenant's provider account under the keyring's current key.
  *

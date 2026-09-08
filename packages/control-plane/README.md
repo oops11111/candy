@@ -33,6 +33,8 @@ The scheduler description above uses the original ownership shorthand. Replay de
 | [`provider-accounts`](provider-accounts/README.md) | Owns tenant provider-account metadata, encrypted credential lifecycle, default selection, and secret-free account views |
 | [`run-budget`](run-budget/README.md) | Bounds a delegation tree's tokens, time, money, and concurrency by drawing each child's allowance out of its parent's |
 | [`workspace-grant`](workspace-grant/README.md) | Resolves the workspace-grant id an assertion names into the roots and file-effect ceiling a run holds, and refuses a child that names any other |
+| [`provider-credential-checks`](provider-credential-checks/README.md) | The registry a provider integration says through whether one stored credential still authenticates |
+| [`provider-account-api`](provider-account-api/README.md) | The six provider-account operations, mounted on the authenticated management envelope |
 | [`run-ledger`](run-ledger/README.md) | Records what each open run holds and has spent, and settles an abandoned hold exactly rather than by estimate |
 | [`run-replay`](run-replay/README.md) | Records an assertion's nonce as spent in one indivisible step, retained exactly while that assertion stays admissible |
 | [`tenant-allowance`](tenant-allowance/README.md) | Holds a tenant's grant beside what its settled runs consumed, so one grant funds one tenant rather than every run it starts |

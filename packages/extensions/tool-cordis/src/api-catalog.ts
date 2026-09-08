@@ -1516,6 +1516,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'providerCredentialChecks',
+    summary: 'The registry one deployment\'s provider integrations contribute to.',
+    description: 'The registry one deployment\'s provider integrations contribute to.',
+    methods: [
+      {
+        signature: 'register(provider: ProviderKind, check: ProviderCredentialCheck): () => void',
+        description: 'Register how one provider\'s credential is checked.',
+        parameters: [{ name: 'provider', description: 'the provider this check speaks for.' }, { name: 'check', description: 'answers whether one secret authenticates, and nothing else.' }],
+        returns: 'the disposer removing the registration.',
+      },
+      {
+        signature: 'async check(provider: ProviderKind, secret: Uint8Array): Promise<ProviderAccountValidation>',
+        description: 'Ask whether one credential authenticates with its provider.\n\nThe first registration for a provider answers. A deployment composes one integration per provider, and a second would be two opinions about one fact with no rule for choosing between them.',
+        parameters: [{ name: 'provider', description: 'the account\'s provider.' }, { name: 'secret', description: 'the opened credential, held only for this call.' }],
+        returns: 'the verdict, or `unsupported-provider` when nothing is registered.',
+      },
+    ],
+  },
+  {
     key: 'runScheduler',
     summary: 'Live run state for one Candy runtime, and the composition that starts a run.',
     description: 'Live run state for one Candy runtime, and the composition that starts a run.\n\nOne instance owns one ledger, so every run this runtime admits is accounted against the same delegation trees. Spent nonces instead belong to the durable control-plane store and are shared across runtime processes.',
@@ -4999,6 +5018,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ProviderAccountRecord',
     declaration: 'export interface ProviderAccountRecord {\n    readonly id: ProviderAccountId;\n    readonly userId: UserId;\n    readonly provider: ProviderKind;\n    readonly label: string;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly validatedAt: number | undefined;\n    readonly revokedAt: number | undefined;\n    readonly deletedAt: number | undefined;\n    readonly isDefault: boolean;\n}',
+  },
+  {
+    name: 'ProviderAccountValidation',
+    declaration: 'export type ProviderAccountValidation = {\n    readonly valid: true;\n    readonly diagnostic?: string;\n} | {\n    readonly valid: false;\n    readonly reason: \'invalid-credential\' | \'provider-unavailable\' | \'unsupported-provider\';\n    readonly diagnostic?: string;\n};',
+  },
+  {
+    name: 'ProviderCredentialCheck',
+    declaration: 'export type ProviderCredentialCheck = (secret: Uint8Array) => Promise<ProviderAccountValidation>;',
   },
   {
     name: 'ProviderKind',

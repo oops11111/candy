@@ -17,7 +17,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, UserSessionId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import {
   CredentialKeyVersion,
@@ -316,6 +316,24 @@ describe('a booted control-plane store', () => {
     expect(await ctx.controlPlaneStore.revokeUserSession(created.record.id, NOW + 5)).toBe(true)
     expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 6)).toBeUndefined()
     expect(ctx.controlPlaneStore.verifyUserSessionCsrf(created.record.id, created.csrfToken)).toBe(false)
+    // Revoking twice reports the session still exists and leaves the first
+    // instant standing, so a second logout cannot rewrite when it happened.
+    expect(await ctx.controlPlaneStore.revokeUserSession(created.record.id, NOW + 7)).toBe(true)
+    // A session this store never issued is not one it can revoke.
+    expect(await ctx.controlPlaneStore.revokeUserSession(UserSessionId('never-issued'), NOW + 8)).toBe(false)
+  })
+
+  it('lets a nonce be spent again once the assertion that carried it has expired', async () => {
+    // The record is retained exactly while its assertion stays admissible; past
+    // that it can no longer deny anything, and the slot is reusable.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const first = { ...assertion(), expiresAt: NOW + 10 }
+
+    expect(await ctx.controlPlaneStore.spendNonce(first, NOW)).toBe(true)
+    expect(await ctx.controlPlaneStore.spendNonce(first, NOW + 5)).toBe(false)
+
+    expect(await ctx.controlPlaneStore.spendNonce({ ...first, expiresAt: NOW + 30 }, NOW + 11)).toBe(true)
   })
 
   it('refuses invalid OAuth identity and session lifetime inputs', async () => {

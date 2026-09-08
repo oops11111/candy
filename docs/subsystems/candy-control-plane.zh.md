@@ -460,6 +460,36 @@ Types: [SessionId](core.zh.md)
 
 Source: [`packages/control-plane/control-plane-store/src/index.ts`](../../packages/control-plane/control-plane-store/src/index.ts)
 
+<a id="ctxprovidercredentialchecks--providercredentialchecks"></a>
+
+### `ctx.providerCredentialChecks` — `ProviderCredentialChecks`
+
+The registry one deployment's provider integrations contribute to.
+
+```ts cordis-catalog
+/**
+ * Register how one provider's credential is checked.
+ * @param provider - the provider this check speaks for.
+ * @param check - answers whether one secret authenticates, and nothing else.
+ * @returns the disposer removing the registration.
+ */
+register(provider: ProviderKind, check: ProviderCredentialCheck): () => void
+
+/**
+ * Ask whether one credential authenticates with its provider.
+ *
+ * The first registration for a provider answers. A deployment composes one
+ * integration per provider, and a second would be two opinions about one
+ * fact with no rule for choosing between them.
+ * @param provider - the account's provider.
+ * @param secret - the opened credential, held only for this call.
+ * @returns the verdict, or `unsupported-provider` when nothing is registered.
+ */
+async check(provider: ProviderKind, secret: Uint8Array): Promise<ProviderAccountValidation>
+```
+
+Source: [`packages/control-plane/provider-credential-checks/src/index.ts`](../../packages/control-plane/provider-credential-checks/src/index.ts)
+
 <a id="ctxrunscheduler--runscheduler"></a>
 
 ### `ctx.runScheduler` — `RunScheduler`

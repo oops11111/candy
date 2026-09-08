@@ -94,6 +94,7 @@ const REJECTIONS: Readonly<Record<ApiRejection, { readonly status: number; reado
   'body-too-large': { status: 413, text: 'request body too large' },
   'method-not-allowed': { status: 405, text: 'method not allowed' },
   'malformed-body': { status: 400, text: 'malformed request' },
+  'handler-failed': { status: 500, text: 'the operation could not be completed' },
 }
 
 /** Methods that carry no body and need no CSRF proof. */
@@ -300,7 +301,18 @@ export function registerApiRoute(server: ApiWebServer, host: ApiHost, route: Api
           }
         }
       }
-      const result = await route.handle(actor, body, request)
+      let result: ApiResult
+      try {
+        result = await route.handle(actor, body, request)
+      } catch (error) {
+        // A handler that throws is a defect or a dependency that failed, and
+        // either way its message is the deployment's to read and never the
+        // caller's: it carries whatever the failing operation was holding.
+        host.log?.('handler-failed', route.path)
+        await host.audit({ userId: actor.userId, action: route.action, outcome: 'handler-failed' })
+        reply(response, REJECTIONS['handler-failed'].status, REJECTIONS['handler-failed'].text)
+        throw error
+      }
       send(response, result)
       await host.audit({
         userId: actor.userId,
