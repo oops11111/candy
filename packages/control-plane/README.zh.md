@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-control-plane 组为每个未来的 Candy 租户感知包提供一套共享且互不可替换的词汇，命名控制平面唯一拥有权威的实体：`UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`，以及记录某次运行父级的 `RunLineage`。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义，本组从不重新定义它。本组目前有二十个包：身份词汇及其持久化存储、按运行凭据与保管它的保险库、拥有用户可见提供方账户元数据的账户管理器、委派树预算与结算被遗弃占用的账本、为运行时状态分区的池键、组合运行授权的准入调用、`dsh-run-scheduler`——唯一正在运行的 Cordis 服务，拥有一个运行时自己的实时账本与重放存储——把一次被准入的运行变成受限、可处置启动的 Claude CLI 绑定与按会话路由、按租户收窄一份原本共享的 `dsh-agent-presets` 名册的租户 preset 策略、在最终模型调用边界强制执行精确 provider/model 授权的租户路由策略，以及在一个子代理受委派的子会话存在之前为其开启一次有资金运行的那个委派插件。[已接受的运行时边界页面](../../docs/candy-runtime-boundaries.zh.md) 与 [提议的多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 所描述的控制平面 OAuth、设备配对与多运行时部署尚未落地。本页是本组的映射；包 README 负责细节。
+control-plane 组提供共享且互不可替换的身份，以及使用这些身份的 Candy 自有授权、持久化、预算、路由和提供方启动组件。`SessionId` 直接复用 [`dsh-session`](../core/session/README.zh.md) 中已有的定义。包表是当前映射；[Candy 运行时边界](../../docs/candy-runtime-boundaries.zh.md) 规定安全职责划分，[多租户运行时计划](../../.agents/notes/proposed/architecture/2026-09-02-multi-tenant-cli-agent-runtime.zh.md) 记录尚未完成的交付工作。
 
 上面的调度器描述沿用了最初的所有权简称。重放决定现在持久存在 `ControlPlaneStore` 中；调度器只拥有实时账本，并组合该持久 nonce 端口。
 
@@ -26,6 +26,7 @@ control-plane 组为每个未来的 Candy 租户感知包提供一套共享且�
 |---|---|
 | [`control-plane`](control-plane/README.zh.md) | 品牌化的 `UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`、`RunId`，以及 `RunLineage` 谱系记录 |
 | [`execution-assertion`](execution-assertion/README.zh.md) | 签发并准入授权一次运行的带签名、短时效断言 |
+| [`oauth-sign-in`](oauth-sign-in/README.zh.md) | 完成 PKCE 回调并把已验证身份映射为 Candy 授权 |
 | [`credential-vault`](credential-vault/README.zh.md) | 封装租户的提供方账户密钥、轮换其密钥、吊销它,并记录每一次访问 |
 | [`provider-accounts`](provider-accounts/README.zh.md) | 拥有租户提供方账户元数据、加密凭据生命周期、默认选择与不含密钥的账户视图 |
 | [`run-budget`](run-budget/README.zh.md) | 通过让每个子运行的额度从父运行那里扣除，为委派树的 token、时间、金额与并发设界 |

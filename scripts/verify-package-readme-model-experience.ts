@@ -35,6 +35,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/control-plane/control-plane': 'The package only brands plain string ids and records run ancestry; model-facing consumers own any rendered use.',
   'packages/control-plane/credential-vault': 'The package only seals and opens stored secrets; nothing it produces reaches a model request.',
   'packages/control-plane/execution-assertion': 'The package only mints and checks a run credential; nothing it produces reaches a model request.',
+  'packages/control-plane/oauth-sign-in': 'The package only completes user authentication before any session addresses a model; nothing it produces reaches a model request.',
   'packages/control-plane/provider-accounts': 'The package only manages provider-account records and sealed credentials; model-facing consumers own any rendered use.',
   'packages/control-plane/run-admission': 'The package only decides whether a run may start; nothing it produces reaches a model request.',
   'packages/control-plane/run-budget': 'The package only does arithmetic over allowances; nothing it produces reaches a model request.',

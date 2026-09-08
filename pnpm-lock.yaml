@@ -4422,6 +4422,18 @@ importers:
         specifier: workspace:^
         version: link:../../core/session
 
+  packages/control-plane/oauth-sign-in:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-control-plane':
+        specifier: workspace:^
+        version: link:../control-plane
+      '@deepseek-ai/dsh-control-plane-store':
+        specifier: workspace:^
+        version: link:../control-plane-store
+
   packages/control-plane/provider-accounts:
     dependencies:
       '@deepseek-ai/dsh-control-plane':
