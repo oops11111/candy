@@ -231,6 +231,9 @@ const storedUserSession = z.object({
 const storedOAuthAttempt = z.object({
   stateDigest: z.string(),
   codeVerifier: z.string(),
+  // Optional only for the short migration window: an attempt written before
+  // nonce support is consumed fail-closed and never reaches a provider.
+  nonce: z.string().optional(),
   issuer: z.string(),
   redirectUri: z.string(),
   expiresAt: z.number(),

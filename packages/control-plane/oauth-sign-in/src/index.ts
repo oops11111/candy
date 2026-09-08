@@ -8,6 +8,7 @@ import type { UserSessionRecord } from '@deepseek-ai/dsh-control-plane-store'
 export interface OAuthSignInStore {
   consumeOAuthAttempt(state: string, now: number): Promise<{
     readonly codeVerifier: string
+    readonly nonce: string
     readonly issuer: string
     readonly redirectUri: string
   } | undefined>
@@ -27,6 +28,7 @@ export interface OAuthCodeProvider {
   exchangeCode(request: {
     readonly code: string
     readonly codeVerifier: string
+    readonly nonce: string
     readonly redirectUri: string
     readonly signal?: AbortSignal
   }): Promise<OAuthIdentity>
@@ -67,6 +69,7 @@ export interface OAuthWebProvider extends OAuthCodeProvider {
   authorizationUrl(input: {
     readonly state: string
     readonly codeChallenge: string
+    readonly nonce: string
     readonly redirectUri: string
   }): string | URL | Promise<string | URL>
 }
@@ -78,7 +81,7 @@ export interface OAuthWebStore extends OAuthSignInStore, OAuthHttpSessionStore, 
     redirectUri: string,
     now: number,
     expiresAt: number,
-  ): Promise<{ readonly state: string; readonly codeChallenge: string }>
+  ): Promise<{ readonly state: string; readonly codeChallenge: string; readonly nonce: string }>
   revokeUserSession(id: UserSessionRecord['id'], revokedAt: number): Promise<boolean>
 }
 
@@ -207,7 +210,12 @@ function callbackInput(request: IncomingMessage, config: ResolvedOAuthWebConfig)
 
 function verifiedAuthorizationLocation(
   value: string | URL,
-  expected: { readonly state: string; readonly codeChallenge: string; readonly redirectUri: string },
+  expected: {
+    readonly state: string
+    readonly codeChallenge: string
+    readonly nonce: string
+    readonly redirectUri: string
+  },
 ): string {
   const url = new URL(String(value))
   if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.hash !== '') {
@@ -220,7 +228,8 @@ function verifiedAuthorizationLocation(
   if (!exact('state', expected.state)
     || !exact('code_challenge', expected.codeChallenge)
     || !exact('code_challenge_method', 'S256')
-    || !exact('redirect_uri', expected.redirectUri)) {
+    || !exact('redirect_uri', expected.redirectUri)
+    || !exact('nonce', expected.nonce)) {
     throw new Error('OAuth authorization URL did not retain the server-created PKCE inputs')
   }
   return url.href
@@ -345,6 +354,7 @@ export function registerOAuthHttpRoutes(
         const input = {
           state: attempt.state,
           codeChallenge: attempt.codeChallenge,
+          nonce: attempt.nonce,
           redirectUri: resolved.callbackUri,
         }
         const location = verifiedAuthorizationLocation(await provider.authorizationUrl(input), input)
@@ -470,6 +480,7 @@ export async function completeOAuthSignIn(
   const identity = await provider.exchangeCode({
     code: input.code,
     codeVerifier: attempt.codeVerifier,
+    nonce: attempt.nonce,
     redirectUri: attempt.redirectUri,
     ...(input.signal === undefined ? {} : { signal: input.signal }),
   })

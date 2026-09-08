@@ -17,7 +17,7 @@ kind: "package-reference"
 
 `createUserSession` 只返回一次相互独立的 256 位 bearer 与 CSRF token，存储只保存二者的 SHA-256 摘要以及 Candy 用户、Candy 分配的角色、已验证的 OAuth issuer/subject 和过期时间。`authenticateUserSession` 只从有效 bearer 记录推导身份与角色；`verifyUserSessionCsrf` 独立证明状态变更请求重复提交了可读的同站 token。未知、过期或已撤销的 bearer 不会返回身份，撤销也会跨重启拒绝 CSRF token。
 
-`beginOAuthAttempt` 创建 256 位 state 与 PKCE verifier，在服务端保存 verifier，并且只返回 state 和 S256 challenge。`consumeOAuthAttempt` 会先原子删除匹配事务，再返回其 issuer、redirect URI 和 verifier；错误、过期、并发或重放的回调得不到任何内容。记录能跨重启保留，因此回调可以落到共享 SQLite 的另一个控制面进程。
+`beginOAuthAttempt` 创建相互独立的 256 位 state、PKCE verifier 与 OIDC nonce，在服务端保存 verifier 和 nonce，并返回授权请求需要的 state、S256 challenge 与 nonce。`consumeOAuthAttempt` 会先原子删除匹配事务，再返回其 issuer、redirect URI、verifier 与 nonce；错误、过期、并发、重放或生成于 nonce 支持之前的回调得不到任何内容。记录能跨重启保留，因此回调可以落到共享 SQLite 的另一个控制面进程。
 
 `enrollOAuthIdentity` 会原子创建一条永久 issuer/subject 到 Candy 用户与角色的映射；并发或后续尝试不能重绑该身份。`resolve` 实现 `dsh-oauth-sign-in` 消费的目录，不返回提供商 token，并拒绝尚未由预置流程登记的身份。
 

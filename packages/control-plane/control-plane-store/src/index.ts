@@ -230,7 +230,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     redirectUri: string,
     now: number,
     expiresAt: number,
-  ): Promise<{ readonly state: string; readonly codeChallenge: string }> {
+  ): Promise<{ readonly state: string; readonly codeChallenge: string; readonly nonce: string }> {
     if (issuer.trim() === '' || redirectUri.trim() === '') {
       throw new TypeError('dsh-control-plane-store: OAuth issuer and redirect URI must be non-blank')
     }
@@ -239,11 +239,13 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     }
     const state = randomBytes(32).toString('base64url')
     const codeVerifier = randomBytes(32).toString('base64url')
+    const nonce = randomBytes(32).toString('base64url')
     const stateDigest = createHash('sha256').update(state, 'utf8').digest('hex')
-    await this.oauthAttempts.put(stateDigest, { stateDigest, codeVerifier, issuer, redirectUri, expiresAt })
+    await this.oauthAttempts.put(stateDigest, { stateDigest, codeVerifier, nonce, issuer, redirectUri, expiresAt })
     return {
       state,
       codeChallenge: createHash('sha256').update(codeVerifier, 'utf8').digest('base64url'),
+      nonce,
     }
   }
 
@@ -256,13 +258,23 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
   async consumeOAuthAttempt(
     state: string,
     now: number,
-  ): Promise<{ readonly codeVerifier: string; readonly issuer: string; readonly redirectUri: string } | undefined> {
+  ): Promise<{
+    readonly codeVerifier: string
+    readonly nonce: string
+    readonly issuer: string
+    readonly redirectUri: string
+  } | undefined> {
     const key = createHash('sha256').update(state, 'utf8').digest('hex')
     const stored = this.oauthAttempts.get(key)
     if (stored === undefined) return undefined
     const consumed = await this.oauthAttempts.compareExchange(key, stored, undefined)
-    if (!consumed.exchanged || stored.expiresAt <= now) return undefined
-    return { codeVerifier: stored.codeVerifier, issuer: stored.issuer, redirectUri: stored.redirectUri }
+    if (!consumed.exchanged || stored.expiresAt <= now || stored.nonce === undefined) return undefined
+    return {
+      codeVerifier: stored.codeVerifier,
+      nonce: stored.nonce,
+      issuer: stored.issuer,
+      redirectUri: stored.redirectUri,
+    }
   }
 
   /**

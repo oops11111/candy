@@ -213,6 +213,7 @@ describe('a booted control-plane store', () => {
     )
     expect(begun.state).toMatch(/^[A-Za-z0-9_-]{43}$/)
     expect(begun.codeChallenge).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(begun.nonce).toMatch(/^[A-Za-z0-9_-]{43}$/)
     await first.fiber.dispose()
     context = undefined
 
@@ -222,6 +223,7 @@ describe('a booted control-plane store', () => {
     expect(consumed).toMatchObject({
       issuer: 'https://identity.example',
       redirectUri: 'https://candy.example/auth/callback',
+      nonce: begun.nonce,
     })
     expect(createHash('sha256').update(consumed!.codeVerifier, 'utf8').digest('base64url'))
       .toBe(begun.codeChallenge)
@@ -241,6 +243,32 @@ describe('a booted control-plane store', () => {
       .rejects.toThrow(/issuer and redirect URI must be non-blank/)
     await expect(ctx.controlPlaneStore.beginOAuthAttempt('issuer', 'callback', NOW, NOW))
       .rejects.toThrow(/expiry must be a safe integer after creation/)
+  })
+
+  it('consumes a pre-nonce OAuth attempt without releasing it to a provider', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+    const begun = await first.controlPlaneStore.beginOAuthAttempt(
+      'issuer', 'https://candy.example/auth/callback', NOW, NOW + 60_000,
+    )
+    await first.fiber.dispose()
+    context = undefined
+
+    const key = createHash('sha256').update(begun.state, 'utf8').digest('hex')
+    const database = new DatabaseSync(join(root, 'candy.db'))
+    const row = database.prepare(
+      'SELECT value FROM u_candy_control_plane_oauth_attempts WHERE key = ?',
+    ).get(key) as { value: string }
+    const old = JSON.parse(row.value) as Record<string, unknown>
+    delete old['nonce']
+    database.prepare(
+      'UPDATE u_candy_control_plane_oauth_attempts SET value = ? WHERE key = ?',
+    ).run(JSON.stringify(old), key)
+    database.close()
+
+    const restarted = await boot(root)
+    expect(await restarted.controlPlaneStore.consumeOAuthAttempt(begun.state, NOW + 1)).toBeUndefined()
+    expect(await restarted.controlPlaneStore.consumeOAuthAttempt(begun.state, NOW + 2)).toBeUndefined()
   })
 
   it('persists an OAuth-backed browser session without exposing its bearer', async () => {

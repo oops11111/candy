@@ -29,11 +29,11 @@ kind: "package-library"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-PKCE 事务在 code exchange 前消费。提供商只收到回调 code 与服务端保留的 verifier/redirect URI。它返回的 issuer 必须同时匹配其配置 issuer 和事务 issuer，之后目录才能看到该身份。只有目录能够返回 `UserId` 与 `ControlPlaneRole`。
+PKCE 事务在 code exchange 前消费。提供商只收到回调 code 与服务端保留的 verifier、OIDC nonce 和 redirect URI。它返回的 issuer 必须同时匹配其配置 issuer 和事务 issuer，之后目录才能看到该身份。只有目录能够返回 `UserId` 与 `ControlPlaneRole`。
 
 `oauthSessionCookies` 把 bearer 写入带 `Secure`、`HttpOnly`、`Path=/` 和 `SameSite=Lax` 的 `__Host-candy-session`；独立且可读的 `__Host-candy-csrf` 使用 `Secure`、`Path=/` 和 `SameSite=Strict`。`authenticateOAuthHttpRequest` 只从有效 bearer 记录取得身份；除 GET、HEAD 和 OPTIONS 外，每种方法还必须同时通过 CSRF cookie、匹配的请求 header 与已存 CSRF 摘要。
 
-路由注册器把每一个请求钉在配置的公网 authority 上，而不信任任意 `Host`。start 在持久存储中创建 state 与 S256 challenge，然后验证提供商的授权 URL 完整保留了精确 state、challenge、challenge method 和回调 URI。callback 在交换前消费 state，设置两枚 cookie，并且只重定向到配置的同源路径。session 响应只暴露 Candy 用户 id、角色和过期时间。logout 要求精确的公网 `Origin`、双提交 CSRF 证明以及服务端撤销。所有路径都会发送 no-store、no-referrer、no-sniff 和严格 CSP header；畸形输入与提供商失败只得到有界的通用响应。
+路由注册器把每一个请求钉在配置的公网 authority 上，而不信任任意 `Host`。start 在持久存储中创建 state、S256 challenge 与 OIDC nonce，然后验证提供商的授权 URL 完整保留了这三个精确值以及 challenge method 和回调 URI。callback 在交换前消费事务，并且只把其中的 nonce 交给提供商验证器，随后设置两枚 cookie，并且只重定向到配置的同源路径。session 响应只暴露 Candy 用户 id、角色和过期时间。logout 要求精确的公网 `Origin`、双提交 CSRF 证明以及服务端撤销。所有路径都会发送 no-store、no-referrer、no-sniff 和严格 CSP header；畸形输入与提供商失败只得到有界的通用响应。
 
 <a id="further-exploration"></a>
 ## 进一步探索

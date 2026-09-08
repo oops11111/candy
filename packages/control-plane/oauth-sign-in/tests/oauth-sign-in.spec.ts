@@ -23,7 +23,8 @@ const NOW = 1_800_000_000_000
 function store(): OAuthSignInStore {
   return {
     consumeOAuthAttempt: vi.fn(async state => state === 'state-ok' ? {
-      codeVerifier: 'verifier', issuer: 'https://issuer.example', redirectUri: 'https://candy.example/callback',
+      codeVerifier: 'verifier', nonce: 'nonce',
+      issuer: 'https://issuer.example', redirectUri: 'https://candy.example/callback',
     } : undefined),
     createUserSession: vi.fn(async (userId, role, identity, createdAt, expiresAt) => ({
       token: 'bearer', csrfToken: 'csrf',
@@ -45,7 +46,9 @@ describe('completeOAuthSignIn', () => {
       { state: 'state-ok', code: 'code', now: NOW, sessionExpiresAt: NOW + 60_000 },
     )
 
-    expect(exchangeCode).toHaveBeenCalledWith(expect.objectContaining({ code: 'code', codeVerifier: 'verifier' }))
+    expect(exchangeCode).toHaveBeenCalledWith(expect.objectContaining({
+      code: 'code', codeVerifier: 'verifier', nonce: 'nonce',
+    }))
     expect(resolve).toHaveBeenCalledWith({ issuer: 'https://issuer.example', subject: 'subject-1' })
     expect(result?.record).toMatchObject({ userId: 'alice', role: 'administrator' })
   })
@@ -188,9 +191,12 @@ function webStore(): OAuthWebStore {
     revokedAt: undefined,
   }
   return {
-    beginOAuthAttempt: vi.fn(async () => ({ state: 'opaque-state', codeChallenge: 'pkce-challenge' })),
+    beginOAuthAttempt: vi.fn(async () => ({
+      state: 'opaque-state', codeChallenge: 'pkce-challenge', nonce: 'oidc-nonce',
+    })),
     consumeOAuthAttempt: vi.fn(async state => state === 'opaque-state' ? {
       codeVerifier: 'pkce-verifier',
+      nonce: 'oidc-nonce',
       issuer: 'https://issuer.example',
       redirectUri: 'https://candy.example/auth/oauth/callback',
     } : undefined),
@@ -216,6 +222,7 @@ function webProvider(
       url.searchParams.set('state', input.state)
       url.searchParams.set('code_challenge', input.codeChallenge)
       url.searchParams.set('code_challenge_method', 'S256')
+      url.searchParams.set('nonce', input.nonce)
       url.searchParams.set('redirect_uri', input.redirectUri)
       return url
     }),
@@ -241,6 +248,7 @@ describe('OAuth Host Web routes', () => {
     expect(location.searchParams.get('state')).toBe('opaque-state')
     expect(location.searchParams.get('code_challenge')).toBe('pkce-challenge')
     expect(location.searchParams.get('code_challenge_method')).toBe('S256')
+    expect(location.searchParams.get('nonce')).toBe('oidc-nonce')
     expect(location.searchParams.get('redirect_uri')).toBe('https://candy.example/auth/oauth/callback')
     expect(storage.beginOAuthAttempt).toHaveBeenCalledWith(
       'https://issuer.example',
