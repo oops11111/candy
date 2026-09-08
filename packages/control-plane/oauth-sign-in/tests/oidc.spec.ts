@@ -169,6 +169,7 @@ describe('OIDC UserInfo provider', () => {
 
     const failure = await oidc.exchangeCode(exchangeInput).catch((error: unknown) => error as Error)
     expect(failure).toBeInstanceOf(Error)
+    if (!(failure instanceof Error)) throw new Error('Expected OIDC exchange to fail')
     expect(failure.message).toBe('OIDC endpoint response exceeded its byte limit')
     expect(failure.message).not.toContain(providerBody)
   })
