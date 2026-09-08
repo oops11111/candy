@@ -19,6 +19,8 @@ It is not the ledger. `RunLedger` stays the accounting authority and answers wha
 
 `beginOAuthAttempt` creates a 256-bit state and PKCE verifier, stores the verifier server-side, and returns only the state and S256 challenge. `consumeOAuthAttempt` atomically removes a matching transaction before returning its issuer, redirect URI, and verifier; a wrong, expired, concurrent, or replayed callback receives nothing. The record survives a restart so a callback may land on another control-plane process sharing SQLite.
 
+`enrollOAuthIdentity` atomically creates one permanent issuer/subject mapping to a Candy user and role; a concurrent or later attempt cannot remap that identity. `resolve` implements the directory consumed by `dsh-oauth-sign-in`, returns no provider token, and denies an identity that provisioning has not enrolled.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -194,6 +196,7 @@ These are current package constraints, not a task backlog.
 - **Durable replay requires SQLite** — `spent_nonces` uses the storage seam's optional compare/exchange operation, so two runtime processes and a restart share one single-use decision. SQLite implements that operation transactionally. JSON layouts deliberately do not pretend that an open-time snapshot plus a file rewrite is cross-process atomic; an admission routed there fails loud with `facet-unsupported`.
 - **Route policy reads are process-local snapshots** — an update through this service is visible to the next call in the same runtime and survives restart. Separate long-lived processes sharing one SQLite database do not receive live invalidation from `storage-domain`; fleet-wide policy updates need an authenticated API plus explicit fan-out or reload.
 - **OAuth code exchange and HTTP cookies live elsewhere** — this store owns one-time PKCE state and accepts an identity only after a deployment verifier exchanges and verifies the callback. It does not implement an OAuth provider, callback route, cookie attributes, or request-level CSRF enforcement.
+- **Enrollment reads are process-local snapshots** — a mapping written through this instance is immediately visible and survives restart, but another long-lived process sharing SQLite needs invalidation or reload before its directory sees the new user.
 
 <a id="dev-note"></a>
 ## Dev Note

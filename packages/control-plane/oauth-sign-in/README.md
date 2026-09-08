@@ -40,7 +40,7 @@ The PKCE attempt is consumed before code exchange. The provider receives only th
 
 - **No provider implementation** — the deployment must choose an OAuth issuer and implement its discovery, token exchange, and identity-token validation.
 - **No HTTP routes or cookies** — the Web owner still must register start/callback/logout routes and apply secure cookie, cache, referrer, and CSRF response policy.
-- **No automatic enrollment** — an unknown external identity is denied; provisioning users and administrator roles belongs to the directory implementation.
+- **No automatic enrollment** — an unknown external identity is denied. `dsh-control-plane-store` supplies durable exact-once enrollment and directory resolution, while an authenticated provisioning interface remains unbuilt.
 
 <a id="dev-note"></a>
 ## Dev Note

@@ -18,7 +18,7 @@
 
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import { UserSessionId, type ControlPlaneRole, type OAuthIdentity, type ProviderAccountId, type RunId, type UserId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import { UserId, UserSessionId, type ControlPlaneRole, type OAuthIdentity, type ProviderAccountId, type RunId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountRecord, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
@@ -48,6 +48,7 @@ import {
   type StoredTenantAllowance,
   type StoredTenantRoutePolicy,
   type StoredOAuthAttempt,
+  type StoredOAuthEnrollment,
   type StoredWorkspaceGrant,
   type StoredUserSession,
   type TenantModelRoute,
@@ -143,6 +144,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
   private tenantRoutes!: KvTable<UserId, StoredTenantRoutePolicy>
   private userSessions!: KvTable<UserSessionId, StoredUserSession>
   private oauthAttempts!: KvTable<string, StoredOAuthAttempt>
+  private oauthEnrollments!: KvTable<string, StoredOAuthEnrollment>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -162,6 +164,57 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     this.tenantRoutes = domain.table('tenant_routes')
     this.userSessions = domain.table('user_sessions')
     this.oauthAttempts = domain.table('oauth_attempts')
+    this.oauthEnrollments = domain.table('oauth_enrollments')
+  }
+
+  /**
+   * Enroll one verified external identity exactly once.
+   * @param identity - OAuth issuer and subject verified by the configured provider.
+   * @param userId - existing Candy user this identity signs in as.
+   * @param role - Candy authorization assigned by provisioning, not provider claims.
+   * @param enrolledAt - epoch milliseconds recorded for operator audit.
+   * @returns true only when this call created the mapping.
+   */
+  async enrollOAuthIdentity(
+    identity: OAuthIdentity,
+    userId: UserId,
+    role: ControlPlaneRole,
+    enrolledAt: number,
+  ): Promise<boolean> {
+    if (identity.issuer.trim() === '' || identity.subject.trim() === '') {
+      throw new TypeError('dsh-control-plane-store: OAuth issuer and subject must be non-blank')
+    }
+    if (!Number.isSafeInteger(enrolledAt)) {
+      throw new RangeError('dsh-control-plane-store: OAuth enrollment instant must be a safe integer')
+    }
+    const key = createHash('sha256')
+      .update(identity.issuer, 'utf8').update('\0', 'utf8').update(identity.subject, 'utf8').digest('hex')
+    const enrollment: StoredOAuthEnrollment = {
+      issuer: identity.issuer,
+      subject: identity.subject,
+      userId,
+      role,
+      enrolledAt,
+    }
+    return (await this.oauthEnrollments.compareExchange(key, undefined, enrollment)).exchanged
+  }
+
+  /**
+   * Resolve Candy authorization for a verified external identity.
+   * @param identity - issuer and subject returned by the configured verifier.
+   * @returns the provisioned Candy user and role, or undefined when not enrolled.
+   */
+  resolve(identity: OAuthIdentity): Promise<{
+    readonly userId: UserId
+    readonly role: ControlPlaneRole
+  } | undefined> {
+    const key = createHash('sha256')
+      .update(identity.issuer, 'utf8').update('\0', 'utf8').update(identity.subject, 'utf8').digest('hex')
+    const stored = this.oauthEnrollments.get(key)
+    return Promise.resolve(stored === undefined ? undefined : {
+      userId: UserId(stored.userId),
+      role: stored.role,
+    })
   }
 
   /**

@@ -19,6 +19,8 @@ kind: "package-reference"
 
 `beginOAuthAttempt` 创建 256 位 state 与 PKCE verifier，在服务端保存 verifier，并且只返回 state 和 S256 challenge。`consumeOAuthAttempt` 会先原子删除匹配事务，再返回其 issuer、redirect URI 和 verifier；错误、过期、并发或重放的回调得不到任何内容。记录能跨重启保留，因此回调可以落到共享 SQLite 的另一个控制面进程。
 
+`enrollOAuthIdentity` 会原子创建一条永久 issuer/subject 到 Candy 用户与角色的映射；并发或后续尝试不能重绑该身份。`resolve` 实现 `dsh-oauth-sign-in` 消费的目录，不返回提供商 token，并拒绝尚未由预置流程登记的身份。
+
 ## 目录
 
 - [使用本包](#use-this-package)
@@ -194,6 +196,7 @@ JSON 会丢掉值为 `undefined` 的属性,因此一个运行时类型写作 `nu
 - **持久重放保护要求 SQLite** —— `spent_nonces` 使用存储缝隙可选的 compare/exchange 操作,因此两个运行时进程与一次重启共享同一个一次性决定。SQLite 以事务实现该操作。JSON 布局不会把打开时的快照加文件重写伪装成跨进程原子操作;路由到那里的准入会以 `facet-unsupported` 明确失败。
 - **路由策略读取是进程本地快照** —— 通过本服务进行的更新会在同一运行时的下一次调用生效，并能跨重启保留。共享同一 SQLite 数据库的其他长驻进程不会从 `storage-domain` 收到实时失效通知；机群级策略更新还需要经过认证的 API 以及明确的广播或重载机制。
 - **OAuth code exchange 与 HTTP cookie 位于别处** —— 本存储拥有一次性 PKCE state，并且只在部署验证器交换并验证回调后接受身份。它不实现 OAuth 提供方、回调路由、cookie 属性或请求级 CSRF 强制。
+- **登记读取是进程本地快照** —— 通过当前实例写入的映射立即可见且跨重启保留，但共享 SQLite 的另一个长驻进程需要失效通知或重载后才能在其目录中看到新用户。
 
 <a id="dev-note"></a>
 ## 开发备注

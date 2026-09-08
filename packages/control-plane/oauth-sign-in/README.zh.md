@@ -40,7 +40,7 @@ PKCE 事务在 code exchange 前消费。提供商只收到回调 code 与服务
 
 - **没有提供商实现** —— 部署必须选择 OAuth issuer，并实现其发现、token exchange 和 identity token 验证。
 - **没有 HTTP 路由或 cookie** —— Web 所有者仍需注册 start/callback/logout 路由，并实施安全 cookie、缓存、referrer 和 CSRF 响应策略。
-- **不会自动登记** —— 未知外部身份会被拒绝；预置用户和管理员角色属于目录实现。
+- **不会自动登记** —— 未知外部身份会被拒绝。`dsh-control-plane-store` 提供持久的一次性登记与目录解析，但经过认证的预置接口仍未构建。
 
 <a id="dev-note"></a>
 ## 开发备注

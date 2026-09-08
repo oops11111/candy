@@ -236,6 +236,18 @@ const storedOAuthAttempt = z.object({
   expiresAt: z.number(),
 })
 
+/** Candy authorization assigned to one verified OAuth issuer/subject pair. */
+const storedOAuthEnrollment = z.object({
+  issuer: z.string(),
+  subject: z.string(),
+  userId: z.string(),
+  role: z.enum(['member', 'administrator']),
+  enrolledAt: z.number(),
+})
+
+/** Durable external-identity enrollment; no provider token is retained. */
+export type StoredOAuthEnrollment = z.infer<typeof storedOAuthEnrollment>
+
 /** Stored OAuth transaction used exactly once to exchange an authorization code. */
 export type StoredOAuthAttempt = z.infer<typeof storedOAuthAttempt>
 
@@ -304,6 +316,7 @@ export const controlPlaneDomainSpec = defineDomain({
     tenant_routes: domainTable<UserId, z.infer<typeof storedTenantRoutePolicy>>(storedTenantRoutePolicy),
     user_sessions: domainTable<UserSessionId, StoredUserSession>(storedUserSession),
     oauth_attempts: domainTable<string, StoredOAuthAttempt>(storedOAuthAttempt),
+    oauth_enrollments: domainTable<string, StoredOAuthEnrollment>(storedOAuthEnrollment),
   },
 })
 

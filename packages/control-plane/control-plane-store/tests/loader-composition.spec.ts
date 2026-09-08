@@ -170,6 +170,38 @@ describe('a booted control-plane store', () => {
     expect(ctx.controlPlaneStore).toBeInstanceOf(ControlPlaneStore)
   })
 
+  it('enrolls one OAuth identity once and resolves it across restart', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+    const identity = { issuer: 'https://identity.example', subject: 'oauth-alice' }
+
+    expect(await first.controlPlaneStore.resolve(identity)).toBeUndefined()
+    expect(await first.controlPlaneStore.enrollOAuthIdentity(identity, ALICE, 'administrator', NOW)).toBe(true)
+    expect(await first.controlPlaneStore.enrollOAuthIdentity(identity, BOBBY, 'member', NOW + 1)).toBe(false)
+    expect(await first.controlPlaneStore.resolve(identity))
+      .toEqual({ userId: ALICE, role: 'administrator' })
+    await first.fiber.dispose()
+    context = undefined
+
+    const restarted = await boot(root)
+    expect(await restarted.controlPlaneStore.resolve(identity))
+      .toEqual({ userId: ALICE, role: 'administrator' })
+    expect(await restarted.controlPlaneStore.resolve({ ...identity, subject: 'oauth-bobby' }))
+      .toBeUndefined()
+  })
+
+  it('refuses malformed OAuth enrollments', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+
+    await expect(ctx.controlPlaneStore.enrollOAuthIdentity(
+      { issuer: '', subject: 'alice' }, ALICE, 'member', NOW,
+    )).rejects.toThrow(/issuer and subject must be non-blank/)
+    await expect(ctx.controlPlaneStore.enrollOAuthIdentity(
+      { issuer: 'issuer', subject: 'alice' }, ALICE, 'member', Number.NaN,
+    )).rejects.toThrow(/instant must be a safe integer/)
+  })
+
   it('persists and consumes one OAuth PKCE callback state exactly once', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
     const first = await boot(root)
