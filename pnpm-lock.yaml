@@ -4423,6 +4423,10 @@ importers:
         version: link:../../core/session
 
   packages/control-plane/oauth-sign-in:
+    dependencies:
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

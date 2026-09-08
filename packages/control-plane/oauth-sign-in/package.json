@@ -19,6 +19,9 @@
     "@deepseek-ai/dsh-control-plane": "workspace:^",
     "@deepseek-ai/dsh-control-plane-store": "workspace:^"
   },
+  "dependencies": {
+    "jose": "^6.2.3"
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-control-plane": "workspace:^",

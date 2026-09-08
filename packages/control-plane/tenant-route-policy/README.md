@@ -66,3 +66,5 @@ The plugin registers one `LlmRuntime.guard()`. A session-aware prepared call inv
 ### Dev Note
 
 See [The route at the last door](../../../.agents/notes/implemented/architecture/2026-09-07-the-route-at-the-last-door.md) for why this is a Candy policy plugin at `llm/stream`, rather than a tenant feature added to the generic Harness model registry.
+
+No runtime invariant companion is published. Each guard decision re-reads the live scheduler tenant and current durable allowlist; refusal auditing and adapter non-entry are covered directly by the real-composition behavior suite.

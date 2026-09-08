@@ -66,3 +66,5 @@ await ctx.controlPlaneStore.setTenantModelRoutes(userId, [
 ### 开发备注
 
 为何把它实现为 `llm/stream` 上的 Candy 策略插件，而不向通用 Harness 模型注册表加入租户概念，见 [最后一道门上的路由](../../../.agents/notes/implemented/architecture/2026-09-07-the-route-at-the-last-door.zh.md)。
+
+没有发布 runtime invariant companion。每次守卫决定都会重新读取实时调度器租户与当前持久白名单；拒绝审计和适配器不进入由真实组合行为测试直接覆盖。

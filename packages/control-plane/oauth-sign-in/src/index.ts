@@ -4,6 +4,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ControlPlaneRole, OAuthIdentity, UserId } from '@deepseek-ai/dsh-control-plane'
 import type { UserSessionRecord } from '@deepseek-ai/dsh-control-plane-store'
 
+export { createOidcUserInfoProvider } from './oidc.ts'
+export type { OidcUserInfoProviderConfig } from './oidc.ts'
+
 /** Durable operations required by sign-in orchestration. */
 export interface OAuthSignInStore {
   consumeOAuthAttempt(state: string, now: number): Promise<{
