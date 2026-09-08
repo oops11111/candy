@@ -803,8 +803,19 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
    * @returns the grant, or `undefined` when none is stored under that id.
    */
   findGrant(id: WorkspaceGrantId): Promise<WorkspaceGrantRecord | undefined> {
+    return Promise.resolve(this.grantSnapshot(id))
+  }
+
+  /**
+   * Read one grant from this process's current store view for a synchronous
+   * executor boundary. Callers that can await use {@link findGrant} so a
+   * future medium-backed refresh remains transparent.
+   * @param id - grant identifier carried by the current run.
+   * @returns a defensive record copy, or undefined when absent.
+   */
+  grantSnapshot(id: WorkspaceGrantId): WorkspaceGrantRecord | undefined {
     const stored = this.grants.get(id)
-    return Promise.resolve(stored === undefined ? undefined : fromStoredGrantRecord(stored))
+    return stored === undefined ? undefined : fromStoredGrantRecord(stored)
   }
 
   /**

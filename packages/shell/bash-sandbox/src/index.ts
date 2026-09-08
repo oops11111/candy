@@ -86,7 +86,8 @@ export class SandboxBashExecutor extends LocalBashExecutor {
   }
 
   override async run(spec: ShellExecSpec): Promise<ShellRunResult> {
-    const policy = spec.sandboxPolicy as SandboxExecutionPolicy
+    const policy = await this.ctx.get('workspaceAuthority')?.authorizePolicy(spec.sandboxPolicy as SandboxExecutionPolicy)
+      ?? spec.sandboxPolicy as SandboxExecutionPolicy
     const { mode } = policy
     if (mode === 'danger-full-access') {
       const result = await super.run(spec)
@@ -114,7 +115,8 @@ export class SandboxBashExecutor extends LocalBashExecutor {
   }
 
   override start(spec: ShellExecSpec): ShellProcess {
-    const policy = spec.sandboxPolicy as SandboxExecutionPolicy
+    const policy = this.ctx.get('workspaceAuthority')?.constrainPolicy(spec.sandboxPolicy as SandboxExecutionPolicy)
+      ?? spec.sandboxPolicy as SandboxExecutionPolicy
     const { mode } = policy
     if (mode === 'danger-full-access') return super.start(spec)
     // Once startArgv returns, install facts synchronously; promise settlement

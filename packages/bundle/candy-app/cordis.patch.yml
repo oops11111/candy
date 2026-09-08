@@ -59,6 +59,12 @@
     - id: provider-credential-checks
       name: '@deepseek-ai/dsh-provider-credential-checks'
 
+    # Establishes the current run's durable grant around each inherited tool
+    # dispatch. Filesystem and shell sandbox providers make the final decision
+    # at their own operation boundary.
+    - id: workspace-grant-execution
+      name: '@deepseek-ai/dsh-workspace-grant-execution'
+
 # ── the browser's way in, and what it may then manage ───────────────────────
 
 - insert:

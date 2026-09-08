@@ -146,7 +146,36 @@ export class SandboxUnavailableError extends HarnessError {
 declare module '@deepseek-ai/cordis' {
   interface Context {
     sandbox: SandboxProvider
+    workspaceAuthority: WorkspaceAuthority
   }
+}
+
+/** The file operation classes a workspace authority can distinguish. */
+export type WorkspaceAccess = 'read' | 'write'
+
+/**
+ * Optional same-host authorization applied by filesystem and shell executors.
+ *
+ * A deployment that mounts this service establishes a session scope before a
+ * tool body runs. Enforcing providers consult it at the operation that reads,
+ * writes, or starts a process; an outer tool guard is not the authority.
+ */
+export abstract class WorkspaceAuthority extends Service {
+  constructor(ctx: Context) {
+    super(ctx, 'workspaceAuthority')
+  }
+
+  /** Run one tool dispatch under the calling session's current authority. */
+  abstract enter<T>(sessionId: SessionId, operation: () => Promise<T>): Promise<T>
+
+  /** Revalidate and authorize one canonical host path immediately before use. */
+  abstract authorizePath(path: string, access: WorkspaceAccess): Promise<void>
+
+  /** Revalidate and narrow one process policy immediately before foreground execution. */
+  abstract authorizePolicy(policy: SandboxExecutionPolicy): Promise<SandboxExecutionPolicy>
+
+  /** Narrow one process policy from the authority resolved for the current dispatch. */
+  abstract constrainPolicy(policy: SandboxExecutionPolicy): SandboxExecutionPolicy
 }
 
 /**

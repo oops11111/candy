@@ -95,7 +95,7 @@ An assertion names only the id, so a run admitted before a narrowing and one adm
 
 These are current package constraints, not a task backlog.
 
-- **Nothing enforces the roots yet** — admission decides that a run may hold a grant, not that a given path lies under it. The second check belongs where the file operation happens, on the device the grant names, and no filesystem seam reads `roots` today.
+- **Root enforcement requires the execution provider** — admission decides that a run may hold a grant. [`dsh-workspace-grant-execution`](../workspace-grant-execution/README.md) supplies the second check where inherited filesystem and shell sandbox operations run; a composition that omits it retains admission checks but has no local root enforcement.
 - **Nothing issues a grant** — a deployment writes records through the store by hand. There is no pairing flow, no operator surface, and no lifecycle that creates one when a device is registered.
 - **A narrowed child grant cannot be expressed** — a child names its parent's grant or is refused. Narrowing needs a derived record the issuing device creates, and nothing creates one.
 - **No Cordis service** — nothing here registers on a `Context`; it is imported directly, like `dsh-run-budget`.

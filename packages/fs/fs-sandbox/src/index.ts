@@ -30,7 +30,17 @@ import { Context } from '@deepseek-ai/cordis'
 import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import type { Config as LocalConfig } from '@deepseek-ai/dsh-fs-local'
 import { FsError } from '@deepseek-ai/dsh-fs'
-import type { FsEditOutcome, FsEditRequest, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
+import type {
+  FsDirEntry,
+  FsEditOutcome,
+  FsEditRequest,
+  FsInfo,
+  FsPathInfo,
+  FsTarget,
+  FsVersion,
+  FsWriteIntent,
+  FsWriteOutcome,
+} from '@deepseek-ai/dsh-fs'
 import { writableRoots } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
@@ -66,6 +76,44 @@ export class SandboxedFileSystem extends LocalFileSystem {
     return this.defaultMode
   }
 
+  /** Resolve and authorize the canonical target when a deployment supplies workspace authority. */
+  override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
+    const target = await super.resolve(path, opts)
+    await this.ctx.get('workspaceAuthority')?.authorizePath(target.targetKey, 'read')
+    return target
+  }
+
+  override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
+    const target = await super.resolve(path, { ...opts, ...(signal === undefined ? {} : { signal }) })
+    await this.ctx.get('workspaceAuthority')?.authorizePath(target.targetKey, 'read')
+    return super.lstat(path, opts, signal)
+  }
+
+  override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
+    await this.ctx.get('workspaceAuthority')?.authorizePath(target.targetKey, 'read')
+    return super.stat(target, signal)
+  }
+
+  override async readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
+    await this.ctx.get('workspaceAuthority')?.authorizePath(target.targetKey, 'read')
+    return super.readText(target, signal)
+  }
+
+  override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
+    await this.ctx.get('workspaceAuthority')?.authorizePath(target.targetKey, 'read')
+    return super.streamText(target, signal)
+  }
+
+  override async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
+    await this.ctx.get('workspaceAuthority')?.authorizePath(target.targetKey, 'read')
+    return super.readBytes(target, signal, maxBytes)
+  }
+
+  override async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
+    await this.ctx.get('workspaceAuthority')?.authorizePath(target.targetKey, 'read')
+    return super.listDir(target, signal)
+  }
+
   /**
    * Fence the write by the per-call policy, then delegate to the inherited
    * atomic write. See {@link checkedTarget}.
@@ -84,6 +132,7 @@ export class SandboxedFileSystem extends LocalFileSystem {
     signal?: AbortSignal,
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsWriteOutcome> {
+    await this.ctx.get('workspaceAuthority')?.authorizePath(target.targetKey, 'write')
     return super.writeText(await this.checkedTarget(target, sandboxPolicy), content, expected, signal)
   }
 
@@ -105,6 +154,7 @@ export class SandboxedFileSystem extends LocalFileSystem {
     signal?: AbortSignal,
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome> {
+    await this.ctx.get('workspaceAuthority')?.authorizePath(target.targetKey, 'write')
     return super.editText(await this.checkedTarget(target, sandboxPolicy), edit, expected, signal)
   }
 

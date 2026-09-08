@@ -616,6 +616,18 @@ export class RunScheduler extends Service {
   }
 
   /**
+   * Resolve the one open durable run that owns a session in this runtime.
+   * @param sessionId - session whose workspace authority is about to be used.
+   * @returns the run record, or undefined when this runtime owns no unique open run.
+   */
+  runOfSession(sessionId: SessionId): DurableRunRecord | undefined {
+    const records = this.ctx.controlPlaneStore.runsOfSession(this.config.audience, sessionId)
+    if (records.length !== 1) return undefined
+    const record = records[0]
+    return record !== undefined && this.ledger.remaining(record.record.runId) !== undefined ? record : undefined
+  }
+
+  /**
    * Mint and admit a child run for a session delegated from an already-open
    * run, inheriting the delegating run's tenant, account, provider, device,
    * workspace grant and conversation.

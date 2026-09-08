@@ -31,6 +31,7 @@ import WebServer from '@deepseek-ai/dsh-host-webserver'
 import ControlPlaneStore from '@deepseek-ai/dsh-control-plane-store'
 import RunScheduler from '@deepseek-ai/dsh-run-scheduler'
 import ProviderCredentialChecks from '@deepseek-ai/dsh-provider-credential-checks'
+import WorkspaceGrantExecution from '@deepseek-ai/dsh-workspace-grant-execution'
 import * as OauthSignInWeb from '@deepseek-ai/dsh-oauth-sign-in-web'
 import * as ProviderAccountApi from '@deepseek-ai/dsh-provider-account-api'
 import { ACCOUNT_PATHS } from '@deepseek-ai/dsh-provider-account-api'
@@ -49,6 +50,7 @@ const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-control-plane-store', ControlPlaneStore],
   ['@deepseek-ai/dsh-run-scheduler', RunScheduler],
   ['@deepseek-ai/dsh-provider-credential-checks', ProviderCredentialChecks],
+  ['@deepseek-ai/dsh-workspace-grant-execution', WorkspaceGrantExecution],
   ['@deepseek-ai/dsh-oauth-sign-in-web', OauthSignInWeb],
   ['@deepseek-ai/dsh-provider-account-api', ProviderAccountApi],
   // The account page's Node half is an inert Loader entry by construction —

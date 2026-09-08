@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
+  "include": ["src"],
+  "references": [
+    { "path": "../../../vendor/cosmokit" },
+    { "path": "../../../vendor/cordis" },
+    { "path": "../control-plane" },
+    { "path": "../control-plane-store" },
+    { "path": "../run-scheduler" },
+    { "path": "../workspace-grant" },
+    { "path": "../../sandbox/sandbox" },
+    { "path": "../../core/session" },
+    { "path": "../../core/tools" }
+  ]
+}
