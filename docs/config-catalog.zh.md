@@ -1559,6 +1559,67 @@ export interface Config {
 
 来源：[`packages/feedback/message-feedback/src/index.ts:50`](../packages/feedback/message-feedback/src/index.ts)
 
+<a id="deepseek-aidsh-oauth-sign-in-web"></a>
+
+## `@deepseek-ai/dsh-oauth-sign-in-web`
+
+需要：`webServer` · `controlPlaneStore`
+
+```ts config-catalog
+/** Deployment-owned sign-in configuration. */
+export interface Config {
+  /** Exact externally visible HTTPS origin browsers reach this deployment at. */
+  publicOrigin: string
+  /** OIDC issuer identifier, exactly as the provider publishes it. */
+  issuer: string
+  /** The provider's authorization endpoint. */
+  authorizationEndpoint: string
+  /** The provider's token endpoint. */
+  tokenEndpoint: string
+  /** The provider's UserInfo endpoint. */
+  userInfoEndpoint: string
+  /** This deployment's registered OIDC client identifier. */
+  clientId: string
+  /**
+   * File holding the JSON Web Key Set this deployment verifies ID Tokens with.
+   *
+   * A path rather than inline keys: the set is the deployment's trust anchor
+   * and rotating it is an operator action on one file, which also keeps a key
+   * blob out of a configuration file that is read for other reasons.
+   */
+  jwksPath: string
+  /**
+   * Environment variable holding the OIDC client secret.
+   *
+   * Read through the credential seam at load, never stored in this config and
+   * never logged. A public client that authenticates with PKCE alone omits it.
+   */
+  clientSecretEnv?: string
+  /** Scope tokens requested; `openid` is mandatory. */
+  scopes?: string[]
+  /** Relative destination after a successful callback. */
+  successPath?: string
+  /** PKCE transaction lifetime in milliseconds. */
+  attemptTtlMs?: number
+  /** Browser user-session lifetime in milliseconds. */
+  sessionTtlMs?: number
+  /**
+   * The provider's exact subject claim for the administrator enrolled at load.
+   *
+   * It is the subject and not an email or a name because those are
+   * re-assignable at most providers, and an identity that can be re-assigned
+   * is an administrator seat that can be inherited. Omitting this pair leaves
+   * the directory as it stands, which is the steady state once the first
+   * administrator exists and has enrolled everyone else.
+   */
+  bootstrapAdministratorSubject?: string
+  /** The Candy user that subject signs in as; every tenant-owned record is keyed by it. */
+  bootstrapAdministratorUserId?: string
+}
+```
+
+来源：[`packages/control-plane/oauth-sign-in-web/src/index.ts:49`](../packages/control-plane/oauth-sign-in-web/src/index.ts)
+
 <a id="deepseek-aidsh-permission-presets"></a>
 
 ## `@deepseek-ai/dsh-permission-presets`
@@ -3617,6 +3678,7 @@ export interface Config {
 - `@deepseek-ai/dsh-llm-mock-server`（[`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts)）
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
+- `@deepseek-ai/dsh-oauth-sign-in`（[`packages/control-plane/oauth-sign-in/src/index.ts`](../packages/control-plane/oauth-sign-in/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-provider-accounts`（[`packages/control-plane/provider-accounts/src/index.ts`](../packages/control-plane/provider-accounts/src/index.ts)）
 - `@deepseek-ai/dsh-run-admission`（[`packages/control-plane/run-admission/src/index.ts`](../packages/control-plane/run-admission/src/index.ts)）

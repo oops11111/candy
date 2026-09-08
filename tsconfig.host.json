@@ -172,6 +172,7 @@
     { "path": "./packages/control-plane/control-plane" },
     { "path": "./packages/control-plane/control-plane-store" },
     { "path": "./packages/control-plane/oauth-sign-in" },
+    { "path": "./packages/control-plane/oauth-sign-in-web" },
     { "path": "./packages/control-plane/execution-assertion" },
     { "path": "./packages/control-plane/credential-vault" },
     { "path": "./packages/control-plane/run-budget" },

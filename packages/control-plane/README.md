@@ -27,6 +27,7 @@ The scheduler description above uses the original ownership shorthand. Replay de
 | [`control-plane`](control-plane/README.md) | Branded `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, `ConversationId`, `RunId`, and the `RunLineage` ancestry record |
 | [`execution-assertion`](execution-assertion/README.md) | Mints and admits the signed, short-lived assertion that authorizes one run |
 | [`oauth-sign-in`](oauth-sign-in/README.md) | Completes a PKCE callback and maps verified identity to Candy authorization |
+| [`oauth-sign-in-web`](oauth-sign-in-web/README.md) | Mounts the browser sign-in routes on the Harness Host web server and enrolls the first administrator from configuration |
 | [`credential-vault`](credential-vault/README.md) | Seals a tenant's provider-account secret, rotates its key, revokes it, and records every access |
 | [`provider-accounts`](provider-accounts/README.md) | Owns tenant provider-account metadata, encrypted credential lifecycle, default selection, and secret-free account views |
 | [`run-budget`](run-budget/README.md) | Bounds a delegation tree's tokens, time, money, and concurrency by drawing each child's allowance out of its parent's |

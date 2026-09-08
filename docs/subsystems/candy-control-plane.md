@@ -78,6 +78,76 @@ Reads are synchronous against the domain's in-memory state and are exposed as pr
 
 ```ts cordis-catalog
 /**
+ * Enroll one verified external identity exactly once.
+ * @param identity - OAuth issuer and subject verified by the configured provider.
+ * @param userId - existing Candy user this identity signs in as.
+ * @param role - Candy authorization assigned by provisioning, not provider claims.
+ * @param enrolledAt - epoch milliseconds recorded for operator audit.
+ * @returns true only when this call created the mapping.
+ */
+async enrollOAuthIdentity( identity: OAuthIdentity, userId: UserId, role: ControlPlaneRole, enrolledAt: number, ): Promise<boolean>
+
+/**
+ * Resolve Candy authorization for a verified external identity.
+ * @param identity - issuer and subject returned by the configured verifier.
+ * @returns the provisioned Candy user and role, or undefined when not enrolled.
+ */
+resolve(identity: OAuthIdentity): Promise<{ readonly userId: UserId readonly role: ControlPlaneRole } | undefined>
+
+/**
+ * Begin one OAuth authorization-code transaction with PKCE S256.
+ * @param issuer - exact configured OAuth issuer identifier.
+ * @param redirectUri - callback URI the later code exchange must repeat.
+ * @param now - transaction creation time in epoch milliseconds.
+ * @param expiresAt - epoch milliseconds after which the callback is refused.
+ * @returns opaque state and public S256 challenge; the verifier stays server-side.
+ */
+async beginOAuthAttempt( issuer: string, redirectUri: string, now: number, expiresAt: number, ): Promise<{ readonly state: string; readonly codeChallenge: string; readonly nonce: string }>
+
+/**
+ * Consume a callback state once and recover the PKCE exchange inputs.
+ * @param state - exact opaque value returned through the provider callback.
+ * @param now - callback receipt time in epoch milliseconds.
+ * @returns exchange inputs only for the first matching, unexpired callback.
+ */
+async consumeOAuthAttempt( state: string, now: number, ): Promise<{ readonly codeVerifier: string readonly nonce: string readonly issuer: string readonly redirectUri: string } | undefined>
+
+/**
+ * Create one revocable browser session after an OAuth verifier has proved the external identity.
+ * @param userId - Candy user mapped from the verified external identity.
+ * @param role - Candy-assigned authorization; never a browser-supplied claim.
+ * @param identity - verified OAuth issuer and subject.
+ * @param createdAt - current epoch milliseconds.
+ * @param expiresAt - expiry after `createdAt`.
+ * @returns the bearer and independent CSRF token exactly once, plus the secret-free durable record.
+ */
+async createUserSession( userId: UserId, role: ControlPlaneRole, identity: OAuthIdentity, createdAt: number, expiresAt: number, ): Promise<{ readonly token: string; readonly csrfToken: string; readonly record: UserSessionRecord }>
+
+/**
+ * Authenticate one bearer without accepting identity or role from the request.
+ * @param token - opaque token returned once at session creation.
+ * @param now - current epoch milliseconds.
+ * @returns the active session, or undefined for unknown, revoked, or expired credentials.
+ */
+authenticateUserSession(token: string, now: number): UserSessionRecord | undefined
+
+/**
+ * Verify the independent anti-CSRF token for an authenticated session.
+ * @param id - session already authenticated by its HttpOnly bearer.
+ * @param csrfToken - value repeated from a readable same-site cookie into a request header.
+ * @returns true only when the active session owns that token.
+ */
+verifyUserSessionCsrf(id: UserSessionId, csrfToken: string): boolean
+
+/**
+ * Revoke one browser session; subsequent authentication fails immediately.
+ * @param id - session selected by an already-authorized logout or administrative action.
+ * @param revokedAt - epoch milliseconds recorded as the revocation instant.
+ * @returns true when the session exists, including an already-revoked session.
+ */
+async revokeUserSession(id: UserSessionId, revokedAt: number): Promise<boolean>
+
+/**
  * Read one tenant's complete model-route allowlist.
  *
  * Missing means no policy was provisioned and therefore no route is
