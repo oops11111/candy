@@ -7,7 +7,7 @@ import type { ProviderKind } from '@deepseek-ai/dsh-control-plane'
 
 /** Where each operation is mounted, so a client and a test name one thing. */
 export const ACCOUNT_PATHS = {
-  /** Every account this tenant owns, deleted ones included. */
+  /** Every account this tenant owns that is not deleted, revoked ones included. */
   list: '/api/candy/provider-accounts',
   /** Create one account and seal its credential. */
   create: '/api/candy/provider-accounts/create',
