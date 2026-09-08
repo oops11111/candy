@@ -27,6 +27,7 @@ control-plane 组提供共享且互不可替换的身份，以及使用这些身
 | [`control-plane`](control-plane/README.zh.md) | 品牌化的 `UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`、`RunId`，以及 `RunLineage` 谱系记录 |
 | [`execution-assertion`](execution-assertion/README.zh.md) | 签发并准入授权一次运行的带签名、短时效断言 |
 | [`oauth-sign-in`](oauth-sign-in/README.zh.md) | 完成 PKCE 回调并把已验证身份映射为 Candy 授权 |
+| [`control-plane-api`](control-plane-api/README.zh.md) | 每一条管理路由都经由的已认证信封:从会话推导身份、写操作防护、角色守卫,以及统一的失败作答 |
 | [`oauth-sign-in-web`](oauth-sign-in-web/README.zh.md) | 把浏览器登录路由挂载到 Harness Host web 服务器上,并从配置登记第一位管理员 |
 | [`credential-vault`](credential-vault/README.zh.md) | 封装租户的提供方账户密钥、轮换其密钥、吊销它,并记录每一次访问 |
 | [`provider-accounts`](provider-accounts/README.zh.md) | 拥有租户提供方账户元数据、加密凭据生命周期、默认选择与不含密钥的账户视图 |
