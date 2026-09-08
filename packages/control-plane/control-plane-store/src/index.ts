@@ -16,7 +16,7 @@
  * @module @deepseek-ai/dsh-control-plane-store
  */
 
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { UserSessionId, type ControlPlaneRole, type OAuthIdentity, type ProviderAccountId, type RunId, type UserId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -168,7 +168,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
    * @param identity - verified OAuth issuer and subject.
    * @param createdAt - current epoch milliseconds.
    * @param expiresAt - expiry after `createdAt`.
-   * @returns the bearer token exactly once and its secret-free durable record.
+   * @returns the bearer and independent CSRF token exactly once, plus the secret-free durable record.
    */
   async createUserSession(
     userId: UserId,
@@ -176,7 +176,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     identity: OAuthIdentity,
     createdAt: number,
     expiresAt: number,
-  ): Promise<{ readonly token: string; readonly record: UserSessionRecord }> {
+  ): Promise<{ readonly token: string; readonly csrfToken: string; readonly record: UserSessionRecord }> {
     if (!Number.isSafeInteger(createdAt) || !Number.isSafeInteger(expiresAt) || expiresAt <= createdAt) {
       throw new RangeError('dsh-control-plane-store: user session expiry must be a safe integer after creation')
     }
@@ -185,9 +185,11 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     }
     const id = UserSessionId(randomUUID())
     const token = randomBytes(32).toString('base64url')
+    const csrfToken = randomBytes(32).toString('base64url')
     const stored: StoredUserSession = {
       id,
       tokenDigest: createHash('sha256').update(token, 'utf8').digest('hex'),
+      csrfDigest: createHash('sha256').update(csrfToken, 'utf8').digest('hex'),
       userId,
       role,
       oauthIssuer: identity.issuer,
@@ -196,7 +198,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
       expiresAt,
     }
     await this.userSessions.put(id, stored)
-    return { token, record: fromStoredUserSession(stored) }
+    return { token, csrfToken, record: fromStoredUserSession(stored) }
   }
 
   /**
@@ -213,6 +215,20 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
       return fromStoredUserSession(stored)
     }
     return undefined
+  }
+
+  /**
+   * Verify the independent anti-CSRF token for an authenticated session.
+   * @param id - session already authenticated by its HttpOnly bearer.
+   * @param csrfToken - value repeated from a readable same-site cookie into a request header.
+   * @returns true only when the active session owns that token.
+   */
+  verifyUserSessionCsrf(id: UserSessionId, csrfToken: string): boolean {
+    const stored = this.userSessions.get(id)
+    if (stored === undefined || stored.revokedAt !== undefined) return false
+    const actual = Buffer.from(createHash('sha256').update(csrfToken, 'utf8').digest('hex'), 'utf8')
+    const expected = Buffer.from(stored.csrfDigest, 'utf8')
+    return actual.byteLength === expected.byteLength && timingSafeEqual(actual, expected)
   }
 
   /**

@@ -217,6 +217,7 @@ const storedTenantRoutePolicy = z.object({ routes: z.array(storedTenantRoute) })
 const storedUserSession = z.object({
   id: z.string(),
   tokenDigest: z.string(),
+  csrfDigest: z.string(),
   userId: z.string(),
   role: z.enum(['member', 'administrator']),
   oauthIssuer: z.string(),

@@ -15,7 +15,7 @@ This service holds it: revocable OAuth-backed user sessions, provider accounts w
 
 It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once. Session ownership is written before each run and retained after settlement; `isManagedSession` identifies these sessions for their runtime without a live run. Domain version 8 rejects older records; upgrading an existing deployment requires a separately verified data transition. Adding `tenant_routes` did not change that version or invalidate existing version-8 data because it adds an independently materialized table without changing an existing record shape. Ownership records have no automatic expiry.
 
-`createUserSession` returns a 256-bit bearer once and stores only its SHA-256 digest with the Candy user, Candy-assigned role, verified OAuth issuer/subject, and expiry. `authenticateUserSession` derives identity and role only from that active record; unknown, expired, and revoked bearers return no identity. `revokeUserSession` makes the next authentication fail, including after restart.
+`createUserSession` returns an independent 256-bit bearer and CSRF token once and stores only their SHA-256 digests with the Candy user, Candy-assigned role, verified OAuth issuer/subject, and expiry. `authenticateUserSession` derives identity and role only from the active bearer record; `verifyUserSessionCsrf` separately proves that a state-changing request repeated the readable same-site token. Unknown, expired, and revoked bearers return no identity, and revocation also rejects the CSRF token across restart.
 
 ## Table of Contents
 

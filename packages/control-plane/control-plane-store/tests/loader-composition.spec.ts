@@ -181,8 +181,11 @@ describe('a booted control-plane store', () => {
     )
 
     expect(created.token).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(created.csrfToken).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(created.csrfToken).not.toBe(created.token)
     expect(created.record).toMatchObject({ userId: ALICE, role: 'administrator' })
     expect(JSON.stringify(created.record)).not.toContain(created.token)
+    expect(JSON.stringify(created.record)).not.toContain(created.csrfToken)
     await first.fiber.dispose()
     context = undefined
 
@@ -191,6 +194,8 @@ describe('a booted control-plane store', () => {
       .toEqual(created.record)
     expect(restarted.controlPlaneStore.authenticateUserSession(`${created.token}x`, NOW + 1))
       .toBeUndefined()
+    expect(restarted.controlPlaneStore.verifyUserSessionCsrf(created.record.id, created.csrfToken)).toBe(true)
+    expect(restarted.controlPlaneStore.verifyUserSessionCsrf(created.record.id, `${created.csrfToken}x`)).toBe(false)
   })
 
   it('rejects expired and revoked browser sessions without trusting request identity', async () => {
@@ -208,6 +213,7 @@ describe('a booted control-plane store', () => {
     expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 10)).toBeUndefined()
     expect(await ctx.controlPlaneStore.revokeUserSession(created.record.id, NOW + 5)).toBe(true)
     expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 6)).toBeUndefined()
+    expect(ctx.controlPlaneStore.verifyUserSessionCsrf(created.record.id, created.csrfToken)).toBe(false)
   })
 
   it('refuses invalid OAuth identity and session lifetime inputs', async () => {

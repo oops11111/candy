@@ -15,7 +15,7 @@ kind: "package-reference"
 
 它不是账本。`RunLedger` 仍然是记账权威,回答一次运行还能花什么;住在这里的是能挺过重启的那条记录,以及让一次被打断的结算恰好完成一次的那两个标记。每次运行之前先写入会话归属，结算之后仍然保留；`isManagedSession` 可在没有存活运行时按所属运行时识别这些会话。存储域版本 8 拒绝旧记录；升级已有部署需要单独验证数据转换。新增 `tenant_routes` 没有改变该版本，也不会使已有版本 8 数据失效，因为它只是新增一个独立物化的表，没有改变任何既有记录形状。归属记录不会自动过期。
 
-`createUserSession` 只返回一次 256 位 bearer，存储只保存其 SHA-256 摘要以及 Candy 用户、Candy 分配的角色、已验证的 OAuth issuer/subject 和过期时间。`authenticateUserSession` 只从有效记录推导身份与角色；未知、过期或已撤销的 bearer 不会返回身份。`revokeUserSession` 会让下一次认证失败，并且该结果跨重启保持。
+`createUserSession` 只返回一次相互独立的 256 位 bearer 与 CSRF token，存储只保存二者的 SHA-256 摘要以及 Candy 用户、Candy 分配的角色、已验证的 OAuth issuer/subject 和过期时间。`authenticateUserSession` 只从有效 bearer 记录推导身份与角色；`verifyUserSessionCsrf` 独立证明状态变更请求重复提交了可读的同站 token。未知、过期或已撤销的 bearer 不会返回身份，撤销也会跨重启拒绝 CSRF token。
 
 ## 目录
 
