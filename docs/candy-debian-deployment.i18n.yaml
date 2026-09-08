@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/candy-debian-deployment.md
+candy-debian-deployment.md: bd3e54d0482844e51b412e943a5dbf4d4f310924
+candy-debian-deployment.zh.md: ec3723fb1027fe53a1a0a120b067f4ddde84926f
