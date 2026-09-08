@@ -32,6 +32,13 @@ Load the policy beside `dsh-llm`, `dsh-run-scheduler` and `dsh-control-plane-sto
 Provision the complete allowlist through the control-plane authority:
 
 ```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { UserId } from '@deepseek-ai/dsh-control-plane'
+import type {} from '@deepseek-ai/dsh-control-plane-store'
+
+declare const ctx: Context
+declare const userId: UserId
+
 await ctx.controlPlaneStore.setTenantModelRoutes(userId, [
   { provider: 'claude-cli', model: 'sonnet' },
   { provider: 'codex-cli', model: 'gpt-5.6-sol' },

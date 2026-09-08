@@ -56,6 +56,13 @@ The service takes no configuration of its own: which medium serves the domain is
 ### Setting a tenant's model routes
 
 ```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { UserId } from '@deepseek-ai/dsh-control-plane'
+import type {} from '@deepseek-ai/dsh-control-plane-store'
+
+declare const ctx: Context
+declare const userId: UserId
+
 await ctx.controlPlaneStore.setTenantModelRoutes(userId, [
   { provider: 'claude-cli', model: 'sonnet' },
 ])

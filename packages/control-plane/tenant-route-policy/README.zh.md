@@ -32,6 +32,13 @@ kind: "package-reference"
 通过控制平面权威设置完整白名单：
 
 ```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { UserId } from '@deepseek-ai/dsh-control-plane'
+import type {} from '@deepseek-ai/dsh-control-plane-store'
+
+declare const ctx: Context
+declare const userId: UserId
+
 await ctx.controlPlaneStore.setTenantModelRoutes(userId, [
   { provider: 'claude-cli', model: 'sonnet' },
   { provider: 'codex-cli', model: 'gpt-5.6-sol' },

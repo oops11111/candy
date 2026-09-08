@@ -183,6 +183,9 @@ function validRequiredClaims(
  * ID Token verification is local against deployment-supplied JWKs. UserInfo
  * is then fetched with the access token and its subject must match the ID
  * Token, closing the token-substitution boundary before Candy sees identity.
+ * @param config - the deployment's endpoints, client identity and pinned keys.
+ * @returns the provider the browser routes build their authorization URL and
+ *   exchange their code with.
  */
 export function createOidcUserInfoProvider(config: OidcUserInfoProviderConfig): OAuthWebProvider {
   const resolved = resolveConfig(config)

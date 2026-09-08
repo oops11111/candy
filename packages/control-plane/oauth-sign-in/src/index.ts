@@ -109,10 +109,15 @@ export interface OAuthWebConfig {
   readonly sessionTtlMs?: number
 }
 
+/** Route a browser is sent to in order to begin one PKCE authorization. */
 export const OAUTH_START_PATH = '/auth/oauth/start'
+/** Route the provider returns the authorization code to; also the registered redirect URI's path. */
 export const OAUTH_CALLBACK_PATH = '/auth/oauth/callback'
+/** Route reporting the signed-in user of the presented session cookie. */
 export const OAUTH_SESSION_PATH = '/auth/session'
+/** Route revoking the presented session; requires exact Origin and CSRF. */
 export const OAUTH_LOGOUT_PATH = '/auth/logout'
+/** Header a write must repeat the CSRF cookie in, so a cross-site form cannot forge one. */
 export const OAUTH_CSRF_HEADER = 'x-candy-csrf'
 
 const DEFAULT_ATTEMPT_TTL_MS = 5 * 60 * 1000
@@ -262,7 +267,10 @@ export function oauthSessionCookies(result: OAuthSignInResult, now: number): rea
   ]
 }
 
-/** Cookies that remove both browser credentials during logout. */
+/**
+ * Cookies that remove both browser credentials during logout.
+ * @returns the session and CSRF cookies, each expired in the past.
+ */
 export function clearOAuthSessionCookies(): readonly [string, string] {
   return [
     `${SESSION_COOKIE}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax`,

@@ -56,6 +56,13 @@ kind: "package-reference"
 ### 设置租户的模型路由
 
 ```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { UserId } from '@deepseek-ai/dsh-control-plane'
+import type {} from '@deepseek-ai/dsh-control-plane-store'
+
+declare const ctx: Context
+declare const userId: UserId
+
 await ctx.controlPlaneStore.setTenantModelRoutes(userId, [
   { provider: 'claude-cli', model: 'sonnet' },
 ])
