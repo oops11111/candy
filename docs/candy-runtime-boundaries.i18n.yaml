@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/candy-runtime-boundaries.md
-candy-runtime-boundaries.md: 106ef06ac2fd97705dcddcf501370b89b8632a3b
-candy-runtime-boundaries.zh.md: f90e3a143cfe7a313da002314bf00cd5f6dc6f0a
+candy-runtime-boundaries.md: 09d74de5b3ea8bded234e8b2d02cc9d82425bbfc
+candy-runtime-boundaries.zh.md: 5263387cf3f4a4bb59c042b88cd5c935d44e0f40

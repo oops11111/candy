@@ -10,6 +10,7 @@ Candy runs on the DeepSeek Harness plugin runtime and adds a tenant-aware contro
 
 - Inherited Harness Capabilities
 - Candy-Owned Control Plane
+- Development Boundary
 - Trust Boundaries
 - Abuse Cases
 - Review Requirements
@@ -28,6 +29,14 @@ Candy owns user identity, OAuth sessions, provider account records, encrypted cr
 The control plane is the only authority for `userId`, `deviceId`, `accountId`, `workspaceGrantId`, `conversationId`, `sessionId`, and child-run ancestry. Browser clients, mobile clients, Windows hosts, and provider adapters may carry these identifiers only inside authenticated control-plane assertions. Candy rejects request fields that try to select a tenant, account, device, or workspace outside the assertion.
 
 Provider CLIs may share immutable binaries, package caches, and download caches. They must not share authenticated home directories, writable provider config, environment overlays, process trees, session stores, private model caches, or workspace mounts across `userId + provider + accountId`.
+
+## Development Boundary
+
+Candy adds only the control-plane rules that Harness cannot supply: authenticated user and administrator identity, device ownership, provider-account ownership, workspace authorization, tenant budgets, routing policy, and tenant-scoped audit. Harness remains the owner of sessions, agents, skills, slash commands, tools, file and shell operations, sandboxing, model-adapter registration, the Remote gateway, responsive Web layout, settings composition, and themes. Candy integrations extend those owners through their existing plugin interfaces instead of defining parallel protocols or clients.
+
+Management endpoints must derive the acting user, tenant, and administrator role from a trusted OAuth-backed server session. Possession of a Harness Host access token does not establish any of those identities, so account, route-policy, device, and workspace-grant mutation endpoints remain unavailable until that session authority exists.
+
+A workspace grant is enforced twice: the Debian control plane authorizes its tenant, device, revision, expiry, and operation class before dispatch, and the Windows Harness Host enforces the granted canonical roots with local filesystem semantics immediately before the inherited file or shell operation. Candy does not replace Harness file operations, invent a second mobile backend, hold server provider secrets on Windows, or use the Claude Agent SDK.
 
 ## Trust Boundaries
 

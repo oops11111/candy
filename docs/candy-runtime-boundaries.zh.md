@@ -10,6 +10,7 @@ Candy 运行在 DeepSeek Harness 插件运行时之上，并围绕它增加租�
 
 - 继承的 Harness 能力
 - Candy 自有控制面
+- 开发边界
 - 信任边界
 - 滥用场景
 - 审查要求
@@ -28,6 +29,14 @@ Candy 拥有用户身份、OAuth 会话、提供方账户记录、加密凭据�
 控制面是 `userId`、`deviceId`、`accountId`、`workspaceGrantId`、`conversationId`、`sessionId` 和子运行祖先关系的唯一权威。浏览器客户端、移动客户端、Windows host 和提供方适配器只能在已认证的控制面 assertion 中携带这些标识符。Candy 会拒绝试图在 assertion 外选择租户、账户、设备或工作区的请求字段。
 
 提供方 CLI 可以共享不可变二进制、package 缓存和下载缓存。它们不得跨 `userId + provider + accountId` 共享已认证 home 目录、可写提供方配置、环境覆盖、进程树、会话存储、私有模型缓存或工作区挂载。
+
+## 开发边界
+
+Candy 只增加 Harness 无法提供的控制面规则：已认证的用户与管理员身份、设备归属、提供方账户归属、工作区授权、租户预算、路由策略和租户范围审计。会话、agent、技能、slash 命令、工具、文件与 shell 操作、沙箱、模型适配器注册、Remote 网关、响应式 Web 布局、设置组合和主题仍由 Harness 负责。Candy 集成通过这些现有插件接口扩展所属能力，不定义并行协议或客户端。
+
+管理端点必须从受信任的 OAuth 服务端会话推导操作用户、租户和管理员角色。持有 Harness Host access token 不能证明其中任何一种身份，因此账户、路由策略、设备和工作区 grant 的变更端点在该会话权威存在之前保持不可用。
+
+工作区 grant 分两处执行：Debian 控制面在分发前授权其租户、设备、修订、过期时间和操作类别；Windows Harness Host 在继承的文件或 shell 操作之前，立即按照本地文件系统语义强制执行已授权的规范根目录。Candy 不替换 Harness 文件操作、不另建移动端后端、不在 Windows 保存服务端提供方 secret，也不使用 Claude Agent SDK。
 
 ## 信任边界
 

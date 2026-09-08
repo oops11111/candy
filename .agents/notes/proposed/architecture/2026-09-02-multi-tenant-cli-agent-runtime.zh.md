@@ -90,6 +90,18 @@ flowchart LR
 | R5 | Windows Harness Host 租户绑定 | R1, R3 | 已注册 Host 操作复用 Harness 插件并通过租户、路径与权限测试 |
 | R6 | 迁移、端到端验证和发布 | R2, R3, R4, R5 | 分阶段发布满足安全、恢复、延迟和回滚门禁 |
 
+剩余工作遵循以下安全依赖顺序；完成后面的 package 不能让前面的信任边界变成可选项。
+
+1. 建立 OAuth 支持的用户会话与管理员授权。Harness Host access token 是传输认证而非租户身份，不能授权控制面管理端点。
+2. 把每个 Windows Harness Host 注册到一个用户和设备，包括配对、撤销、重连和短期 assertion 验证。
+3. 把已准入的工作区 grant 投射到 Windows 执行，并在继承的 Harness 文件与 shell 操作之前立即强制执行规范根目录和操作类别。
+4. 把现有提供方账户与路由策略服务挂到已认证的 Web controller 后，增加提供方专用验证探测，并通过现有响应式设置组合暴露这些能力。
+5. 实现 Codex CLI 适配器并完成共享的提供方生命周期契约套件。Claude 保持使用直接 CLI 适配器，DeepSeek 保持使用 API 适配器。
+6. 只有至少两条可互换路由通过该套件后，才增加能力匹配和经账户授权的 fallback。
+7. 完成桌面与手机 viewport 覆盖、工具和用量的租户范围审计覆盖、多进程持久化恢复、canary、迁移、备份、回滚和发布检查。
+
+这些任务的详细归属与非目标由 [Candy 运行时边界](../../../../docs/candy-runtime-boundaries.zh.md) 规定。
+
 ### R0 — Boundary and threat model
 
 R0 已交付为 [Candy 运行时边界](../../../../docs/candy-runtime-boundaries.zh.md)，后续每一项任务都对它负责。

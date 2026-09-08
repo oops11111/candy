@@ -90,6 +90,18 @@ The runtime pool key is `userId + provider + accountId`. Workers may share immut
 | R5 | Tenant binding for Windows Harness Hosts | R1, R3 | Registered-host operations reuse Harness plugins and pass tenant, path, and permission tests |
 | R6 | Migration, end-to-end validation, and release | R2, R3, R4, R5 | Staged rollout meets security, recovery, latency, and rollback gates |
 
+The remaining work follows the security dependency order below; completing a later package does not make an earlier trust boundary optional.
+
+1. Establish OAuth-backed user sessions and administrator authorization. A Harness Host access token is transport authentication, not tenant identity, and cannot authorize control-plane management endpoints.
+2. Register each Windows Harness Host to one user and device, including pairing, revocation, reconnect, and short-lived assertion verification.
+3. Project admitted workspace grants into Windows execution and enforce canonical roots and operation classes immediately before inherited Harness file and shell operations.
+4. Mount the existing provider-account and route-policy services behind authenticated Web controllers, add provider-specific validation probes, and expose them through the existing responsive settings composition.
+5. Implement the Codex CLI adapter and complete the shared provider lifecycle contract suite. Keep Claude on its direct CLI adapter and DeepSeek on its API adapter.
+6. Add capability matching and account-authorized fallback only after at least two interchangeable routes pass that suite.
+7. Complete desktop and mobile viewport coverage, tenant-scoped audit coverage for tools and usage, multi-process persistence recovery, canaries, migration, backup, rollback, and release checks.
+
+The detailed ownership and non-goals for these tasks live in [Candy Runtime Boundaries](../../../../docs/candy-runtime-boundaries.md).
+
 ### R0 — Boundary and threat model
 
 R0 is delivered as [Candy Runtime Boundaries](../../../../docs/candy-runtime-boundaries.md), which every later task answers to.
