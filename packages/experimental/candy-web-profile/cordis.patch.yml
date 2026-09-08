@@ -1,0 +1,10 @@
+# Test-only Web layer: the Candy account page's browser half over dsh-web-app.
+#
+# Candy's Host plugins are deliberately absent. Their routes need a public
+# origin, an OIDC key set and a credential key that no test process can supply
+# as literals, and the routes themselves are proved in their own packages'
+# Loader-composition suites; what this layer exists for is showing the page
+# inside the real settings panel, in a real browser, at real viewport widths.
+- insert:
+    - id: ui-settings-candy-account
+      name: '@deepseek-ai/dsh-client-ui-settings-candy-account'

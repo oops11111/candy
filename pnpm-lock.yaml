@@ -5431,6 +5431,22 @@ importers:
         specifier: ^4.2.0
         version: 4.3.1
 
+  packages/experimental/candy-web-profile:
+    dependencies:
+      '@deepseek-ai/dsh-client-ui-settings-candy-account':
+        specifier: workspace:^
+        version: link:../../client/ui-settings-candy-account
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.3.1
+
   packages/experimental/client-ui-agent-team:
     dependencies:
       react:

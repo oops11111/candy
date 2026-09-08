@@ -9,6 +9,7 @@
   },
   "include": [
     "apps/web/tests/scaffold.ts",
+    "apps/web/tests/candy-account-settings.e2e.ts",
     "apps/web/tests/default-model.e2e.ts",
     "apps/web/tests/github-ready-review.e2e.ts",
     "apps/web/tests/streaming-fence-highlight.e2e.ts",
@@ -325,6 +326,7 @@
     { "path": "./packages/experimental/agent-team" },
     { "path": "./packages/experimental/agent-team-profile" },
     { "path": "./packages/experimental/tool-agent-team" },
+    { "path": "./packages/experimental/candy-web-profile" },
     { "path": "./packages/experimental/agent-team-web-profile" },
     { "path": "./packages/workflow/workflow" },
     { "path": "./packages/workflow/workflow-worker-thread" },

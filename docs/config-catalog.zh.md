@@ -3701,6 +3701,7 @@ export interface Config {
 - `@deepseek-ai/dsh-execution-assertion`（[`packages/control-plane/execution-assertion/src/index.ts`](../packages/control-plane/execution-assertion/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-web-profile`（[`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-candy-web-profile`（[`packages/experimental/candy-web-profile/src/index.ts`](../packages/experimental/candy-web-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-packer`（[`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-runtime`（[`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
