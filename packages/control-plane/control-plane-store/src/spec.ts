@@ -14,8 +14,8 @@
 import { z } from 'zod'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
-import type { UserId as TenantId } from '@deepseek-ai/dsh-control-plane'
+import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, UserSessionId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import type { ControlPlaneRole, OAuthIdentity, UserId as TenantId } from '@deepseek-ai/dsh-control-plane'
 import { CredentialKeyVersion, type CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountRecord } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
@@ -213,6 +213,33 @@ const storedTenantRoute = z.object({
 /** One tenant's complete model-route allowlist; an empty list explicitly denies all routes. */
 const storedTenantRoutePolicy = z.object({ routes: z.array(storedTenantRoute) })
 
+/** One revocable browser session; only the digest of its bearer token is durable. */
+const storedUserSession = z.object({
+  id: z.string(),
+  tokenDigest: z.string(),
+  userId: z.string(),
+  role: z.enum(['member', 'administrator']),
+  oauthIssuer: z.string(),
+  oauthSubject: z.string(),
+  createdAt: z.number(),
+  expiresAt: z.number(),
+  revokedAt: z.number().optional(),
+})
+
+/** Authenticated Candy browser-session state returned after bearer verification. */
+export interface UserSessionRecord {
+  readonly id: UserSessionId
+  readonly userId: UserId
+  readonly role: ControlPlaneRole
+  readonly identity: OAuthIdentity
+  readonly createdAt: number
+  readonly expiresAt: number
+  readonly revokedAt: number | undefined
+}
+
+/** Stored form of {@link UserSessionRecord}, including its one-way bearer digest. */
+export type StoredUserSession = z.infer<typeof storedUserSession>
+
 /** The durable declaration the control-plane store opens. */
 export const controlPlaneDomainSpec = defineDomain({
   name: 'candy_control_plane',
@@ -262,8 +289,26 @@ export const controlPlaneDomainSpec = defineDomain({
     managed_sessions: domainTable<SessionId, z.infer<typeof storedManagedSession>>(storedManagedSession),
     spent_nonces: domainTable<string, z.infer<typeof storedReplayNonce>>(storedReplayNonce),
     tenant_routes: domainTable<UserId, z.infer<typeof storedTenantRoutePolicy>>(storedTenantRoutePolicy),
+    user_sessions: domainTable<UserSessionId, StoredUserSession>(storedUserSession),
   },
 })
+
+/**
+ * Project a stored user session without exposing its bearer digest.
+ * @param stored - validated durable session record.
+ * @returns authenticated session state safe for management consumers.
+ */
+export function fromStoredUserSession(stored: StoredUserSession): UserSessionRecord {
+  return {
+    id: UserSessionId(stored.id),
+    userId: UserId(stored.userId),
+    role: stored.role,
+    identity: { issuer: stored.oauthIssuer, subject: stored.oauthSubject },
+    createdAt: stored.createdAt,
+    expiresAt: stored.expiresAt,
+    revokedAt: stored.revokedAt,
+  }
+}
 
 /** Drop a property whose value is absent, so an optional key round-trips as absent. */
 function present<T>(key: string, value: T | undefined): Record<string, T> {

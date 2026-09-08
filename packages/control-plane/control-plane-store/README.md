@@ -1,5 +1,5 @@
 ---
-description: "Durable provider accounts, tenant allowances and route policies for Candy's control plane."
+description: "Durable user sessions, provider accounts, tenant allowances and route policies for Candy's control plane."
 kind: "package-reference"
 ---
 
@@ -11,9 +11,11 @@ English | [中文](README.zh.md)
 
 [`dsh-provider-accounts`](../provider-accounts/README.md) defines its account store as a port, and [`dsh-run-admission`](../run-admission/README.md) requires a credential lookup and a budget lookup as ports. Every one of them was a parameter no deployment could fill, because nothing in the repository held the data.
 
-This service holds it: provider accounts with their sealed credentials, each tenant's allowance and exact model-route policy, the workspace grants a device issued, one record per live run, and a trail of what each tenant's runs did, from the attempt that opened one to the settlement that ended it, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
+This service holds it: revocable OAuth-backed user sessions, provider accounts with their sealed credentials, each tenant's allowance and exact model-route policy, the workspace grants a device issued, one record per live run, and a trail of what each tenant's runs did, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
 
 It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once. Session ownership is written before each run and retained after settlement; `isManagedSession` identifies these sessions for their runtime without a live run. Domain version 8 rejects older records; upgrading an existing deployment requires a separately verified data transition. Adding `tenant_routes` did not change that version or invalidate existing version-8 data because it adds an independently materialized table without changing an existing record shape. Ownership records have no automatic expiry.
+
+`createUserSession` returns a 256-bit bearer once and stores only its SHA-256 digest with the Candy user, Candy-assigned role, verified OAuth issuer/subject, and expiry. `authenticateUserSession` derives identity and role only from that active record; unknown, expired, and revoked bearers return no identity. `revokeUserSession` makes the next authentication fail, including after restart.
 
 ## Table of Contents
 
@@ -189,6 +191,7 @@ These are current package constraints, not a task backlog.
 - **`listByUser` scans** — the domain keeps every record in memory and this filters them, which is right at one deployment's account count and would not be at a directory's.
 - **Durable replay requires SQLite** — `spent_nonces` uses the storage seam's optional compare/exchange operation, so two runtime processes and a restart share one single-use decision. SQLite implements that operation transactionally. JSON layouts deliberately do not pretend that an open-time snapshot plus a file rewrite is cross-process atomic; an admission routed there fails loud with `facet-unsupported`.
 - **Route policy reads are process-local snapshots** — an update through this service is visible to the next call in the same runtime and survives restart. Separate long-lived processes sharing one SQLite database do not receive live invalidation from `storage-domain`; fleet-wide policy updates need an authenticated API plus explicit fan-out or reload.
+- **OAuth verification and HTTP cookies live elsewhere** — this store accepts an identity only after a deployment verifier proves the callback and returns an opaque bearer to its caller. It does not implement an OAuth provider, callback route, cookie attributes, or CSRF protection.
 
 <a id="dev-note"></a>
 ## Dev Note

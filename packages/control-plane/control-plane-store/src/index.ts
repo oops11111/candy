@@ -16,9 +16,9 @@
  * @module @deepseek-ai/dsh-control-plane-store
  */
 
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import { UserSessionId, type ControlPlaneRole, type OAuthIdentity, type ProviderAccountId, type RunId, type UserId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountRecord, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
@@ -35,6 +35,7 @@ import {
   fromStoredGrantRecord,
   fromStoredRecord,
   fromStoredRun,
+  fromStoredUserSession,
   toStoredAllowance,
   toStoredEntry,
   toStoredGrant,
@@ -47,11 +48,13 @@ import {
   type StoredTenantAllowance,
   type StoredTenantRoutePolicy,
   type StoredWorkspaceGrant,
+  type StoredUserSession,
   type TenantModelRoute,
+  type UserSessionRecord,
 } from './spec.ts'
 
 export { controlPlaneDomainSpec, runtimeSubject, tenantSubject } from './spec.ts'
-export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredRun, StoredTenantAllowance, StoredTenantRoutePolicy, StoredWorkspaceGrant, TenantModelRoute } from './spec.ts'
+export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredRun, StoredTenantAllowance, StoredTenantRoutePolicy, StoredWorkspaceGrant, TenantModelRoute, UserSessionRecord } from './spec.ts'
 
 /**
  * Add one record to a trail, folding it into the last when it says the same
@@ -137,6 +140,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
   private managedSessions!: KvTable<SessionId, { runtime: string }>
   private spentNonces!: KvTable<string, { expiresAt: number }>
   private tenantRoutes!: KvTable<UserId, StoredTenantRoutePolicy>
+  private userSessions!: KvTable<UserSessionId, StoredUserSession>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -154,6 +158,74 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     this.managedSessions = domain.table('managed_sessions')
     this.spentNonces = domain.table('spent_nonces')
     this.tenantRoutes = domain.table('tenant_routes')
+    this.userSessions = domain.table('user_sessions')
+  }
+
+  /**
+   * Create one revocable browser session after an OAuth verifier has proved the external identity.
+   * @param userId - Candy user mapped from the verified external identity.
+   * @param role - Candy-assigned authorization; never a browser-supplied claim.
+   * @param identity - verified OAuth issuer and subject.
+   * @param createdAt - current epoch milliseconds.
+   * @param expiresAt - expiry after `createdAt`.
+   * @returns the bearer token exactly once and its secret-free durable record.
+   */
+  async createUserSession(
+    userId: UserId,
+    role: ControlPlaneRole,
+    identity: OAuthIdentity,
+    createdAt: number,
+    expiresAt: number,
+  ): Promise<{ readonly token: string; readonly record: UserSessionRecord }> {
+    if (!Number.isSafeInteger(createdAt) || !Number.isSafeInteger(expiresAt) || expiresAt <= createdAt) {
+      throw new RangeError('dsh-control-plane-store: user session expiry must be a safe integer after creation')
+    }
+    if (identity.issuer.trim() === '' || identity.subject.trim() === '') {
+      throw new TypeError('dsh-control-plane-store: OAuth issuer and subject must be non-blank')
+    }
+    const id = UserSessionId(randomUUID())
+    const token = randomBytes(32).toString('base64url')
+    const stored: StoredUserSession = {
+      id,
+      tokenDigest: createHash('sha256').update(token, 'utf8').digest('hex'),
+      userId,
+      role,
+      oauthIssuer: identity.issuer,
+      oauthSubject: identity.subject,
+      createdAt,
+      expiresAt,
+    }
+    await this.userSessions.put(id, stored)
+    return { token, record: fromStoredUserSession(stored) }
+  }
+
+  /**
+   * Authenticate one bearer without accepting identity or role from the request.
+   * @param token - opaque token returned once at session creation.
+   * @param now - current epoch milliseconds.
+   * @returns the active session, or undefined for unknown, revoked, or expired credentials.
+   */
+  authenticateUserSession(token: string, now: number): UserSessionRecord | undefined {
+    const digest = createHash('sha256').update(token, 'utf8').digest('hex')
+    for (const [, stored] of this.userSessions.entries()) {
+      if (stored.tokenDigest !== digest) continue
+      if (stored.revokedAt !== undefined || stored.expiresAt <= now) return undefined
+      return fromStoredUserSession(stored)
+    }
+    return undefined
+  }
+
+  /**
+   * Revoke one browser session; subsequent authentication fails immediately.
+   * @param id - session selected by an already-authorized logout or administrative action.
+   * @param revokedAt - epoch milliseconds recorded as the revocation instant.
+   * @returns true when the session exists, including an already-revoked session.
+   */
+  async revokeUserSession(id: UserSessionId, revokedAt: number): Promise<boolean> {
+    const stored = this.userSessions.get(id)
+    if (stored === undefined) return false
+    if (stored.revokedAt === undefined) await this.userSessions.put(id, { ...stored, revokedAt })
+    return true
   }
 
   /**

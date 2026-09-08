@@ -169,6 +169,59 @@ describe('a booted control-plane store', () => {
     expect(ctx.controlPlaneStore).toBeInstanceOf(ControlPlaneStore)
   })
 
+  it('persists an OAuth-backed browser session without exposing its bearer', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+    const created = await first.controlPlaneStore.createUserSession(
+      ALICE,
+      'administrator',
+      { issuer: 'https://identity.example', subject: 'oauth-alice' },
+      NOW,
+      NOW + 60_000,
+    )
+
+    expect(created.token).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(created.record).toMatchObject({ userId: ALICE, role: 'administrator' })
+    expect(JSON.stringify(created.record)).not.toContain(created.token)
+    await first.fiber.dispose()
+    context = undefined
+
+    const restarted = await boot(root)
+    expect(restarted.controlPlaneStore.authenticateUserSession(created.token, NOW + 1))
+      .toEqual(created.record)
+    expect(restarted.controlPlaneStore.authenticateUserSession(`${created.token}x`, NOW + 1))
+      .toBeUndefined()
+  })
+
+  it('rejects expired and revoked browser sessions without trusting request identity', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const created = await ctx.controlPlaneStore.createUserSession(
+      ALICE,
+      'member',
+      { issuer: 'https://identity.example', subject: 'oauth-alice' },
+      NOW,
+      NOW + 10,
+    )
+
+    expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 9)?.userId).toBe(ALICE)
+    expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 10)).toBeUndefined()
+    expect(await ctx.controlPlaneStore.revokeUserSession(created.record.id, NOW + 5)).toBe(true)
+    expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 6)).toBeUndefined()
+  })
+
+  it('refuses invalid OAuth identity and session lifetime inputs', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+
+    await expect(ctx.controlPlaneStore.createUserSession(
+      ALICE, 'member', { issuer: ' ', subject: 'alice' }, NOW, NOW + 1,
+    )).rejects.toThrow(/issuer and subject must be non-blank/)
+    await expect(ctx.controlPlaneStore.createUserSession(
+      ALICE, 'member', { issuer: 'issuer', subject: 'alice' }, NOW, NOW,
+    )).rejects.toThrow(/expiry must be a safe integer after creation/)
+  })
+
   it('answers the credential port a verified assertion names', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
     const ctx = await boot(root)
