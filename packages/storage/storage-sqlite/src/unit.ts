@@ -115,9 +115,9 @@ export class SqliteKvUnit implements KvUnit {
   compareExchangeRecord(
     table: string,
     key: string,
-    expected: unknown | undefined,
-    replacement: unknown | undefined,
-  ): Promise<{ exchanged: boolean; current: unknown | undefined }> {
+    expected: unknown,
+    replacement: unknown,
+  ): Promise<{ exchanged: boolean; current: unknown }> {
     return this.settle(() => {
       const statements = this.statementsFor(table)
       this.db.exec('BEGIN IMMEDIATE')

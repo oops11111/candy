@@ -114,15 +114,17 @@ export interface KvUnit {
    * @param table - Declared table name.
    * @param key - Record key.
    * @param expected - Current value required, or `undefined` for absence.
+   *   `unknown` already admits `undefined`; the distinction is this contract's,
+   *   not the type's, because a stored record may itself be any JSON value.
    * @param replacement - Next value, or `undefined` to delete.
    * @returns whether the exchange landed and the value current at its decision.
    */
   compareExchangeRecord?(
     table: string,
     key: string,
-    expected: unknown | undefined,
-    replacement: unknown | undefined,
-  ): Promise<{ exchanged: boolean; current: unknown | undefined }>
+    expected: unknown,
+    replacement: unknown,
+  ): Promise<{ exchanged: boolean; current: unknown }>
 
   /**
    * Delete one record durably. Idempotent: a missing key is a no-op.

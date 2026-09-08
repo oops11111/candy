@@ -336,6 +336,49 @@ describe('a booted control-plane store', () => {
     expect(await ctx.controlPlaneStore.spendNonce({ ...first, expiresAt: NOW + 30 }, NOW + 11)).toBe(true)
   })
 
+  it('answers from the medium when another runtime spent the nonce first', async () => {
+    // Both runtimes open before either writes, so the loser's own view still
+    // shows the nonce unspent; only the refused exchange reports the truth.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const loser = await boot(root)
+    const winner = await boot(root)
+
+    try {
+      expect(await winner.controlPlaneStore.spendNonce(assertion(), NOW)).toBe(true)
+      expect(await loser.controlPlaneStore.spendNonce(assertion(), NOW)).toBe(false)
+    } finally {
+      await loser.fiber.dispose()
+    }
+  })
+
+  it('evicts only the expired records another runtime has not reinstalled', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const sweeper = await boot(root)
+    const contended = { ...assertion('nonce-contended'), expiresAt: NOW + 10 }
+
+    try {
+      expect(await sweeper.controlPlaneStore.spendNonce(contended, NOW)).toBe(true)
+      expect(await sweeper.controlPlaneStore.spendNonce(
+        { ...assertion('nonce-expired'), expiresAt: NOW + 10 }, NOW,
+      )).toBe(true)
+      expect(await sweeper.controlPlaneStore.spendNonce(assertion('nonce-live'), NOW)).toBe(true)
+
+      const other = await boot(root)
+      expect(await other.controlPlaneStore.spendNonce(
+        { ...contended, expiresAt: NOW + 60_000 }, NOW + 11,
+      )).toBe(true)
+
+      // The sweeper still holds the reservation it made for the contended key,
+      // so its exchange is refused and the newer runtime's record survives.
+      expect(await sweeper.controlPlaneStore.evictNonces(NOW + 11)).toBe(1)
+      expect(await other.controlPlaneStore.spendNonce(
+        { ...contended, expiresAt: NOW + 60_000 }, NOW + 12,
+      )).toBe(false)
+    } finally {
+      await sweeper.fiber.dispose()
+    }
+  })
+
   it('refuses invalid OAuth identity and session lifetime inputs', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
     const ctx = await boot(root)

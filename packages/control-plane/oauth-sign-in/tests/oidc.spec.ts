@@ -64,15 +64,28 @@ const exchangeInput = {
   redirectUri: 'https://candy.example/auth/oauth/callback',
 } as const
 
+/**
+ * The URL one intercepted fetch was called with.
+ *
+ * `RequestInfo` admits a `Request`, whose default stringification is not a
+ * URL; every case here passes a string or a `URL`, and this says so rather
+ * than relying on it.
+ * @param input - what the provider handed `fetch`.
+ * @returns the URL as text.
+ */
+function requestUrl(input: URL | RequestInfo): string {
+  return input instanceof Request ? input.url : input.toString()
+}
+
 describe('OIDC UserInfo provider', () => {
-  it('builds a code + S256 authorization URL without losing provider query', () => {
+  it('builds a code + S256 authorization URL without losing provider query', async () => {
     const oidc = provider(vi.fn() as never)
-    const url = new URL(String(oidc.authorizationUrl({
+    const url = new URL(await oidc.authorizationUrl({
       state: 'opaque-state',
       codeChallenge: 'pkce-challenge',
       nonce: 'oidc-nonce',
       redirectUri: exchangeInput.redirectUri,
-    })))
+    }))
 
     expect(Object.fromEntries(url.searchParams)).toMatchObject({
       prompt: 'select_account',
@@ -90,7 +103,7 @@ describe('OIDC UserInfo provider', () => {
   it('verifies the ID Token and exact UserInfo subject before returning identity', async () => {
     const token = await idToken()
     const fetch = vi.fn(async (input: URL | RequestInfo, _init?: RequestInit) => {
-      const url = String(input)
+      const url = requestUrl(input)
       if (url.endsWith('/token')) return json({ access_token: 'access-token', id_token: token, token_type: 'Bearer' })
       if (url.endsWith('/userinfo')) return json({ sub: 'external-alice' })
       throw new Error(`unexpected URL ${url}`)
@@ -120,7 +133,7 @@ describe('OIDC UserInfo provider', () => {
     const token = await idToken()
     const loadClientSecret = vi.fn(async () => 'secret with space')
     const fetch = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
-      if (String(input).endsWith('/token')) {
+      if (requestUrl(input).endsWith('/token')) {
         expect(new Headers(init?.headers).get('authorization')).toBe(
           `Basic ${Buffer.from('candy-client:secret+with+space', 'utf8').toString('base64')}`,
         )
@@ -172,6 +185,133 @@ describe('OIDC UserInfo provider', () => {
     if (!(failure instanceof Error)) throw new Error('Expected OIDC exchange to fail')
     expect(failure.message).toBe('OIDC endpoint response exceeded its byte limit')
     expect(failure.message).not.toContain(providerBody)
+  })
+
+  it('accepts a multi-audience ID Token whose authorized party is this client', async () => {
+    const token = await idToken({ audience: [CLIENT_ID, 'another-client'], authorizedParty: CLIENT_ID })
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json({ access_token: 'access-token', id_token: token, token_type: 'Bearer' }))
+      .mockResolvedValueOnce(json({ sub: 'external-alice' })) as unknown as typeof globalThis.fetch
+
+    await expect(provider(fetch).exchangeCode(exchangeInput)).resolves.toMatchObject({
+      subject: 'external-alice',
+    })
+  })
+
+  it('passes the caller abort signal to both provider calls beside its own timeout', async () => {
+    const token = await idToken()
+    const caller = new AbortController()
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json({ access_token: 'access-token', id_token: token, token_type: 'Bearer' }))
+      .mockResolvedValueOnce(json({ sub: 'external-alice' })) as unknown as typeof globalThis.fetch
+
+    await provider(fetch).exchangeCode({ ...exchangeInput, signal: caller.signal })
+
+    for (const call of vi.mocked(fetch).mock.calls) {
+      const signal = call[1]?.signal
+      expect(signal).toBeInstanceOf(AbortSignal)
+      expect(signal?.aborted).toBe(false)
+    }
+    caller.abort()
+    for (const call of vi.mocked(fetch).mock.calls) expect(call[1]?.signal?.aborted).toBe(true)
+  })
+
+  it('refuses a confidential client whose configured secret resolved empty', async () => {
+    const fetch = vi.fn() as unknown as typeof globalThis.fetch
+
+    await expect(provider(fetch, async () => '').exchangeCode(exchangeInput))
+      .rejects.toThrow('OIDC client secret was empty')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [
+      'the token endpoint refuses the code',
+      [json({ error: 'invalid_grant' }, 400)],
+      'OIDC token endpoint refused the code',
+    ],
+    [
+      'the token response omits a bearer access token',
+      [json({ id_token: 'unread', token_type: 'Bearer' })],
+      'OIDC token response omitted required credentials',
+    ],
+    [
+      'the token response is not JSON',
+      [new Response('<html></html>', { headers: { 'content-type': 'text/html' } })],
+      'OIDC endpoint response was not JSON',
+    ],
+    [
+      'the token response has no body',
+      [new Response(null, { headers: { 'content-type': 'application/json' } })],
+      'OIDC endpoint response had no body',
+    ],
+    [
+      'the token response is malformed JSON',
+      [new Response('{', { headers: { 'content-type': 'application/json' } })],
+      'OIDC endpoint response was invalid JSON',
+    ],
+    [
+      'the token response is a JSON array',
+      [new Response('[]', { headers: { 'content-type': 'application/json' } })],
+      'OIDC endpoint response was not an object',
+    ],
+  ])('refuses the exchange when %s', async (_case, responses, message) => {
+    const fetch = vi.fn(async () => responses.shift()) as unknown as typeof globalThis.fetch
+
+    await expect(provider(fetch).exchangeCode(exchangeInput)).rejects.toThrow(message)
+  })
+
+  it('refuses the exchange when the UserInfo endpoint refuses the access token', async () => {
+    const token = await idToken()
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(json({ access_token: 'access-token', id_token: token, token_type: 'Bearer' }))
+      .mockResolvedValueOnce(json({ error: 'invalid_token' }, 401)) as unknown as typeof globalThis.fetch
+
+    await expect(provider(fetch).exchangeCode(exchangeInput))
+      .rejects.toThrow('OIDC UserInfo endpoint refused the token')
+  })
+
+  it('reaches the provider through the global fetch when the deployment names none', async () => {
+    const token = await idToken()
+    const global = vi.fn()
+      .mockResolvedValueOnce(json({ access_token: 'access-token', id_token: token, token_type: 'Bearer' }))
+      .mockResolvedValueOnce(json({ sub: 'external-alice' }))
+    vi.stubGlobal('fetch', global)
+    try {
+      const oidc = createOidcUserInfoProvider({
+        issuer: ISSUER,
+        authorizationEndpoint: `${ISSUER}/authorize`,
+        tokenEndpoint: `${ISSUER}/token`,
+        userInfoEndpoint: `${ISSUER}/userinfo`,
+        clientId: CLIENT_ID,
+        jwks,
+      })
+
+      await expect(oidc.exchangeCode(exchangeInput)).resolves.toMatchObject({ subject: 'external-alice' })
+      expect(global).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('rejects a blank client id, an empty key set, and out-of-range bounds', () => {
+    const base = {
+      issuer: ISSUER,
+      authorizationEndpoint: `${ISSUER}/authorize`,
+      tokenEndpoint: `${ISSUER}/token`,
+      userInfoEndpoint: `${ISSUER}/userinfo`,
+      clientId: CLIENT_ID,
+      jwks,
+    }
+    expect(() => createOidcUserInfoProvider({ ...base, issuer: ` ${ISSUER} ` })).toThrow(/whitespace/u)
+    expect(() => createOidcUserInfoProvider({ ...base, clientId: '   ' })).toThrow(/clientId/u)
+    expect(() => createOidcUserInfoProvider({ ...base, jwks: { keys: [] } })).toThrow(/verification key/u)
+    expect(() => createOidcUserInfoProvider({ ...base, maxResponseBytes: 0 }))
+      .toThrow(/maxResponseBytes must be a positive safe integer/u)
+    expect(() => createOidcUserInfoProvider({ ...base, timeoutMs: 1.5 }))
+      .toThrow(/timeoutMs must be a positive safe integer/u)
+    expect(() => createOidcUserInfoProvider({ ...base, clockToleranceSeconds: -1 }))
+      .toThrow(/clockToleranceSeconds must be a non-negative safe integer/u)
   })
 
   it('rejects insecure endpoints, missing openid scope, and symmetric algorithms', () => {
