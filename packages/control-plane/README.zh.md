@@ -27,10 +27,14 @@ control-plane 组提供共享且互不可替换的身份，以及使用这些身
 | [`control-plane`](control-plane/README.zh.md) | 品牌化的 `UserId`、`DeviceId`、`ProviderAccountId`、`WorkspaceGrantId`、`ConversationId`、`RunId`，以及 `RunLineage` 谱系记录 |
 | [`execution-assertion`](execution-assertion/README.zh.md) | 签发并准入授权一次运行的带签名、短时效断言 |
 | [`oauth-sign-in`](oauth-sign-in/README.zh.md) | 完成 PKCE 回调并把已验证身份映射为 Candy 授权 |
+| [`control-plane-api`](control-plane-api/README.zh.md) | 每一条管理路由都经由的已认证信封:从会话推导身份、写操作防护、角色守卫,以及统一的失败作答 |
+| [`oauth-sign-in-web`](oauth-sign-in-web/README.zh.md) | 把浏览器登录路由挂载到 Harness Host web 服务器上,并从配置登记第一位管理员 |
 | [`credential-vault`](credential-vault/README.zh.md) | 封装租户的提供方账户密钥、轮换其密钥、吊销它,并记录每一次访问 |
 | [`provider-accounts`](provider-accounts/README.zh.md) | 拥有租户提供方账户元数据、加密凭据生命周期、默认选择与不含密钥的账户视图 |
 | [`run-budget`](run-budget/README.zh.md) | 通过让每个子运行的额度从父运行那里扣除，为委派树的 token、时间、金额与并发设界 |
 | [`workspace-grant`](workspace-grant/README.zh.md) | 把断言所指名的工作区授权 id 解析成一次运行所持有的根目录与文件效应上限,并拒绝指名了任何其他授权的子代 |
+| [`provider-credential-checks`](provider-credential-checks/README.zh.md) | 提供方集成用来说出一份已存储凭据是否仍然有效的注册表 |
+| [`provider-account-api`](provider-account-api/README.zh.md) | 挂载在已认证管理信封上的六个提供方账户操作 |
 | [`run-ledger`](run-ledger/README.zh.md) | 记录每次开启中的运行持有什么、花掉了什么，并精确而非估算地结算被遗弃的占用 |
 | [`run-replay`](run-replay/README.zh.md) | 以一个不可分割的步骤把断言的 nonce 记为已消费，并恰好在该断言仍可被准入期间保留它 |
 | [`tenant-allowance`](tenant-allowance/README.zh.md) | 把租户的授予额度与其已结算运行的消耗并排持有，使一份授予额度只为一个租户拨款，而不是为它启动的每一次运行拨款 |

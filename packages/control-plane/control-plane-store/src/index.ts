@@ -427,6 +427,9 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
       if (result.exchanged) return true
       expected = result.current
     }
+    // Reached only if another runtime wins the same key on eight consecutive
+    // exchanges; refusing keeps a contended nonce from being spent twice.
+    /* v8 ignore next -- sustained cross-process contention cannot be scheduled deterministically. */
     return false
   }
 

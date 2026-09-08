@@ -1559,6 +1559,67 @@ export interface Config {
 
 来源：[`packages/feedback/message-feedback/src/index.ts:50`](../packages/feedback/message-feedback/src/index.ts)
 
+<a id="deepseek-aidsh-oauth-sign-in-web"></a>
+
+## `@deepseek-ai/dsh-oauth-sign-in-web`
+
+需要：`webServer` · `controlPlaneStore`
+
+```ts config-catalog
+/** Deployment-owned sign-in configuration. */
+export interface Config {
+  /** Exact externally visible HTTPS origin browsers reach this deployment at. */
+  publicOrigin: string
+  /** OIDC issuer identifier, exactly as the provider publishes it. */
+  issuer: string
+  /** The provider's authorization endpoint. */
+  authorizationEndpoint: string
+  /** The provider's token endpoint. */
+  tokenEndpoint: string
+  /** The provider's UserInfo endpoint. */
+  userInfoEndpoint: string
+  /** This deployment's registered OIDC client identifier. */
+  clientId: string
+  /**
+   * File holding the JSON Web Key Set this deployment verifies ID Tokens with.
+   *
+   * A path rather than inline keys: the set is the deployment's trust anchor
+   * and rotating it is an operator action on one file, which also keeps a key
+   * blob out of a configuration file that is read for other reasons.
+   */
+  jwksPath: string
+  /**
+   * Environment variable holding the OIDC client secret.
+   *
+   * Read through the credential seam at load, never stored in this config and
+   * never logged. A public client that authenticates with PKCE alone omits it.
+   */
+  clientSecretEnv?: string
+  /** Scope tokens requested; `openid` is mandatory. */
+  scopes?: string[]
+  /** Relative destination after a successful callback. */
+  successPath?: string
+  /** PKCE transaction lifetime in milliseconds. */
+  attemptTtlMs?: number
+  /** Browser user-session lifetime in milliseconds. */
+  sessionTtlMs?: number
+  /**
+   * The provider's exact subject claim for the administrator enrolled at load.
+   *
+   * It is the subject and not an email or a name because those are
+   * re-assignable at most providers, and an identity that can be re-assigned
+   * is an administrator seat that can be inherited. Omitting this pair leaves
+   * the directory as it stands, which is the steady state once the first
+   * administrator exists and has enrolled everyone else.
+   */
+  bootstrapAdministratorSubject?: string
+  /** The Candy user that subject signs in as; every tenant-owned record is keyed by it. */
+  bootstrapAdministratorUserId?: string
+}
+```
+
+来源：[`packages/control-plane/oauth-sign-in-web/src/index.ts:49`](../packages/control-plane/oauth-sign-in-web/src/index.ts)
+
 <a id="deepseek-aidsh-permission-presets"></a>
 
 ## `@deepseek-ai/dsh-permission-presets`
@@ -1653,6 +1714,35 @@ export interface Config {
 ```
 
 来源：[`packages/llm/plugin-package-inventory-deepseek/src/index.ts:31`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
+
+<a id="deepseek-aidsh-provider-account-api"></a>
+
+## `@deepseek-ai/dsh-provider-account-api`
+
+需要：`webServer` · `controlPlaneStore` · `providerCredentialChecks`
+
+```ts config-catalog
+/** Deployment-owned facts this API needs beyond what the envelope carries. */
+export interface Config {
+  /** Exact externally visible HTTPS origin, matching what sign-in was configured with. */
+  publicOrigin: string
+  /** Keyring version a newly sealed credential is stamped with. */
+  credentialKeyVersion: string
+  /** Environment variable holding the current credential key. */
+  credentialKeyEnv: string
+  /** Retained key versions this deployment still opens, so an older envelope stays readable. */
+  retiredCredentialKeys: {
+    /** Version the envelopes sealed under this key name. */
+    version: string
+    /** Environment variable holding that key. */
+    env: string
+  }[]
+  /** Most audit records kept per tenant. */
+  auditRetention: number
+}
+```
+
+来源：[`packages/control-plane/provider-account-api/src/index.ts:71`](../packages/control-plane/provider-account-api/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 
@@ -3515,6 +3605,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-schedule`（[`packages/client/ui-schedule/src/index.ts`](../packages/client/ui-schedule/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-session`（[`packages/client/ui-session/src/index.ts`](../packages/client/ui-session/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings`（[`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-settings-candy-account`（[`packages/client/ui-settings-candy-account/src/index.ts`](../packages/client/ui-settings-candy-account/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-general`（[`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-models`（[`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory`（[`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts)）
@@ -3544,6 +3635,7 @@ export interface Config {
 - `@deepseek-ai/dsh-host-plugin-inventory` — 需要 `loader`（[`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
 - `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
+- `@deepseek-ai/dsh-provider-credential-checks`（[`packages/control-plane/provider-credential-checks/src/index.ts`](../packages/control-plane/provider-credential-checks/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）
@@ -3594,6 +3686,7 @@ export interface Config {
 - `@deepseek-ai/dsh-atomic-write`（[`packages/util/atomic-write/src/index.ts`](../packages/util/atomic-write/src/index.ts)）
 - `@deepseek-ai/dsh-base`（[`packages/bundle/base/src/index.ts`](../packages/bundle/base/src/index.ts)）
 - `@deepseek-ai/dsh-brand`（[`packages/util/brand/src/index.ts`](../packages/util/brand/src/index.ts)）
+- `@deepseek-ai/dsh-candy-app`（[`packages/bundle/candy-app/src/index.ts`](../packages/bundle/candy-app/src/index.ts)）
 - `@deepseek-ai/dsh-claude-cli-binding`（[`packages/control-plane/claude-cli-binding/src/index.ts`](../packages/control-plane/claude-cli-binding/src/index.ts)）
 - `@deepseek-ai/dsh-claude-cli-protocol`（[`packages/llm/claude-cli-protocol/src/index.ts`](../packages/llm/claude-cli-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-client-store`（[`packages/client/store/src/index.ts`](../packages/client/store/src/index.ts)）
@@ -3603,11 +3696,13 @@ export interface Config {
 - `@deepseek-ai/dsh-client-web`（[`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts)）
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
 - `@deepseek-ai/dsh-control-plane`（[`packages/control-plane/control-plane/src/index.ts`](../packages/control-plane/control-plane/src/index.ts)）
+- `@deepseek-ai/dsh-control-plane-api`（[`packages/control-plane/control-plane-api/src/index.ts`](../packages/control-plane/control-plane-api/src/index.ts)）
 - `@deepseek-ai/dsh-credential-vault`（[`packages/control-plane/credential-vault/src/index.ts`](../packages/control-plane/credential-vault/src/index.ts)）
 - `@deepseek-ai/dsh-deque`（[`packages/util/deque/src/index.ts`](../packages/util/deque/src/index.ts)）
 - `@deepseek-ai/dsh-execution-assertion`（[`packages/control-plane/execution-assertion/src/index.ts`](../packages/control-plane/execution-assertion/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-web-profile`（[`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-candy-web-profile`（[`packages/experimental/candy-web-profile/src/index.ts`](../packages/experimental/candy-web-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-packer`（[`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-runtime`（[`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
@@ -3617,6 +3712,7 @@ export interface Config {
 - `@deepseek-ai/dsh-llm-mock-server`（[`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts)）
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
+- `@deepseek-ai/dsh-oauth-sign-in`（[`packages/control-plane/oauth-sign-in/src/index.ts`](../packages/control-plane/oauth-sign-in/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-provider-accounts`（[`packages/control-plane/provider-accounts/src/index.ts`](../packages/control-plane/provider-accounts/src/index.ts)）
 - `@deepseek-ai/dsh-run-admission`（[`packages/control-plane/run-admission/src/index.ts`](../packages/control-plane/run-admission/src/index.ts)）

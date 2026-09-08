@@ -1,0 +1,221 @@
+/* Every color resolves through a `--dsw-alias-*` token, so the page follows
+   the theme the deployment already has and adds no palette of its own. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 720px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+.intro {
+  margin: 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 12px;
+}
+
+.identityText {
+  font-size: 13px;
+  line-height: 20px;
+  /* A user id can be long and has no break opportunities of its own. */
+  overflow-wrap: anywhere;
+}
+
+.failure {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.addRow {
+  display: flex;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.select {
+  height: 32px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.hint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 16px;
+}
+
+.rowHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rowLabel {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.rowProvider {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  corner-shape: round;
+  font-size: 12px;
+  line-height: 18px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-brand-text);
+}
+
+.badgeMuted {
+  padding: 1px 8px;
+  border-radius: 999px;
+  corner-shape: round;
+  font-size: 12px;
+  line-height: 18px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rowMeta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rowActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Destructive actions read as destructive without a variant of their own:
+   the shared ghost button keeps its geometry and takes the theme's danger
+   label and hover tint. */
+.danger {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+}
+
+.error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+  overflow-wrap: anywhere;
+}
+
+.ok {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-success-primary);
+}
+
+/* A phone-width settings panel: every row stacks rather than compressing its
+   controls, and the identity strip stops sharing a line with its button. */
+@media (max-width: 560px) {
+  .identity {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rowActions > * {
+    flex: 1 1 auto;
+  }
+}

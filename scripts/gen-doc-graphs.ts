@@ -115,6 +115,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Holds the account and allowance records the admission ports read; a child run is still admitted against its parent\'s remainder, which the in-memory run ledger holds.',
   },
   {
+    key: 'providerCredentialChecks',
+    pkg: 'provider-credential-checks',
+    title: 'Whether one stored provider credential still authenticates',
+    mode: 'core',
+    consumers: ['provider-account-api'],
+    note: 'The seam a provider integration answers through: the management API asks for a verdict and never learns the endpoint, the request or the response, and a provider nothing registered for answers unsupported rather than invalid.',
+  },
+  {
     key: 'attachments',
     pkg: 'attachment',
     title: 'Durable binary attachment storage',

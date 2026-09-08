@@ -1,0 +1,75 @@
+# Candy on Debian, as a systemd service. Install at
+# /etc/systemd/system/candy.service.
+#
+# The unit binds the process to loopback and lets Nginx own TLS and the public
+# port, so the only thing reachable from the network is a terminating proxy.
+# Everything below the exec line is confinement: this service holds two keys
+# and every tenant's sealed credentials, and a compromised agent process is
+# inside it.
+
+[Unit]
+Description=Candy multi-tenant agent control plane
+Documentation=https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/candy-debian-deployment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=candy
+Group=candy
+
+# The two keys and the identity provider's key set. Mode 0640 root:candy, so
+# the service reads it and no other account can.
+EnvironmentFile=/etc/candy/candy.env
+
+# Loopback only: the public port is Nginx's. Binding all interfaces here would
+# publish an origin with no TLS in front of it.
+ExecStart=/opt/candy/bin/dsh --profile candy --host 127.0.0.1 --port 8787 --no-open
+
+Restart=on-failure
+RestartSec=5s
+# A restart loop on a misconfigured environment must stop rather than hammer
+# the identity provider: the process refuses to start at all in that case.
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# ── confinement ─────────────────────────────────────────────────────────────
+# The service writes exactly two trees: the control-plane database and the
+# runtime pools. Both are under StateDirectory, which systemd creates 0700 and
+# owned by the service user.
+StateDirectory=candy
+StateDirectoryMode=0700
+
+# Read-only everywhere else, with a private /tmp and no view of other users'
+# homes. A tenant's provider CLI runs inside this service, and its pool root is
+# the only place it is told to keep state.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=no
+NoNewPrivileges=yes
+RemoveIPC=yes
+# The agent runs provider CLIs, which are ordinary network clients.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Provider CLIs are subprocesses of this service, so the cap is a whole-service
+# one rather than a per-tenant one. Per-tenant quotas are the scheduler's.
+TasksMax=4096
+
+[Install]
+WantedBy=multi-user.target

@@ -43,7 +43,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
 import { RunId, type ProviderAccountId, type ProviderKind, type UserId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import {
-  CredentialKeyVersion,
+  assembleKeyring,
   openCredential,
   type CredentialAuditEvent,
   type CredentialKeyring,
@@ -121,26 +121,11 @@ export interface RetiredCredentialKey {
   env: string
 }
 
-export const Config: z<Config> = z.object({
-  issuer: z.string().required(),
-  audience: z.string().required(),
-  maxLifetimeMs: z.number().step(1).min(1).default(60_000),
-  assertionSecretEnv: z.string().role('credential-ref').default('CANDY_ASSERTION_SECRET'),
-  credentialKeyEnv: z.string().role('credential-ref').default('CANDY_CREDENTIAL_KEY'),
-  credentialKeyVersion: z.string().required(),
-  retiredCredentialKeys: z.array(z.object({
-    version: z.string().required(),
-    env: z.string().role('credential-ref').required(),
-  })).default([]),
-  poolBase: z.string().required(),
-  leaseMs: z.number().step(1).min(1).default(300_000),
-  sweepMs: z.number().step(1).min(1).default(30_000),
-  endedSessionMemory: z.number().step(1).min(1).default(1_000),
-  auditRetention: z.number().step(1).min(1).default(200),
-})
-
-/** Bytes a credential key must carry, matching what the vault seals with. */
-const CREDENTIAL_KEY_BYTES = 32
+/**
+ * The config after the Loader applied {@link RunScheduler.Config}: every
+ * optional field is filled, so nothing inside re-decides a default.
+ */
+type ResolvedConfig = Required<Config>
 
 /** Why a session did not resolve to one open, usable run. */
 export type SessionRunRejection =
@@ -223,6 +208,31 @@ function requireSecret(environment: Readonly<Record<string, string | undefined>>
 export class RunScheduler extends Service {
   static inject = ['controlPlaneStore', 'timer']
 
+  /**
+   * Deployment-varying facts, validated at load.
+   *
+   * Binding the schema here is what makes the required fields required: a
+   * runtime whose `audience` is absent would otherwise start and admit
+   * assertions addressed to nobody.
+   */
+  static Config: z<Config> = z.object({
+    issuer: z.string().required(),
+    audience: z.string().required(),
+    maxLifetimeMs: z.number().step(1).min(1).default(60_000),
+    assertionSecretEnv: z.string().role('credential-ref').default('CANDY_ASSERTION_SECRET'),
+    credentialKeyEnv: z.string().role('credential-ref').default('CANDY_CREDENTIAL_KEY'),
+    credentialKeyVersion: z.string().required(),
+    retiredCredentialKeys: z.array(z.object({
+      version: z.string().required(),
+      env: z.string().role('credential-ref').required(),
+    })).default([]),
+    poolBase: z.string().required(),
+    leaseMs: z.number().step(1).min(1).default(300_000),
+    sweepMs: z.number().step(1).min(1).default(30_000),
+    endedSessionMemory: z.number().step(1).min(1).default(1_000),
+    auditRetention: z.number().step(1).min(1).default(200),
+  })
+
   /** Open runs and their holds, for every tree this runtime is running. */
   readonly ledger: RunLedger = new RunLedger()
 
@@ -288,34 +298,20 @@ export class RunScheduler extends Service {
   private readonly keyring: CredentialKeyring
   private readonly assertionSecret: Buffer
 
-  constructor(ctx: Context, private readonly config: Config) {
+  private readonly config: ResolvedConfig
+
+  constructor(ctx: Context, config: Config) {
     super(ctx, 'runScheduler')
+    this.config = RunScheduler.Config(config) as ResolvedConfig
     const environment = process.env
-    this.assertionSecret = requireSecret(environment, config.assertionSecretEnv ?? 'CANDY_ASSERTION_SECRET')
-    const key = requireSecret(environment, config.credentialKeyEnv ?? 'CANDY_CREDENTIAL_KEY')
-    if (key.byteLength !== CREDENTIAL_KEY_BYTES) {
-      throw new RangeError(
-        `dsh-run-scheduler: the credential key must be ${String(CREDENTIAL_KEY_BYTES)} bytes, got ${String(key.byteLength)}`,
-      )
-    }
-    const currentVersion = CredentialKeyVersion(config.credentialKeyVersion)
-    const keys = new Map([[currentVersion, key]])
-    for (const retired of config.retiredCredentialKeys ?? []) {
-      const version = CredentialKeyVersion(retired.version)
-      // Both of these would silently decide which key a version means, and the
-      // wrong answer is a tenant whose credential opens with someone's key or
-      // not at all, so neither is resolved here.
-      if (version === currentVersion) {
-        throw new Error(
-          `dsh-run-scheduler: credential key version '${retired.version}' is both current and retired, so it names two keys`,
-        )
-      }
-      if (keys.has(version)) {
-        throw new Error(`dsh-run-scheduler: credential key version '${retired.version}' is retired twice`)
-      }
-      keys.set(version, requireSecret(environment, retired.env))
-    }
-    this.keyring = { currentVersion, keys }
+    this.assertionSecret = requireSecret(environment, this.config.assertionSecretEnv)
+    this.keyring = assembleKeyring({
+      component: 'dsh-run-scheduler',
+      environment,
+      currentVersion: this.config.credentialKeyVersion,
+      currentEnv: this.config.credentialKeyEnv,
+      retired: this.config.retiredCredentialKeys,
+    })
   }
 
   /**
@@ -347,7 +343,7 @@ export class RunScheduler extends Service {
       this.sweep(Date.now()).catch((error: unknown) => {
         this.ctx.logger.warn(`run-scheduler: sweep failed to settle: ${String(error)}`)
       })
-    }, this.config.sweepMs ?? 30_000)
+    }, this.config.sweepMs)
   }
 
   /**
@@ -385,7 +381,7 @@ export class RunScheduler extends Service {
     const outcome = await startRun({ token }, this.policy(), {
       ledger: this.ledger,
       share,
-      leaseExpiresAt: now + (this.config.leaseMs ?? 300_000),
+      leaseExpiresAt: now + this.config.leaseMs,
     }, now)
     if (!outcome.started) {
       await this.record(outcome, now)
@@ -686,7 +682,7 @@ export class RunScheduler extends Service {
       action: audit.action,
       outcome: audit.outcome,
     }
-    const retain = this.config.auditRetention ?? 200
+    const retain = this.config.auditRetention
     await this.ctx.controlPlaneStore.recordAudit(tenantSubject(userId), [record], retain).catch((error: unknown) => {
       this.ctx.logger.warn(`run-scheduler: could not record a credential open for tenant '${userId}': ${String(error)}`)
     })
@@ -948,7 +944,7 @@ export class RunScheduler extends Service {
    * sweep of staleness rather than a run settled underneath a live session.
    */
   private async renew(runId: RunId, now: number): Promise<void> {
-    const leaseExpiresAt = now + (this.config.leaseMs ?? 300_000)
+    const leaseExpiresAt = now + this.config.leaseMs
     // Neither result is read: both operations are no-ops for a run this
     // queued step found already settled, which is the outcome either way.
     this.ledger.renew(runId, leaseExpiresAt)
@@ -962,7 +958,7 @@ export class RunScheduler extends Service {
       expectation: {
         issuer: this.config.issuer,
         audience: this.config.audience,
-        maxLifetimeMs: this.config.maxLifetimeMs ?? 60_000,
+        maxLifetimeMs: this.config.maxLifetimeMs,
       },
       assertionSecret: this.assertionSecret,
       keyring: this.keyring,
@@ -1228,7 +1224,7 @@ export class RunScheduler extends Service {
       action: 'settle',
       outcome: cause,
     }
-    const retain = this.config.auditRetention ?? 200
+    const retain = this.config.auditRetention
     await this.ctx.controlPlaneStore.recordAudit(tenantSubject(run.userId), [record], retain).catch((error: unknown) => {
       this.ctx.logger.warn(`run-scheduler: could not record the settlement of run '${run.record.runId}': ${String(error)}`)
     })
@@ -1259,7 +1255,7 @@ export class RunScheduler extends Service {
       action: launch.executable,
       outcome: launch.pid === -1 ? 'spawn-failed' : 'ok',
     }
-    const retain = this.config.auditRetention ?? 200
+    const retain = this.config.auditRetention
     this.ctx.controlPlaneStore.recordAudit(tenantSubject(run.userId), [record], retain)
       .catch((error: unknown) => {
         this.ctx.logger.warn(`run-scheduler: could not record a launched process: ${String(error)}`)
@@ -1294,7 +1290,7 @@ export class RunScheduler extends Service {
       action,
       outcome: code,
     }
-    const retain = this.config.auditRetention ?? 200
+    const retain = this.config.auditRetention
     return this.ctx.controlPlaneStore.recordAudit(subject, [record], retain).then(() => undefined, (error: unknown) => {
       this.ctx.logger.warn(`run-scheduler: could not record a refused call (${message}): ${String(error)}`)
     })
@@ -1313,7 +1309,7 @@ export class RunScheduler extends Service {
       trail.push(record)
       grouped.set(subject, trail)
     }
-    const retain = this.config.auditRetention ?? 200
+    const retain = this.config.auditRetention
     for (const [subject, records] of grouped) {
       await this.ctx.controlPlaneStore.recordAudit(subject, records, retain)
     }
@@ -1355,7 +1351,7 @@ export class RunScheduler extends Service {
   private remember(sessionId: SessionId): void {
     this.ended.delete(sessionId)
     this.ended.add(sessionId)
-    const cap = this.config.endedSessionMemory ?? 1_000
+    const cap = this.config.endedSessionMemory
     // Insertion order makes the first entry the oldest.
     for (const oldest of this.ended) {
       if (this.ended.size <= cap) break

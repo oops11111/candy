@@ -27,10 +27,14 @@ The scheduler description above uses the original ownership shorthand. Replay de
 | [`control-plane`](control-plane/README.md) | Branded `UserId`, `DeviceId`, `ProviderAccountId`, `WorkspaceGrantId`, `ConversationId`, `RunId`, and the `RunLineage` ancestry record |
 | [`execution-assertion`](execution-assertion/README.md) | Mints and admits the signed, short-lived assertion that authorizes one run |
 | [`oauth-sign-in`](oauth-sign-in/README.md) | Completes a PKCE callback and maps verified identity to Candy authorization |
+| [`control-plane-api`](control-plane-api/README.md) | The authenticated envelope every management route is registered through: session-derived identity, write protections, role guards, and uniform failures |
+| [`oauth-sign-in-web`](oauth-sign-in-web/README.md) | Mounts the browser sign-in routes on the Harness Host web server and enrolls the first administrator from configuration |
 | [`credential-vault`](credential-vault/README.md) | Seals a tenant's provider-account secret, rotates its key, revokes it, and records every access |
 | [`provider-accounts`](provider-accounts/README.md) | Owns tenant provider-account metadata, encrypted credential lifecycle, default selection, and secret-free account views |
 | [`run-budget`](run-budget/README.md) | Bounds a delegation tree's tokens, time, money, and concurrency by drawing each child's allowance out of its parent's |
 | [`workspace-grant`](workspace-grant/README.md) | Resolves the workspace-grant id an assertion names into the roots and file-effect ceiling a run holds, and refuses a child that names any other |
+| [`provider-credential-checks`](provider-credential-checks/README.md) | The registry a provider integration says through whether one stored credential still authenticates |
+| [`provider-account-api`](provider-account-api/README.md) | The six provider-account operations, mounted on the authenticated management envelope |
 | [`run-ledger`](run-ledger/README.md) | Records what each open run holds and has spent, and settles an abandoned hold exactly rather than by estimate |
 | [`run-replay`](run-replay/README.md) | Records an assertion's nonce as spent in one indivisible step, retained exactly while that assertion stays admissible |
 | [`tenant-allowance`](tenant-allowance/README.md) | Holds a tenant's grant beside what its settled runs consumed, so one grant funds one tenant rather than every run it starts |

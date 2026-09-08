@@ -1,0 +1,99 @@
+# The Candy deployment layer: applied after dsh-web-app, so the browser
+# surface, its transport and its settings panel are already composed and this
+# layer adds only what makes the deployment multi-tenant.
+#
+# Every deployment-varying value is read from the environment rather than
+# written here. A Candy install differs from every other one in exactly these
+# places — its public origin, its identity provider, its keys, its database
+# and its pool base — and a bundle carrying literals for them would be a
+# bundle that has to be edited before it can run. A required variable that is
+# unset resolves to `undefined`, which its plugin's schema then refuses at
+# load: the deployment fails to start rather than starting misconfigured.
+# packages/bundle/candy-app/README.md is the variable list.
+
+# ── durable medium ──────────────────────────────────────────────────────────
+
+# The control plane needs an atomic compare/exchange to spend a nonce exactly
+# once and to append an audit record under concurrency; the inherited JSON
+# backend offers neither, and answers reads from its open-time snapshot, so a
+# second Candy process would not see the first one's writes. SQLite is routed
+# to that one domain and the inherited session domains keep the JSON backend
+# they were tuned for.
+- id: storage-domain
+  config:
+    backend: json
+    routes:
+      candy_control_plane: sqlite
+
+- insert:
+    - id: storage-sqlite
+      name: '@deepseek-ai/dsh-storage-sqlite'
+      config:
+        path: !!js process.env.CANDY_DATABASE_PATH
+
+# ── control plane ───────────────────────────────────────────────────────────
+
+- insert:
+    # Tenants, devices, provider accounts, workspace grants, browser sessions,
+    # the OAuth directory, spent nonces and the audit trail, all on the medium
+    # above.
+    - id: control-plane-store
+      name: '@deepseek-ai/dsh-control-plane-store'
+
+    # One runtime's clock: it admits assertions, funds and places runs, renews
+    # a working run's lease and sweeps what an abandoned one held.
+    #
+    # `audience` names THIS runtime. A deployment running several must give
+    # each its own, or an assertion minted for one will be admitted by another.
+    - id: run-scheduler
+      name: '@deepseek-ai/dsh-run-scheduler'
+      config:
+        issuer: !!js process.env.CANDY_CONTROL_PLANE_ISSUER
+        audience: !!js process.env.CANDY_RUNTIME_AUDIENCE
+        credentialKeyVersion: !!js process.env.CANDY_CREDENTIAL_KEY_VERSION
+        poolBase: !!js process.env.CANDY_RUNTIME_POOL_BASE
+
+    # Where a provider integration answers whether a stored credential still
+    # authenticates. Nothing registers a check yet, so `validate` reports that
+    # no provider could be asked rather than that the credential is bad.
+    - id: provider-credential-checks
+      name: '@deepseek-ai/dsh-provider-credential-checks'
+
+# ── the browser's way in, and what it may then manage ───────────────────────
+
+- insert:
+    # Sign-in. The OIDC endpoints are the deployment's provider, and the key
+    # set is a file so rotating it is one operator action on one path.
+    #
+    # `bootstrapAdministratorSubject` and `bootstrapAdministratorUserId` are
+    # both-or-neither, and only for the first install: once an administrator
+    # exists and has enrolled everyone else, leaving them unset is the steady
+    # state and the directory stands as it is.
+    - id: oauth-sign-in-web
+      name: '@deepseek-ai/dsh-oauth-sign-in-web'
+      config:
+        publicOrigin: !!js process.env.CANDY_PUBLIC_ORIGIN
+        issuer: !!js process.env.CANDY_OIDC_ISSUER
+        authorizationEndpoint: !!js process.env.CANDY_OIDC_AUTHORIZATION_ENDPOINT
+        tokenEndpoint: !!js process.env.CANDY_OIDC_TOKEN_ENDPOINT
+        userInfoEndpoint: !!js process.env.CANDY_OIDC_USERINFO_ENDPOINT
+        clientId: !!js process.env.CANDY_OIDC_CLIENT_ID
+        jwksPath: !!js process.env.CANDY_OIDC_JWKS_PATH
+        clientSecretEnv: !!js process.env.CANDY_OIDC_CLIENT_SECRET_ENV
+        bootstrapAdministratorSubject: !!js process.env.CANDY_BOOTSTRAP_ADMIN_SUBJECT
+        bootstrapAdministratorUserId: !!js process.env.CANDY_BOOTSTRAP_ADMIN_USER_ID
+
+    # The six account operations, on the session the sign-in above established.
+    #
+    # This version must be the one the scheduler opens with: a credential
+    # sealed here that the runtime cannot open is an account the tenant
+    # configured and no run can use.
+    - id: provider-account-api
+      name: '@deepseek-ai/dsh-provider-account-api'
+      config:
+        publicOrigin: !!js process.env.CANDY_PUBLIC_ORIGIN
+        credentialKeyVersion: !!js process.env.CANDY_CREDENTIAL_KEY_VERSION
+
+    # The account page in the settings panel the Web surface already carries.
+    - id: ui-settings-candy-account
+      name: '@deepseek-ai/dsh-client-ui-settings-candy-account'

@@ -130,6 +130,7 @@
     "gen-tool-catalog": "tsx scripts/gen-tool-catalog.ts",
     "verify-tool-catalog": "tsx scripts/gen-tool-catalog.ts --check",
     "gen-config-catalog": "tsx scripts/gen-config-catalog.ts",
+    "verify-candy-deployment": "tsx scripts/verify-candy-deployment.ts",
     "verify-config-catalog": "tsx scripts/gen-config-catalog.ts --check",
     "gen-doc-graphs": "tsx scripts/gen-doc-graphs.ts",
     "verify-doc-graphs": "tsx scripts/gen-doc-graphs.ts --check",

@@ -684,6 +684,54 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Durable provider accounts, tenant allowances and model-route policies.\n\nReads are synchronous against the domain\'s in-memory state and are exposed as promises because the ports they satisfy are asynchronous. Writes reach the medium before memory, so a read never sees a record the medium does not hold.',
     methods: [
       {
+        signature: 'async enrollOAuthIdentity( identity: OAuthIdentity, userId: UserId, role: ControlPlaneRole, enrolledAt: number, ): Promise<boolean>',
+        description: 'Enroll one verified external identity exactly once.',
+        parameters: [{ name: 'identity', description: 'OAuth issuer and subject verified by the configured provider.' }, { name: 'userId', description: 'existing Candy user this identity signs in as.' }, { name: 'role', description: 'Candy authorization assigned by provisioning, not provider claims.' }, { name: 'enrolledAt', description: 'epoch milliseconds recorded for operator audit.' }],
+        returns: 'true only when this call created the mapping.',
+      },
+      {
+        signature: 'resolve(identity: OAuthIdentity): Promise<{ readonly userId: UserId readonly role: ControlPlaneRole } | undefined>',
+        description: 'Resolve Candy authorization for a verified external identity.',
+        parameters: [{ name: 'identity', description: 'issuer and subject returned by the configured verifier.' }],
+        returns: 'the provisioned Candy user and role, or undefined when not enrolled.',
+      },
+      {
+        signature: 'async beginOAuthAttempt( issuer: string, redirectUri: string, now: number, expiresAt: number, ): Promise<{ readonly state: string; readonly codeChallenge: string; readonly nonce: string }>',
+        description: 'Begin one OAuth authorization-code transaction with PKCE S256.',
+        parameters: [{ name: 'issuer', description: 'exact configured OAuth issuer identifier.' }, { name: 'redirectUri', description: 'callback URI the later code exchange must repeat.' }, { name: 'now', description: 'transaction creation time in epoch milliseconds.' }, { name: 'expiresAt', description: 'epoch milliseconds after which the callback is refused.' }],
+        returns: 'opaque state and public S256 challenge; the verifier stays server-side.',
+      },
+      {
+        signature: 'async consumeOAuthAttempt( state: string, now: number, ): Promise<{ readonly codeVerifier: string readonly nonce: string readonly issuer: string readonly redirectUri: string } | undefined>',
+        description: 'Consume a callback state once and recover the PKCE exchange inputs.',
+        parameters: [{ name: 'state', description: 'exact opaque value returned through the provider callback.' }, { name: 'now', description: 'callback receipt time in epoch milliseconds.' }],
+        returns: 'exchange inputs only for the first matching, unexpired callback.',
+      },
+      {
+        signature: 'async createUserSession( userId: UserId, role: ControlPlaneRole, identity: OAuthIdentity, createdAt: number, expiresAt: number, ): Promise<{ readonly token: string; readonly csrfToken: string; readonly record: UserSessionRecord }>',
+        description: 'Create one revocable browser session after an OAuth verifier has proved the external identity.',
+        parameters: [{ name: 'userId', description: 'Candy user mapped from the verified external identity.' }, { name: 'role', description: 'Candy-assigned authorization; never a browser-supplied claim.' }, { name: 'identity', description: 'verified OAuth issuer and subject.' }, { name: 'createdAt', description: 'current epoch milliseconds.' }, { name: 'expiresAt', description: 'expiry after `createdAt`.' }],
+        returns: 'the bearer and independent CSRF token exactly once, plus the secret-free durable record.',
+      },
+      {
+        signature: 'authenticateUserSession(token: string, now: number): UserSessionRecord | undefined',
+        description: 'Authenticate one bearer without accepting identity or role from the request.',
+        parameters: [{ name: 'token', description: 'opaque token returned once at session creation.' }, { name: 'now', description: 'current epoch milliseconds.' }],
+        returns: 'the active session, or undefined for unknown, revoked, or expired credentials.',
+      },
+      {
+        signature: 'verifyUserSessionCsrf(id: UserSessionId, csrfToken: string): boolean',
+        description: 'Verify the independent anti-CSRF token for an authenticated session.',
+        parameters: [{ name: 'id', description: 'session already authenticated by its HttpOnly bearer.' }, { name: 'csrfToken', description: 'value repeated from a readable same-site cookie into a request header.' }],
+        returns: 'true only when the active session owns that token.',
+      },
+      {
+        signature: 'async revokeUserSession(id: UserSessionId, revokedAt: number): Promise<boolean>',
+        description: 'Revoke one browser session; subsequent authentication fails immediately.',
+        parameters: [{ name: 'id', description: 'session selected by an already-authorized logout or administrative action.' }, { name: 'revokedAt', description: 'epoch milliseconds recorded as the revocation instant.' }],
+        returns: 'true when the session exists, including an already-revoked session.',
+      },
+      {
         signature: 'tenantModelRoutes(userId: UserId): readonly TenantModelRoute[] | undefined',
         description: 'Read one tenant\'s complete model-route allowlist.\n\nMissing means no policy was provisioned and therefore no route is allowed. An empty returned list is an explicit deny-all policy; callers enforce both cases identically but operators can still distinguish them.',
         parameters: [{ name: 'userId', description: 'the tenant whose model authority is requested.' }],
@@ -1464,6 +1512,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select whether plan mode should be active. Between turns the method appends the change immediately because no in-turn pre-step will run until another prompt starts a turn. The open-turn fold is the idle signal: agent status stays `running` through post-turn checkpointing, when no further in-turn pre-step runs. During an open turn the selection remains pending until the next accepted in-turn pre-step. Repeated selection of the current or already-pending state is a no-op.',
         parameters: [{ name: 'agent', description: 'The agent to switch.' }, { name: 'active', description: 'Whether plan mode should be active.' }],
         returns: 'what happened: `committed` (logged now), `queued` (awaiting the next accepted in-turn pre-step), `cancelled` (an opposite pending selection was cleared; the logged state already matches), or `noop` (already in that state).',
+      },
+    ],
+  },
+  {
+    key: 'providerCredentialChecks',
+    summary: 'The registry one deployment\'s provider integrations contribute to.',
+    description: 'The registry one deployment\'s provider integrations contribute to.',
+    methods: [
+      {
+        signature: 'register(provider: ProviderKind, check: ProviderCredentialCheck): () => void',
+        description: 'Register how one provider\'s credential is checked.',
+        parameters: [{ name: 'provider', description: 'the provider this check speaks for.' }, { name: 'check', description: 'answers whether one secret authenticates, and nothing else.' }],
+        returns: 'the disposer removing the registration.',
+      },
+      {
+        signature: 'async check(provider: ProviderKind, secret: Uint8Array): Promise<ProviderAccountValidation>',
+        description: 'Ask whether one credential authenticates with its provider.\n\nThe first registration for a provider answers. A deployment composes one integration per provider, and a second would be two opinions about one fact with no rule for choosing between them.',
+        parameters: [{ name: 'provider', description: 'the account\'s provider.' }, { name: 'secret', description: 'the opened credential, held only for this call.' }],
+        returns: 'the verdict, or `unsupported-provider` when nothing is registered.',
       },
     ],
   },
@@ -4029,6 +4096,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
   },
   {
+    name: 'ControlPlaneRole',
+    declaration: 'export type ControlPlaneRole = \'member\' | \'administrator\';',
+  },
+  {
     name: 'ConversationId',
     declaration: 'export type ConversationId = Branded<\'ConversationId\'>;',
   },
@@ -4574,7 +4645,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KvUnit',
-    declaration: 'export interface KvUnit {\n    loadAll(): Promise<{\n        tables: Record<string, Record<string, unknown>>;\n        global: unknown;\n    }>;\n    putRecord(table: string, key: string, value: unknown): Promise<void>;\n    compareExchangeRecord?(table: string, key: string, expected: unknown | undefined, replacement: unknown | undefined): Promise<{\n        exchanged: boolean;\n        current: unknown | undefined;\n    }>;\n    deleteRecord(table: string, key: string): Promise<void>;\n    backupRecord?(table: string, key: string): Promise<string>;\n    setGlobal(value: unknown): Promise<void>;\n    close(): Promise<void>;\n}',
+    declaration: 'export interface KvUnit {\n    loadAll(): Promise<{\n        tables: Record<string, Record<string, unknown>>;\n        global: unknown;\n    }>;\n    putRecord(table: string, key: string, value: unknown): Promise<void>;\n    compareExchangeRecord?(table: string, key: string, expected: unknown, replacement: unknown): Promise<{\n        exchanged: boolean;\n        current: unknown;\n    }>;\n    deleteRecord(table: string, key: string): Promise<void>;\n    backupRecord?(table: string, key: string): Promise<string>;\n    setGlobal(value: unknown): Promise<void>;\n    close(): Promise<void>;\n}',
   },
   {
     name: 'KvUnitDescriptor',
@@ -4829,6 +4900,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelReasoningEffort {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}',
   },
   {
+    name: 'OAuthIdentity',
+    declaration: 'export interface OAuthIdentity {\n    readonly issuer: string;\n    readonly subject: string;\n}',
+  },
+  {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
   },
@@ -4943,6 +5018,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ProviderAccountRecord',
     declaration: 'export interface ProviderAccountRecord {\n    readonly id: ProviderAccountId;\n    readonly userId: UserId;\n    readonly provider: ProviderKind;\n    readonly label: string;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n    readonly validatedAt: number | undefined;\n    readonly revokedAt: number | undefined;\n    readonly deletedAt: number | undefined;\n    readonly isDefault: boolean;\n}',
+  },
+  {
+    name: 'ProviderAccountValidation',
+    declaration: 'export type ProviderAccountValidation = {\n    readonly valid: true;\n    readonly diagnostic?: string;\n} | {\n    readonly valid: false;\n    readonly reason: \'invalid-credential\' | \'provider-unavailable\' | \'unsupported-provider\';\n    readonly diagnostic?: string;\n};',
+  },
+  {
+    name: 'ProviderCredentialCheck',
+    declaration: 'export type ProviderCredentialCheck = (secret: Uint8Array) => Promise<ProviderAccountValidation>;',
   },
   {
     name: 'ProviderKind',
@@ -6415,6 +6498,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UserMessage',
     declaration: 'export interface UserMessage extends Message {\n    readonly role: \'user\';\n}',
+  },
+  {
+    name: 'UserSessionId',
+    declaration: 'export type UserSessionId = Branded<\'UserSessionId\'>;',
+  },
+  {
+    name: 'UserSessionRecord',
+    declaration: 'export interface UserSessionRecord {\n    readonly id: UserSessionId;\n    readonly userId: UserId;\n    readonly role: ControlPlaneRole;\n    readonly identity: OAuthIdentity;\n    readonly createdAt: number;\n    readonly expiresAt: number;\n    readonly revokedAt: number | undefined;\n}',
   },
   {
     name: 'VerifiedWebhookDelivery',

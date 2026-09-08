@@ -334,14 +334,14 @@ class KvTableImpl<K extends string, V> implements KvTable<K, V> {
     replacement: V | undefined,
   ): Promise<{ exchanged: boolean; current: V | undefined }> {
     return this.host.enqueue(async () => {
-      const exchange = this.host.unit.compareExchangeRecord
-      if (exchange === undefined) {
+      const unit = this.host.unit
+      if (unit.compareExchangeRecord === undefined) {
         throw new DomainError(
           'facet-unsupported',
           `domain '${this.host.domainName}' backend cannot compare/exchange records across processes`,
         )
       }
-      const result = await exchange.call(this.host.unit, this.tableName, key, expected, replacement)
+      const result = await unit.compareExchangeRecord(this.tableName, key, expected, replacement)
       if (result.current === undefined) this.records.delete(key)
       else this.records.set(key, result.current)
       if (result.exchanged) {
