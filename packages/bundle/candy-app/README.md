@@ -115,7 +115,7 @@ None; the layer never assembles or sends a provider request.
 These are current constraints of the composition, not a task backlog.
 
 - **One runtime per deployment is assumed by the audience** — `CANDY_RUNTIME_AUDIENCE` is a single value in this layer. Running several runtimes over one control plane means giving each its own layer or its own value; nothing here stops two processes from sharing one.
-- **A live second process does not see a session revoked by the first** — a logout reaches the medium, but a process authenticates from the view it opened with, so the session stays valid there until that process restarts. Assertion nonces are spent exactly once across processes; sessions are not. Give each process its own database.
+- **Browser authentication reads the current session from SQLite** — logout reaches the medium and an already-running peer rejects that session on its next request. Separate databases are still required for canaries because schema compatibility and runtime audiences remain deployment boundaries, not as a session-revocation workaround.
 - **No provider credential check composes** — `dsh-provider-credential-checks` mounts as a registry and nothing registers into it, so `validate` reports that no provider could be asked.
 - **No retired credential key can be configured from here** — the scheduler and the account API both accept retired versions, but a rotation that must retain one needs a further patch layer; a single variable cannot express a list.
 - **The runtime pool base's own permissions are the deployment's** — each pool root is created private, but the directory they are created under is provisioned outside this layer.

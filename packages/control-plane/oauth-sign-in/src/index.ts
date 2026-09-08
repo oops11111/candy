@@ -55,7 +55,7 @@ export interface OAuthSignInResult {
 
 /** Minimal session reader required by an HTTP transport. */
 export interface OAuthHttpSessionStore {
-  authenticateUserSession(token: string, now: number): UserSessionRecord | undefined
+  authenticateUserSession(token: string, now: number): Promise<UserSessionRecord | undefined>
   verifyUserSessionCsrf(id: UserSessionRecord['id'], csrfToken: string): boolean
 }
 
@@ -285,14 +285,14 @@ export function clearOAuthSessionCookies(): readonly [string, string] {
  * @param now - request receipt time.
  * @returns server-derived user session, or undefined when authentication or CSRF fails.
  */
-export function authenticateOAuthHttpRequest(
+export async function authenticateOAuthHttpRequest(
   store: OAuthHttpSessionStore,
   request: OAuthHttpRequest,
   now: number,
-): UserSessionRecord | undefined {
+): Promise<UserSessionRecord | undefined> {
   const bearer = cookieValue(request.cookie, SESSION_COOKIE)
   if (bearer === undefined) return undefined
-  const session = store.authenticateUserSession(bearer, now)
+  const session = await store.authenticateUserSession(bearer, now)
   if (session === undefined) return undefined
   const method = request.method.toUpperCase()
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return session
@@ -405,8 +405,8 @@ export function registerOAuthHttpRoutes(
       })
     })
 
-    register(OAUTH_SESSION_PATH, ['GET'], (request, response) => {
-      const session = authenticateOAuthHttpRequest(store, {
+    register(OAUTH_SESSION_PATH, ['GET'], async (request, response) => {
+      const session = await authenticateOAuthHttpRequest(store, {
         method: 'GET',
         cookie: requestHeader(request, 'cookie'),
         csrfHeader: undefined,
@@ -429,7 +429,7 @@ export function registerOAuthHttpRoutes(
         reply(response, 403, 'forbidden')
         return
       }
-      const session = authenticateOAuthHttpRequest(store, {
+      const session = await authenticateOAuthHttpRequest(store, {
         method: 'POST',
         cookie: requestHeader(request, 'cookie'),
         csrfHeader: requestHeader(request, OAUTH_CSRF_HEADER),

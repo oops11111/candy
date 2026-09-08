@@ -9,6 +9,8 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+KV units may expose `readRecord` for consumers that must re-read one value from the durable medium instead of trusting the open-time snapshot. Backends that cannot provide that guarantee omit it.
+
 Mount `dsh-storage` to give a composition durable, non-session storage: it is the hub where backends and data forms connect, so host packages can read and write typed records through `ctx.storageDomain`. The hub performs no IO itself — backends own the medium (a file-tree root, a database file), and data forms own semantics — so a composition pairs it with one or more backends and the domain form. It is optional and host-side only: it registers no tools, injects no prompts, and writes no session events, so the model and the agent loop never see it. Choose it whenever any package in the composition needs durable data that is not a session event log; a composition with no such data can omit the whole group.
 
 ## Table of Contents

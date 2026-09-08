@@ -265,7 +265,7 @@ export function registerApiRoute(server: ApiWebServer, host: ApiHost, route: Api
         await refuse(host, route, response, 'method-not-allowed', undefined)
         return
       }
-      const session = authenticateOAuthHttpRequest(host.sessions, {
+      const session = await authenticateOAuthHttpRequest(host.sessions, {
         method,
         cookie: header(request, 'cookie'),
         csrfHeader: header(request, OAUTH_CSRF_HEADER),

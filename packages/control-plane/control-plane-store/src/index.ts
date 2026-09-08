@@ -323,10 +323,12 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
    * @param now - current epoch milliseconds.
    * @returns the active session, or undefined for unknown, revoked, or expired credentials.
    */
-  authenticateUserSession(token: string, now: number): UserSessionRecord | undefined {
+  async authenticateUserSession(token: string, now: number): Promise<UserSessionRecord | undefined> {
     const digest = createHash('sha256').update(token, 'utf8').digest('hex')
-    for (const [, stored] of this.userSessions.entries()) {
-      if (stored.tokenDigest !== digest) continue
+    for (const [id, snapshot] of this.userSessions.entries()) {
+      if (snapshot.tokenDigest !== digest) continue
+      const stored = await this.userSessions.getCurrent(id)
+      if (stored === undefined || stored.tokenDigest !== digest) return undefined
       if (stored.revokedAt !== undefined || stored.expiresAt <= now) return undefined
       return fromStoredUserSession(stored)
     }

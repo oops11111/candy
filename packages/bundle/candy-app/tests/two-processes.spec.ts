@@ -190,12 +190,9 @@ describe('two Candy deployments over one control plane', () => {
     expect(await second.controlPlaneStore.spendNonce(claims, NOW)).toBe(false)
   })
 
-  it('does not show one process a browser session the other revoked', async () => {
-    // A live process authenticates from the view it has held since it opened,
-    // so a revocation elsewhere does not reach it. The deployment page's
-    // canary shape is safe because each process owns its own database; two
-    // processes over ONE database do not share a logout, and that is what this
-    // pins rather than what it wishes were true.
+  it('shows one process that a browser session was revoked by another', async () => {
+    // Browser authentication re-reads the matching durable record instead of
+    // trusting the snapshot held when this process opened the domain.
     root = await mkdtemp(join(tmpdir(), 'dsh-candy-two-'))
     restore = await stage(root)
     const issuer = await boot(root, 'a')
@@ -204,17 +201,15 @@ describe('two Candy deployments over one control plane', () => {
     )
 
     const other = await boot(root, 'b')
-    expect(other.controlPlaneStore.authenticateUserSession(created.token, NOW)).toMatchObject({ userId: ALICE })
+    await expect(other.controlPlaneStore.authenticateUserSession(created.token, NOW)).resolves.toMatchObject({ userId: ALICE })
 
     expect(await issuer.controlPlaneStore.revokeUserSession(created.record.id, NOW + 1)).toBe(true)
-    expect(issuer.controlPlaneStore.authenticateUserSession(created.token, NOW + 2)).toBeUndefined()
+    await expect(issuer.controlPlaneStore.authenticateUserSession(created.token, NOW + 2)).resolves.toBeUndefined()
 
-    // The second process still admits it. A deployment that logs a user out
-    // must therefore not run two processes over one database, or must accept
-    // that a revocation takes effect there only after a restart.
-    expect(other.controlPlaneStore.authenticateUserSession(created.token, NOW + 2)).toMatchObject({ userId: ALICE })
+    // The already-running peer observes the revocation without a restart.
+    await expect(other.controlPlaneStore.authenticateUserSession(created.token, NOW + 2)).resolves.toBeUndefined()
 
     const restarted = await boot(root, 'c')
-    expect(restarted.controlPlaneStore.authenticateUserSession(created.token, NOW + 2)).toBeUndefined()
+    await expect(restarted.controlPlaneStore.authenticateUserSession(created.token, NOW + 2)).resolves.toBeUndefined()
   })
 })

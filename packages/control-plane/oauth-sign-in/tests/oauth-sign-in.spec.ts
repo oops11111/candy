@@ -142,24 +142,24 @@ describe('OAuth HTTP session transport', () => {
     ])
   })
 
-  it('derives identity from the bearer and requires matching CSRF for mutations', () => {
+  it('derives identity from the bearer and requires matching CSRF for mutations', async () => {
     const store = {
-      authenticateUserSession: vi.fn((token: string) => token === 'bearer' ? result.record : undefined),
+      authenticateUserSession: vi.fn(async (token: string) => token === 'bearer' ? result.record : undefined),
       verifyUserSessionCsrf: vi.fn((_id: UserSessionId, token: string) => token === 'csrf'),
     }
     const cookie = '__Host-candy-session=bearer; __Host-candy-csrf=csrf'
-    expect(authenticateOAuthHttpRequest(store, { method: 'GET', cookie, csrfHeader: undefined }, NOW))
-      .toBe(result.record)
-    expect(authenticateOAuthHttpRequest(store, { method: 'POST', cookie, csrfHeader: 'csrf' }, NOW))
-      .toBe(result.record)
-    expect(authenticateOAuthHttpRequest(store, { method: 'POST', cookie, csrfHeader: 'wrong' }, NOW))
-      .toBeUndefined()
-    expect(authenticateOAuthHttpRequest(store, {
+    await expect(authenticateOAuthHttpRequest(store, { method: 'GET', cookie, csrfHeader: undefined }, NOW))
+      .resolves.toBe(result.record)
+    await expect(authenticateOAuthHttpRequest(store, { method: 'POST', cookie, csrfHeader: 'csrf' }, NOW))
+      .resolves.toBe(result.record)
+    await expect(authenticateOAuthHttpRequest(store, { method: 'POST', cookie, csrfHeader: 'wrong' }, NOW))
+      .resolves.toBeUndefined()
+    await expect(authenticateOAuthHttpRequest(store, {
       method: 'DELETE', cookie: '__Host-candy-session=forged; __Host-candy-csrf=csrf', csrfHeader: 'csrf',
-    }, NOW)).toBeUndefined()
-    expect(authenticateOAuthHttpRequest(store, {
+    }, NOW)).resolves.toBeUndefined()
+    await expect(authenticateOAuthHttpRequest(store, {
       method: 'POST', cookie: '__Host-candy-session=bearer; __Host-candy-csrf=stale', csrfHeader: 'stale',
-    }, NOW)).toBeUndefined()
+    }, NOW)).resolves.toBeUndefined()
   })
 })
 
@@ -273,7 +273,7 @@ function webStore(): WebStoreMocks {
         record: { ...record, createdAt, expiresAt },
       }),
     ),
-    authenticateUserSession: vi.fn(token => token === 'web-bearer' ? record : undefined),
+    authenticateUserSession: vi.fn(async token => token === 'web-bearer' ? record : undefined),
     verifyUserSessionCsrf: vi.fn((_id, csrf) => csrf === 'web-csrf'),
     revokeUserSession: vi.fn(async () => true),
   }

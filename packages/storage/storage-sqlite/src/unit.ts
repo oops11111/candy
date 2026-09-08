@@ -93,6 +93,13 @@ export class SqliteKvUnit implements KvUnit {
     })
   }
 
+  readRecord(table: string, key: string): Promise<unknown | undefined> {
+    return this.settle(() => {
+      const row = this.statementsFor(table).selectOne.get(key) as { value: string } | undefined
+      return row === undefined ? undefined : this.parseValue(row.value, `table '${table}' key '${key}'`)
+    })
+  }
+
   /** Parse one stored value column, mapping bad JSON to `malformed-medium`. */
   private parseValue(text: string, slot: string): unknown {
     try {

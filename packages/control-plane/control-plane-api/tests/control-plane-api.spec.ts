@@ -69,7 +69,7 @@ async function mount(
   const host: ApiHost = {
     publicOrigin: ORIGIN,
     sessions: {
-      authenticateUserSession: token => token === accepted ? record : undefined,
+      authenticateUserSession: async token => token === accepted ? record : undefined,
       verifyUserSessionCsrf: (id, token) => id === record.id && token === csrf,
     },
     audit: (event) => { audits.push(event); return Promise.resolve() },
@@ -148,7 +148,7 @@ function direct(): {
   registerApiRoute({ register: (r) => { registrations.push(r); return () => {} } }, {
     publicOrigin: ORIGIN,
     sessions: {
-      authenticateUserSession: () => session(),
+      authenticateUserSession: async () => session(),
       verifyUserSessionCsrf: () => true,
     },
     audit: () => Promise.resolve(),
@@ -327,7 +327,7 @@ describe('the authenticated management envelope', () => {
     registerApiRoute({ register: (r) => { registrations.push(r); return () => {} } }, {
       publicOrigin: ORIGIN,
       sessions: {
-        authenticateUserSession: () => undefined,
+        authenticateUserSession: async () => undefined,
         verifyUserSessionCsrf: () => false,
       },
       audit: (event) => { audits.push(event); return Promise.resolve() },
@@ -365,7 +365,7 @@ describe('the authenticated management envelope', () => {
     let disposed = false
     const dispose = registerApiRoute({ register: () => () => { disposed = true } }, {
       publicOrigin: ORIGIN,
-      sessions: { authenticateUserSession: () => undefined, verifyUserSessionCsrf: () => false },
+      sessions: { authenticateUserSession: async () => undefined, verifyUserSessionCsrf: () => false },
       audit: () => Promise.resolve(),
     }, {
       path: '/api/candy/probe', methods: ['GET'], role: 'member', action: 'probe',

@@ -292,10 +292,10 @@ describe('a booted control-plane store', () => {
     context = undefined
 
     const restarted = await boot(root)
-    expect(restarted.controlPlaneStore.authenticateUserSession(created.token, NOW + 1))
-      .toEqual(created.record)
-    expect(restarted.controlPlaneStore.authenticateUserSession(`${created.token}x`, NOW + 1))
-      .toBeUndefined()
+    await expect(restarted.controlPlaneStore.authenticateUserSession(created.token, NOW + 1))
+      .resolves.toEqual(created.record)
+    await expect(restarted.controlPlaneStore.authenticateUserSession(`${created.token}x`, NOW + 1))
+      .resolves.toBeUndefined()
     expect(restarted.controlPlaneStore.verifyUserSessionCsrf(created.record.id, created.csrfToken)).toBe(true)
     expect(restarted.controlPlaneStore.verifyUserSessionCsrf(created.record.id, `${created.csrfToken}x`)).toBe(false)
   })
@@ -311,10 +311,11 @@ describe('a booted control-plane store', () => {
       NOW + 10,
     )
 
-    expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 9)?.userId).toBe(ALICE)
-    expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 10)).toBeUndefined()
+    await expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 9))
+      .resolves.toMatchObject({ userId: ALICE })
+    await expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 10)).resolves.toBeUndefined()
     expect(await ctx.controlPlaneStore.revokeUserSession(created.record.id, NOW + 5)).toBe(true)
-    expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 6)).toBeUndefined()
+    await expect(ctx.controlPlaneStore.authenticateUserSession(created.token, NOW + 6)).resolves.toBeUndefined()
     expect(ctx.controlPlaneStore.verifyUserSessionCsrf(created.record.id, created.csrfToken)).toBe(false)
     // Revoking twice reports the session still exists and leaves the first
     // instant standing, so a second logout cannot rewrite when it happened.

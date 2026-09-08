@@ -47,6 +47,9 @@ export interface KvTable<K extends string, V> {
    */
   get(key: K): V | undefined
 
+  /** Re-read one record from the durable medium and refresh this process's snapshot. */
+  getCurrent(key: K): Promise<V | undefined>
+
   /**
    * Snapshot iterator over `[key, record]` pairs. A snapshot, not a live
    * view: iteration stays stable while queued writes land.
@@ -198,7 +201,19 @@ export class DomainImpl {
       emitChanged: (change) => { this.emitChanged(change) },
     }
     for (const [table, tableRecords] of records) {
-      this.tables.set(table, new KvTableImpl(host, table, tableRecords))
+      const tableSpec = spec.tables[table]
+      if (tableSpec === undefined) throw new Error(`domain '${spec.name}' declares no table '${table}'`)
+      this.tables.set(table, new KvTableImpl(host, table, tableRecords, (value) => {
+        try {
+          return tableSpec.valueSchema.parse(value)
+        } catch (error) {
+          throw new DomainError(
+            'invalid-record',
+            `domain '${spec.name}': stored record in table '${table}' does not match its schema`,
+            { detail: { table, key: '' }, cause: error },
+          )
+        }
+      }))
     }
     if (spec.global !== undefined) {
       this.globalValue = globalValue
@@ -298,11 +313,32 @@ class KvTableImpl<K extends string, V> implements KvTable<K, V> {
     private readonly host: TableHost,
     private readonly tableName: string,
     private readonly records: Map<string, unknown>,
+    private readonly parseCurrent: (value: unknown) => V,
   ) {}
 
   get(key: K): V | undefined {
     this.host.assertReadable()
     return this.records.get(key) as V | undefined
+  }
+
+  getCurrent(key: K): Promise<V | undefined> {
+    return this.host.enqueue(async () => {
+      const read = this.host.unit.readRecord
+      if (read === undefined) {
+        throw new DomainError(
+          'facet-unsupported',
+          `domain '${this.host.domainName}' backend cannot re-read records from its durable medium`,
+        )
+      }
+      const value = await read.call(this.host.unit, this.tableName, key)
+      if (value === undefined) {
+        this.records.delete(key)
+        return undefined
+      }
+      const parsed = this.parseCurrent(value)
+      this.records.set(key, parsed)
+      return parsed
+    })
   }
 
   entries(): IterableIterator<[K, V]> {

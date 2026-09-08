@@ -714,7 +714,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the bearer and independent CSRF token exactly once, plus the secret-free durable record.',
       },
       {
-        signature: 'authenticateUserSession(token: string, now: number): UserSessionRecord | undefined',
+        signature: 'authenticateUserSession(token: string, now: number): Promise<UserSessionRecord | undefined>',
         description: 'Authenticate one bearer without accepting identity or role from the request.',
         parameters: [{ name: 'token', description: 'opaque token returned once at session creation.' }, { name: 'now', description: 'current epoch milliseconds.' }],
         returns: 'the active session, or undefined for unknown, revoked, or expired credentials.',
