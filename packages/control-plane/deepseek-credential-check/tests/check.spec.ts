@@ -14,7 +14,6 @@ describe('DeepSeek credential check', () => {
       expect(JSON.stringify(result)).not.toContain('provider.invalid')
       expect(JSON.stringify(result)).not.toContain('private')
       expect(fetcher).toHaveBeenCalledWith('https://provider.invalid/models', expect.objectContaining({
-        // oxlint-disable-next-line typescript/no-unsafe-assignment -- Vitest asymmetric matchers are intentionally untyped values.
         headers: expect.objectContaining({ authorization: 'Bearer test-key' }),
       }))
     },

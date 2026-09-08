@@ -80,7 +80,6 @@ export class WorkspaceGrantExecution extends WorkspaceAuthority {
   }
 
   override async enter<T>(sessionId: SessionId, operation: () => Promise<T>): Promise<T> {
-    // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- narrows Cordis augmentation at this boundary.
     const run = (this.ctx.runScheduler as RunScheduler).runOfSession(sessionId)
     if (run === undefined) throw new Error('workspace authority denied: session has no open Candy run')
     const identity: AuthorityIdentity = {
