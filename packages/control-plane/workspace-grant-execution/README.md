@@ -27,6 +27,8 @@ The filesystem backend checks canonical target paths. Existing ancestors are res
 
 ## Further Exploration
 
+No runtime invariant companion is published; this package keeps only async call identity, while every durable grant decision is re-read and covered at the executor boundary by integration tests.
+
 - [`dsh-workspace-grant`](../workspace-grant/README.md) — durable grant records and admission-time identity checks.
 - [`dsh-fs-sandbox`](../../fs/fs-sandbox/README.md) — filesystem executor enforcement.
 - [`dsh-sandbox`](../../sandbox/sandbox/README.md) — shared process-policy vocabulary and authority service definition.

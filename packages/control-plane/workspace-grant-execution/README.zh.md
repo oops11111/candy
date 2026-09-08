@@ -27,6 +27,8 @@ kind: "package-reference"
 
 ## 延伸阅读
 
+不发布运行时 invariant companion；此包只保留异步调用身份，每次持久授权决策都会重新读取，并由执行器边界的集成测试覆盖。
+
 - [`dsh-workspace-grant`](../workspace-grant/README.zh.md) — 持久授权记录和准入时身份检查。
 - [`dsh-fs-sandbox`](../../fs/fs-sandbox/README.zh.md) — 文件系统执行器强制检查。
 - [`dsh-sandbox`](../../sandbox/sandbox/README.zh.md) — 共享进程策略术语和授权服务定义。

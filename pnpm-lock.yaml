@@ -4297,9 +4297,6 @@ importers:
 
   packages/control-plane/audit-api:
     dependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-control-plane-api':
         specifier: workspace:^
         version: link:../control-plane-api
@@ -4315,6 +4312,10 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
 
   packages/control-plane/claude-cli-binding:
     devDependencies:
