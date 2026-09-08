@@ -7,6 +7,7 @@
  * wrote.
  */
 
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -167,6 +168,47 @@ describe('a booted control-plane store', () => {
     const ctx = await boot(root)
 
     expect(ctx.controlPlaneStore).toBeInstanceOf(ControlPlaneStore)
+  })
+
+  it('persists and consumes one OAuth PKCE callback state exactly once', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+    const begun = await first.controlPlaneStore.beginOAuthAttempt(
+      'https://identity.example',
+      'https://candy.example/auth/callback',
+      NOW,
+      NOW + 60_000,
+    )
+    expect(begun.state).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(begun.codeChallenge).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    await first.fiber.dispose()
+    context = undefined
+
+    const restarted = await boot(root)
+    expect(await restarted.controlPlaneStore.consumeOAuthAttempt('wrong-state', NOW + 1)).toBeUndefined()
+    const consumed = await restarted.controlPlaneStore.consumeOAuthAttempt(begun.state, NOW + 1)
+    expect(consumed).toMatchObject({
+      issuer: 'https://identity.example',
+      redirectUri: 'https://candy.example/auth/callback',
+    })
+    expect(createHash('sha256').update(consumed!.codeVerifier, 'utf8').digest('base64url'))
+      .toBe(begun.codeChallenge)
+    expect(await restarted.controlPlaneStore.consumeOAuthAttempt(begun.state, NOW + 2)).toBeUndefined()
+  })
+
+  it('consumes an expired OAuth callback without releasing its verifier', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const begun = await ctx.controlPlaneStore.beginOAuthAttempt(
+      'issuer', 'https://candy.example/auth/callback', NOW, NOW + 10,
+    )
+
+    expect(await ctx.controlPlaneStore.consumeOAuthAttempt(begun.state, NOW + 10)).toBeUndefined()
+    expect(await ctx.controlPlaneStore.consumeOAuthAttempt(begun.state, NOW + 9)).toBeUndefined()
+    await expect(ctx.controlPlaneStore.beginOAuthAttempt(' ', 'callback', NOW, NOW + 1))
+      .rejects.toThrow(/issuer and redirect URI must be non-blank/)
+    await expect(ctx.controlPlaneStore.beginOAuthAttempt('issuer', 'callback', NOW, NOW))
+      .rejects.toThrow(/expiry must be a safe integer after creation/)
   })
 
   it('persists an OAuth-backed browser session without exposing its bearer', async () => {

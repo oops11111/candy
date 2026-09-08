@@ -47,6 +47,7 @@ import {
   type StoredRun,
   type StoredTenantAllowance,
   type StoredTenantRoutePolicy,
+  type StoredOAuthAttempt,
   type StoredWorkspaceGrant,
   type StoredUserSession,
   type TenantModelRoute,
@@ -141,6 +142,7 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
   private spentNonces!: KvTable<string, { expiresAt: number }>
   private tenantRoutes!: KvTable<UserId, StoredTenantRoutePolicy>
   private userSessions!: KvTable<UserSessionId, StoredUserSession>
+  private oauthAttempts!: KvTable<string, StoredOAuthAttempt>
 
   constructor(ctx: Context) {
     super(ctx, 'controlPlaneStore')
@@ -159,6 +161,55 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     this.spentNonces = domain.table('spent_nonces')
     this.tenantRoutes = domain.table('tenant_routes')
     this.userSessions = domain.table('user_sessions')
+    this.oauthAttempts = domain.table('oauth_attempts')
+  }
+
+  /**
+   * Begin one OAuth authorization-code transaction with PKCE S256.
+   * @param issuer - exact configured OAuth issuer identifier.
+   * @param redirectUri - callback URI the later code exchange must repeat.
+   * @param now - transaction creation time in epoch milliseconds.
+   * @param expiresAt - epoch milliseconds after which the callback is refused.
+   * @returns opaque state and public S256 challenge; the verifier stays server-side.
+   */
+  async beginOAuthAttempt(
+    issuer: string,
+    redirectUri: string,
+    now: number,
+    expiresAt: number,
+  ): Promise<{ readonly state: string; readonly codeChallenge: string }> {
+    if (issuer.trim() === '' || redirectUri.trim() === '') {
+      throw new TypeError('dsh-control-plane-store: OAuth issuer and redirect URI must be non-blank')
+    }
+    if (!Number.isSafeInteger(now) || !Number.isSafeInteger(expiresAt) || expiresAt <= now) {
+      throw new RangeError('dsh-control-plane-store: OAuth attempt expiry must be a safe integer after creation')
+    }
+    const state = randomBytes(32).toString('base64url')
+    const codeVerifier = randomBytes(32).toString('base64url')
+    const stateDigest = createHash('sha256').update(state, 'utf8').digest('hex')
+    await this.oauthAttempts.put(stateDigest, { stateDigest, codeVerifier, issuer, redirectUri, expiresAt })
+    return {
+      state,
+      codeChallenge: createHash('sha256').update(codeVerifier, 'utf8').digest('base64url'),
+    }
+  }
+
+  /**
+   * Consume a callback state once and recover the PKCE exchange inputs.
+   * @param state - exact opaque value returned through the provider callback.
+   * @param now - callback receipt time in epoch milliseconds.
+   * @returns exchange inputs only for the first matching, unexpired callback.
+   */
+  async consumeOAuthAttempt(
+    state: string,
+    now: number,
+  ): Promise<{ readonly codeVerifier: string; readonly issuer: string; readonly redirectUri: string } | undefined> {
+    const key = createHash('sha256').update(state, 'utf8').digest('hex')
+    const stored = this.oauthAttempts.get(key)
+    if (stored === undefined) return undefined
+    const consumed = await this.oauthAttempts.compareExchange(key, stored, undefined)
+    if (!consumed.exchanged || stored.expiresAt <= now) return undefined
+    return { codeVerifier: stored.codeVerifier, issuer: stored.issuer, redirectUri: stored.redirectUri }
   }
 
   /**

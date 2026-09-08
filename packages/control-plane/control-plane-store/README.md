@@ -17,6 +17,8 @@ It is not the ledger. `RunLedger` stays the accounting authority and answers wha
 
 `createUserSession` returns an independent 256-bit bearer and CSRF token once and stores only their SHA-256 digests with the Candy user, Candy-assigned role, verified OAuth issuer/subject, and expiry. `authenticateUserSession` derives identity and role only from the active bearer record; `verifyUserSessionCsrf` separately proves that a state-changing request repeated the readable same-site token. Unknown, expired, and revoked bearers return no identity, and revocation also rejects the CSRF token across restart.
 
+`beginOAuthAttempt` creates a 256-bit state and PKCE verifier, stores the verifier server-side, and returns only the state and S256 challenge. `consumeOAuthAttempt` atomically removes a matching transaction before returning its issuer, redirect URI, and verifier; a wrong, expired, concurrent, or replayed callback receives nothing. The record survives a restart so a callback may land on another control-plane process sharing SQLite.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -191,7 +193,7 @@ These are current package constraints, not a task backlog.
 - **`listByUser` scans** — the domain keeps every record in memory and this filters them, which is right at one deployment's account count and would not be at a directory's.
 - **Durable replay requires SQLite** — `spent_nonces` uses the storage seam's optional compare/exchange operation, so two runtime processes and a restart share one single-use decision. SQLite implements that operation transactionally. JSON layouts deliberately do not pretend that an open-time snapshot plus a file rewrite is cross-process atomic; an admission routed there fails loud with `facet-unsupported`.
 - **Route policy reads are process-local snapshots** — an update through this service is visible to the next call in the same runtime and survives restart. Separate long-lived processes sharing one SQLite database do not receive live invalidation from `storage-domain`; fleet-wide policy updates need an authenticated API plus explicit fan-out or reload.
-- **OAuth verification and HTTP cookies live elsewhere** — this store accepts an identity only after a deployment verifier proves the callback and returns an opaque bearer to its caller. It does not implement an OAuth provider, callback route, cookie attributes, or CSRF protection.
+- **OAuth code exchange and HTTP cookies live elsewhere** — this store owns one-time PKCE state and accepts an identity only after a deployment verifier exchanges and verifies the callback. It does not implement an OAuth provider, callback route, cookie attributes, or request-level CSRF enforcement.
 
 <a id="dev-note"></a>
 ## Dev Note

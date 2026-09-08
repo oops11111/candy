@@ -227,6 +227,18 @@ const storedUserSession = z.object({
   revokedAt: z.number().optional(),
 })
 
+/** One short-lived OAuth authorization-code transaction awaiting its callback. */
+const storedOAuthAttempt = z.object({
+  stateDigest: z.string(),
+  codeVerifier: z.string(),
+  issuer: z.string(),
+  redirectUri: z.string(),
+  expiresAt: z.number(),
+})
+
+/** Stored OAuth transaction used exactly once to exchange an authorization code. */
+export type StoredOAuthAttempt = z.infer<typeof storedOAuthAttempt>
+
 /** Authenticated Candy browser-session state returned after bearer verification. */
 export interface UserSessionRecord {
   readonly id: UserSessionId
@@ -291,6 +303,7 @@ export const controlPlaneDomainSpec = defineDomain({
     spent_nonces: domainTable<string, z.infer<typeof storedReplayNonce>>(storedReplayNonce),
     tenant_routes: domainTable<UserId, z.infer<typeof storedTenantRoutePolicy>>(storedTenantRoutePolicy),
     user_sessions: domainTable<UserSessionId, StoredUserSession>(storedUserSession),
+    oauth_attempts: domainTable<string, StoredOAuthAttempt>(storedOAuthAttempt),
   },
 })
 
