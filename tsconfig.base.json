@@ -251,6 +251,7 @@
       "@deepseek-ai/dsh-bash-local": ["./packages/shell/bash-local/src"],
       "@deepseek-ai/dsh-bash-sandbox": ["./packages/shell/bash-sandbox/src"],
       "@deepseek-ai/dsh-brand": ["./packages/util/brand/src"],
+      "@deepseek-ai/dsh-candy-app": ["./packages/bundle/candy-app/src"],
       "@deepseek-ai/dsh-claude-cli-binding": ["./packages/control-plane/claude-cli-binding/src"],
       "@deepseek-ai/dsh-claude-cli-protocol": ["./packages/llm/claude-cli-protocol/src"],
       "@deepseek-ai/dsh-claude-cli-route": ["./packages/control-plane/claude-cli-route/src"],

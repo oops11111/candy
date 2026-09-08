@@ -1,0 +1,61 @@
+{
+  "name": "@deepseek-ai/dsh-candy-app",
+  "description": "The Candy multi-tenant deployment bundle: the control plane, the tenant-scoped scheduler, and the account page over the dsh browser surface",
+  "version": "0.1.2-alpha.5",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/bundle/candy-app"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "cordis.patch.yml",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-client-ui-settings-candy-account": "workspace:^",
+    "@deepseek-ai/dsh-control-plane-store": "workspace:^",
+    "@deepseek-ai/dsh-oauth-sign-in-web": "workspace:^",
+    "@deepseek-ai/dsh-provider-account-api": "workspace:^",
+    "@deepseek-ai/dsh-provider-credential-checks": "workspace:^",
+    "@deepseek-ai/dsh-run-scheduler": "workspace:^",
+    "@deepseek-ai/dsh-storage-sqlite": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/cordis-plugin-include": "workspace:^",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:^",
+    "@deepseek-ai/cordis-plugin-timer": "workspace:^",
+    "@deepseek-ai/dsh-app-boot": "workspace:^",
+    "@deepseek-ai/dsh-host-webserver": "workspace:^",
+    "@deepseek-ai/dsh-oauth-sign-in": "workspace:^",
+    "@deepseek-ai/dsh-storage": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^",
+    "@deepseek-ai/dsh-storage-json": "workspace:^",
+    "js-yaml": "^4.2.0"
+  }
+}

@@ -3685,6 +3685,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-atomic-write` ([`packages/util/atomic-write/src/index.ts`](../packages/util/atomic-write/src/index.ts))
 - `@deepseek-ai/dsh-base` ([`packages/bundle/base/src/index.ts`](../packages/bundle/base/src/index.ts))
 - `@deepseek-ai/dsh-brand` ([`packages/util/brand/src/index.ts`](../packages/util/brand/src/index.ts))
+- `@deepseek-ai/dsh-candy-app` ([`packages/bundle/candy-app/src/index.ts`](../packages/bundle/candy-app/src/index.ts))
 - `@deepseek-ai/dsh-claude-cli-binding` ([`packages/control-plane/claude-cli-binding/src/index.ts`](../packages/control-plane/claude-cli-binding/src/index.ts))
 - `@deepseek-ai/dsh-claude-cli-protocol` ([`packages/llm/claude-cli-protocol/src/index.ts`](../packages/llm/claude-cli-protocol/src/index.ts))
 - `@deepseek-ai/dsh-client-store` ([`packages/client/store/src/index.ts`](../packages/client/store/src/index.ts))
