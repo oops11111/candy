@@ -1293,6 +1293,9 @@ importers:
       '@deepseek-ai/dsh-control-plane-store':
         specifier: workspace:^
         version: link:../../control-plane/control-plane-store
+      '@deepseek-ai/dsh-deepseek-credential-check':
+        specifier: workspace:^
+        version: link:../../control-plane/deepseek-credential-check
       '@deepseek-ai/dsh-oauth-sign-in-web':
         specifier: workspace:^
         version: link:../../control-plane/oauth-sign-in-web
@@ -4515,6 +4518,22 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+
+  packages/control-plane/deepseek-credential-check:
+    dependencies:
+      '@deepseek-ai/dsh-provider-accounts':
+        specifier: workspace:^
+        version: link:../provider-accounts
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-provider-credential-checks':
+        specifier: workspace:^
+        version: link:../provider-credential-checks
 
   packages/control-plane/execution-assertion:
     dependencies:

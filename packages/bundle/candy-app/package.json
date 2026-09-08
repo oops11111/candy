@@ -39,6 +39,7 @@
     "@deepseek-ai/dsh-oauth-sign-in-web": "workspace:^",
     "@deepseek-ai/dsh-provider-account-api": "workspace:^",
     "@deepseek-ai/dsh-provider-credential-checks": "workspace:^",
+    "@deepseek-ai/dsh-deepseek-credential-check": "workspace:^",
     "@deepseek-ai/dsh-run-scheduler": "workspace:^",
     "@deepseek-ai/dsh-storage-sqlite": "workspace:^",
     "@deepseek-ai/dsh-workspace-grant-execution": "workspace:^"

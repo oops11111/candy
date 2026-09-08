@@ -35,6 +35,7 @@ The scheduler description above uses the original ownership shorthand. Replay de
 | [`workspace-grant`](workspace-grant/README.md) | Resolves the workspace-grant id an assertion names into the roots and file-effect ceiling a run holds, and refuses a child that names any other |
 | [`workspace-grant-execution`](workspace-grant-execution/README.md) | Revalidates that durable grant at inherited filesystem and shell executors, including canonical link containment and revocation |
 | [`provider-credential-checks`](provider-credential-checks/README.md) | The registry a provider integration says through whether one stored credential still authenticates |
+| [`deepseek-credential-check`](deepseek-credential-check/README.md) | Registers a redacted authenticated `/models` probe for `deepseek-api` |
 | [`provider-account-api`](provider-account-api/README.md) | The six provider-account operations, mounted on the authenticated management envelope |
 | [`run-ledger`](run-ledger/README.md) | Records what each open run holds and has spent, and settles an abandoned hold exactly rather than by estimate |
 | [`run-replay`](run-replay/README.md) | Records an assertion's nonce as spent in one indivisible step, retained exactly while that assertion stays admissible |

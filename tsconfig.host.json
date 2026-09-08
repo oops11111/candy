@@ -176,6 +176,7 @@
     { "path": "./packages/control-plane/control-plane-api" },
     { "path": "./packages/control-plane/provider-account-api" },
     { "path": "./packages/control-plane/provider-credential-checks" },
+    { "path": "./packages/control-plane/deepseek-credential-check" },
     { "path": "./packages/control-plane/oauth-sign-in-web" },
     { "path": "./packages/control-plane/execution-assertion" },
     { "path": "./packages/control-plane/credential-vault" },
