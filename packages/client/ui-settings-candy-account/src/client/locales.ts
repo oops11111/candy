@@ -6,6 +6,10 @@ export const NS = 'settings.candyAccount'
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   nav: '账户',
+  auditNav: '审计',
+  auditTitle: '审计窗口',
+  auditWindow: '最多保留每个主体最近 {retention} 条记录；这不是完整历史。',
+  auditFailure: '无法读取审计窗口，或当前账户不是管理员。',
   title: '账户与凭据',
   intro:
     '这里管理你在本部署下的服务商账户。凭据加密保存在服务端，保存后不再回传，'
@@ -62,6 +66,10 @@ export const zh = {
 /** English dictionary, key-identical to the Chinese source of truth. */
 export const en: Record<CandyAccountKey, string> = {
   nav: 'Account',
+  auditNav: 'Audit',
+  auditTitle: 'Audit window',
+  auditWindow: 'At most the latest {retention} records per subject are retained; this is not complete history.',
+  auditFailure: 'The audit window could not be read, or this account is not an administrator.',
   title: 'Account and credentials',
   intro:
     'Manage the provider accounts you own in this deployment. A credential is sealed on the server and '

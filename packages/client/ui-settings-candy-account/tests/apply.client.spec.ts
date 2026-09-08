@@ -12,6 +12,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import { CandyAccountSection } from '../src/client/CandyAccountSection.tsx'
+import { CandyAuditSection } from '../src/client/CandyAuditSection.tsx'
 import type { CandyAccountInjected } from '../src/client/CandyAccountSection.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
@@ -68,8 +69,9 @@ describe('ui-settings-candy-account apply', () => {
     expect(after.slots.entries('settings.section')).toHaveLength(0)
     declare(after.slots)
     await Promise.resolve()
-    expect(after.slots.entries('settings.section')).toHaveLength(1)
+    expect(after.slots.entries('settings.section')).toHaveLength(2)
     expect(after.slots.entries('settings.section')[0]?.component).toBe(CandyAccountSection)
+    expect(after.slots.entries('settings.section')[1]?.component).toBe(CandyAuditSection)
   })
 
   it('removes the contribution with the plugin fiber', async () => {
@@ -77,7 +79,7 @@ describe('ui-settings-candy-account apply', () => {
     declare(b.slots)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(b.slots.entries('settings.section')).toHaveLength(1)
+    expect(b.slots.entries('settings.section')).toHaveLength(2)
 
     await fiber.dispose()
 

@@ -35,6 +35,7 @@ import * as DeepSeekCredentialCheck from '@deepseek-ai/dsh-deepseek-credential-c
 import WorkspaceGrantExecution from '@deepseek-ai/dsh-workspace-grant-execution'
 import * as OauthSignInWeb from '@deepseek-ai/dsh-oauth-sign-in-web'
 import * as ProviderAccountApi from '@deepseek-ai/dsh-provider-account-api'
+import * as AuditApi from '@deepseek-ai/dsh-audit-api'
 import { ACCOUNT_PATHS } from '@deepseek-ai/dsh-provider-account-api'
 import { OAUTH_START_PATH } from '@deepseek-ai/dsh-oauth-sign-in'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -55,6 +56,7 @@ const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-workspace-grant-execution', WorkspaceGrantExecution],
   ['@deepseek-ai/dsh-oauth-sign-in-web', OauthSignInWeb],
   ['@deepseek-ai/dsh-provider-account-api', ProviderAccountApi],
+  ['@deepseek-ai/dsh-audit-api', AuditApi],
   // The account page's Node half is an inert Loader entry by construction —
   // its browser half is what the row exists for, and it is proved in its own
   // package. Importing the real module here would put a Client-face source

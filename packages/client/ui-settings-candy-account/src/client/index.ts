@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { CANDY_SIGN_IN_PATH, createCandyAccountApi, type CandyBrowser } from './api.ts'
 import { CandyAccountController } from './store.ts'
 import { CandyAccountSection } from './CandyAccountSection.tsx'
+import { CandyAuditSection } from './CandyAuditSection.tsx'
 import type { CandyAccountInjected } from './CandyAccountSection.tsx'
 import { en, NS, zh, type CandyAccountKey } from './locales.ts'
 
@@ -96,4 +97,9 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: injected,
   }, CandyAccountSection))
+
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'candy-audit', order: 6,
+    label: () => t('auditNav'), locale: NS, inject: () => ({}),
+  }, CandyAuditSection))
 }

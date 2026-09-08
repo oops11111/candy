@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-the-audit-window-has-a-door.md
+2026-09-09-the-audit-window-has-a-door.md: 1cd222281ef041dc64d2223fe7d6567afa68a68f
+2026-09-09-the-audit-window-has-a-door.zh.md: 634e3f78d3d8b1d9e3e64894811094aa07c2d300

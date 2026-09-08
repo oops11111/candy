@@ -105,6 +105,11 @@
         publicOrigin: !!js process.env.CANDY_PUBLIC_ORIGIN
         credentialKeyVersion: !!js process.env.CANDY_CREDENTIAL_KEY_VERSION
 
+    - id: audit-api
+      name: '@deepseek-ai/dsh-audit-api'
+      config:
+        publicOrigin: !!js process.env.CANDY_PUBLIC_ORIGIN
+
     # The account page in the settings panel the Web surface already carries.
     - id: ui-settings-candy-account
       name: '@deepseek-ai/dsh-client-ui-settings-candy-account'

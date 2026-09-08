@@ -38,6 +38,7 @@
     "@deepseek-ai/dsh-control-plane-store": "workspace:^",
     "@deepseek-ai/dsh-oauth-sign-in-web": "workspace:^",
     "@deepseek-ai/dsh-provider-account-api": "workspace:^",
+    "@deepseek-ai/dsh-audit-api": "workspace:^",
     "@deepseek-ai/dsh-provider-credential-checks": "workspace:^",
     "@deepseek-ai/dsh-deepseek-credential-check": "workspace:^",
     "@deepseek-ai/dsh-run-scheduler": "workspace:^",

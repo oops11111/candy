@@ -1287,6 +1287,9 @@ importers:
 
   packages/bundle/candy-app:
     dependencies:
+      '@deepseek-ai/dsh-audit-api':
+        specifier: workspace:^
+        version: link:../../control-plane/audit-api
       '@deepseek-ai/dsh-client-ui-settings-candy-account':
         specifier: workspace:^
         version: link:../../client/ui-settings-candy-account
@@ -4279,6 +4282,27 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
+
+  packages/control-plane/audit-api:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-control-plane-api':
+        specifier: workspace:^
+        version: link:../control-plane-api
+      '@deepseek-ai/dsh-control-plane-store':
+        specifier: workspace:^
+        version: link:../control-plane-store
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:^
+        version: link:../../host/webserver
+      '@deepseek-ai/dsh-run-scheduler':
+        specifier: workspace:^
+        version: link:../run-scheduler
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
 
   packages/control-plane/claude-cli-binding:
     devDependencies:
