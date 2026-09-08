@@ -10,7 +10,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import type { DeviceId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type {} from '@deepseek-ai/dsh-control-plane-store'
-import { RunScheduler } from '@deepseek-ai/dsh-run-scheduler'
+import type { RunScheduler } from '@deepseek-ai/dsh-run-scheduler'
 import {
   WorkspaceAuthority,
   type SandboxExecutionPolicy,
@@ -80,6 +80,7 @@ export class WorkspaceGrantExecution extends WorkspaceAuthority {
   }
 
   override async enter<T>(sessionId: SessionId, operation: () => Promise<T>): Promise<T> {
+    // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- narrows Cordis augmentation at this boundary.
     const run = (this.ctx.runScheduler as RunScheduler).runOfSession(sessionId)
     if (run === undefined) throw new Error('workspace authority denied: session has no open Candy run')
     const identity: AuthorityIdentity = {

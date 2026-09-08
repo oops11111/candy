@@ -93,7 +93,7 @@ export class SqliteKvUnit implements KvUnit {
     })
   }
 
-  readRecord(table: string, key: string): Promise<unknown | undefined> {
+  readRecord(table: string, key: string): Promise<unknown> {
     return this.settle(() => {
       const row = this.statementsFor(table).selectOne.get(key) as { value: string } | undefined
       return row === undefined ? undefined : this.parseValue(row.value, `table '${table}' key '${key}'`)

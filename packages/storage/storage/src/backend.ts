@@ -91,7 +91,7 @@ export interface KvUnit {
   loadAll(): Promise<{ tables: Record<string, Record<string, unknown>>; global: unknown }>
 
   /** Read one record from the durable medium rather than an open-time snapshot. */
-  readRecord?(table: string, key: string): Promise<unknown | undefined>
+  readRecord?(table: string, key: string): Promise<unknown>
 
   /**
    * Upsert one record durably. Overwrite semantics: an existing key is replaced.

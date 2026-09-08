@@ -94,8 +94,8 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
   }
 
   override async run(spec: ShellExecSpec): Promise<ShellRunResult> {
-    const policy = await this.ctx.get('workspaceAuthority')?.authorizePolicy(spec.sandboxPolicy as SandboxExecutionPolicy)
-      ?? spec.sandboxPolicy as SandboxExecutionPolicy
+    const fallback = spec.sandboxPolicy as SandboxExecutionPolicy
+    const policy = await this.ctx.get('workspaceAuthority')?.authorizePolicy(fallback) ?? fallback
     const { mode } = policy
     if (mode === 'danger-full-access') {
       const result = await super.run(spec)
@@ -123,8 +123,8 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
   }
 
   override start(spec: ShellExecSpec): ShellProcess {
-    const policy = this.ctx.get('workspaceAuthority')?.constrainPolicy(spec.sandboxPolicy as SandboxExecutionPolicy)
-      ?? spec.sandboxPolicy as SandboxExecutionPolicy
+    const fallback = spec.sandboxPolicy as SandboxExecutionPolicy
+    const policy = this.ctx.get('workspaceAuthority')?.constrainPolicy(fallback) ?? fallback
     const { mode } = policy
     if (mode === 'danger-full-access') return super.start(spec)
     // Once startArgv returns, install facts synchronously; promise settlement

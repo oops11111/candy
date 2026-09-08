@@ -323,14 +323,14 @@ class KvTableImpl<K extends string, V> implements KvTable<K, V> {
 
   getCurrent(key: K): Promise<V | undefined> {
     return this.host.enqueue(async () => {
-      const read = this.host.unit.readRecord
+      const read = this.host.unit.readRecord?.bind(this.host.unit)
       if (read === undefined) {
         throw new DomainError(
           'facet-unsupported',
           `domain '${this.host.domainName}' backend cannot re-read records from its durable medium`,
         )
       }
-      const value = await read.call(this.host.unit, this.tableName, key)
+      const value = await read(this.tableName, key)
       if (value === undefined) {
         this.records.delete(key)
         return undefined

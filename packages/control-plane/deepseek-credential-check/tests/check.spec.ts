@@ -8,12 +8,13 @@ const secret = new TextEncoder().encode('test-key')
 describe('DeepSeek credential check', () => {
   it.each([[200, true, undefined], [401, false, 'invalid-credential'], [403, false, 'invalid-credential'], [429, false, 'provider-unavailable'], [500, false, 'provider-unavailable']] as const)(
     'maps HTTP %s without exposing provider details', async (status, valid, reason) => {
-      const fetcher = vi.fn(async () => new Response('{"private":"body"}', { status })) as unknown as typeof fetch
+      const fetcher = vi.fn<typeof fetch>(async () => new Response('{"private":"body"}', { status }))
       const result = await checkDeepSeekCredential(secret, { baseURL: 'https://provider.invalid/', timeoutMs: 100, fetch: fetcher })
       expect(result).toEqual(reason === undefined ? { valid } : { valid, reason })
       expect(JSON.stringify(result)).not.toContain('provider.invalid')
       expect(JSON.stringify(result)).not.toContain('private')
       expect(fetcher).toHaveBeenCalledWith('https://provider.invalid/models', expect.objectContaining({
+        // oxlint-disable-next-line typescript/no-unsafe-assignment -- Vitest asymmetric matchers are intentionally untyped values.
         headers: expect.objectContaining({ authorization: 'Bearer test-key' }),
       }))
     },
@@ -22,7 +23,7 @@ describe('DeepSeek credential check', () => {
   it('contains transport failures and malformed or empty credentials', async () => {
     const unavailable = await checkDeepSeekCredential(secret, {
       baseURL: 'https://provider.invalid', timeoutMs: 1,
-      fetch: vi.fn(async () => { throw new Error('endpoint and body must stay private') }) as unknown as typeof fetch,
+      fetch: vi.fn<typeof fetch>(async () => { throw new Error('endpoint and body must stay private') }),
     })
     expect(unavailable).toEqual({ valid: false, reason: 'provider-unavailable' })
     await expect(checkDeepSeekCredential(new Uint8Array([0xff]), { baseURL: '', timeoutMs: 1 }))
@@ -33,7 +34,7 @@ describe('DeepSeek credential check', () => {
 
   it('registers only the deepseek-api provider in the existing registry', async () => {
     const originalFetch = globalThis.fetch
-    globalThis.fetch = vi.fn(async () => new Response('{}', { status: 200 })) as unknown as typeof fetch
+    globalThis.fetch = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }))
     const ctx = new Context()
     new ProviderCredentialChecks(ctx)
     apply(ctx, {})
