@@ -109,7 +109,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' -H 'Host: candy.example.com' http://12
 
 Run the new version as a second unit on its own port, its own database and its own pool base, with its own `CANDY_RUNTIME_AUDIENCE` — sharing an audience is what lets one runtime admit assertions minted for another. Point a second Nginx `server` block at it under a different name, move one operator's traffic there, and watch the journal and that operator's runs before moving the rest.
 
-A canary must not share `CANDY_DATABASE_PATH` with the live service. Two processes over one control plane is a supported shape, but only for versions whose schema agrees; a canary is by definition the version whose schema you have not yet trusted.
+A canary must not share `CANDY_DATABASE_PATH` with the live service, for two reasons. The schema is one: a canary is by definition the version whose schema you have not yet trusted. The other is that a live process authenticates from the view it opened with, so **a logout in one process does not reach another that is already running** — the session stays valid there until that process restarts. Assertion nonces are the exception and are spent exactly once across both, because that write goes to the medium; sessions are not. Give each process its own database and the question does not arise.
 
 ### Rollback
 

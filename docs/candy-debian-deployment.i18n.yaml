@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/candy-debian-deployment.md
-candy-debian-deployment.md: bd3e54d0482844e51b412e943a5dbf4d4f310924
-candy-debian-deployment.zh.md: ec3723fb1027fe53a1a0a120b067f4ddde84926f
+candy-debian-deployment.md: f8f4b9034f8a28eeb9dcd443246f3e8c71d3f85c
+candy-debian-deployment.zh.md: 658221fcfebb168f5252090adae4a9f0627feac0
