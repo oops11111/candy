@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-the-tool-decision-a-tenant-can-audit.md
+2026-09-09-the-tool-decision-a-tenant-can-audit.md: fef0d8cd7b5c124740d1f1bb1c998fd22c269436
+2026-09-09-the-tool-decision-a-tenant-can-audit.zh.md: 7b3344ca595bcb4c1843cd5dba639c45bd54ad4b

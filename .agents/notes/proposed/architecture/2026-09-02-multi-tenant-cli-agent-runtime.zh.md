@@ -144,7 +144,7 @@ R0 已交付为 [Candy 运行时边界](../../../../docs/candy-runtime-boundarie
 
 边界页面还要求为每一个被启动的提供方或工具进程留下一条审计记录，而那一条不是 Candy 可以就地打补丁的缺口。保险库记录每次被准入的运行写一条，而一次运行每调用一次就启动一个进程 —— `dsh-claude-cli-binding` 的计费用例就在一次准入之下跑了两次 —— 因此即便只看凭据访问，两者也不是一一对应的。生产者现在有了（[每个 spawner 都经由同一条缝隙上报](../../implemented/architecture/2026-09-06-every-spawner-reports-through-one-seam.zh.md)）:`dsh-subprocess` 由 `spawn` 与 `spawnTerminal` 自身发出 `subprocess/launched`,并委托给实现覆写的 `spawnProcess` 与 `spawnTerminalSession`,因此一个启动方无法在不自报的情况下启动子进程。记录指名可执行文件、目录、pid 与种类,绝不指名参数或环境——一个启动方的 argv 里装的是调用方放进去的任何东西。在一次被计量调用期间启动的进程,现在会带着归属抵达踪迹（[一条流带不动的作用域](../../implemented/architecture/2026-09-06-a-scope-a-stream-could-not-carry.zh.md)）:调度器在被计量流的每一次拉取周围进入一个运行作用域,其 `subprocess/launched` 监听器把这次启动记到该运行的租户名下,记在 `event: 'launched'` 之下。作用域之所以是按拉取来的,是因为异步生成器的函数体运行在其消费方的上下文里,而不是它被创建时的那个;包在流上的作用域什么都归属不了,反向对照正是以"零条记录"显示出这一点。发生在任何被计量调用之外的启动仍然不被归属、也不被归档,因为它不属于任何租户,而且会挤占一条按主体有界的踪迹里的记录。
 
-状态修正（2026-09-09）：一次运行的最终用量会作为 token、墙钟时间与微美元费用留存在终态审计记录中，取自向出资方扣费的同一份结算数字。每一次受管模型调用还会在适配器迭代之前，记录 Harness 路由 waterfall 最终留下的 provider/model 组合。这两项语义增加使持久存储升到版本 10。上文所说运行费用与路由缺失的旧句已被此处取代。工具授权仍未完成，因此清单保持未勾选。
+状态修正（2026-09-09）：一次运行的最终用量会作为 token、墙钟时间与微美元费用留存在终态审计记录中，取自向出资方扣费的同一份结算数字。每一次受管模型调用还会在适配器迭代之前，记录 Harness 路由 waterfall 最终留下的 provider/model 组合。Harness 现在会在审批与单调守卫之后发布最终工具授权决定，调度器只为受管运行记录工具名称及允许／拒绝结果。这些语义增加使持久存储升到版本 11。上文所说运行费用、路由与工具授权缺失的旧句已被此处取代。
 
 持久重放不再被该存储缝隙阻塞（[一个活过进程的 nonce](../../implemented/architecture/2026-09-07-a-nonce-that-survives-the-process.zh.md)）。`dsh-storage` 现在暴露可选 compare/exchange，SQLite 以事务实现它，而 `ControlPlaneStore` 拥有按过期时间界定、由重启和多个运行时进程共享的 nonce 记录。JSON 因无法给出同样保证而 fail closed。
 

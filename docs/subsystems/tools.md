@@ -577,6 +577,29 @@ Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index
 
 ### `tools/*` events
 
+<a id="toolsauthorization--parallel"></a>
+
+#### `tools/authorization` — parallel
+
+Observe the final allow/deny decision after approval and every monotonic guard, before an allowed tool body starts. Listener failures are contained and cannot change the decision. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): keyed by `exec.agent`.
+
+```ts cordis-catalog
+/**
+ * Observe the final allow/deny decision after approval and every monotonic
+ * guard, before an allowed tool body starts. Listener failures are
+ * contained and cannot change the decision.
+ * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): keyed by `exec.agent`.
+ * @param exec - the identity-protected call whose authorization is final.
+ * @param decision - the final authorization decision; denial reasons are diagnostic only.
+ * @mode parallel
+ */
+'tools/authorization'(this: Scoped<ToolRuntime>, exec: Readonly<ToolExecution>, decision: Readonly<ToolAuthorizationDecision>): void | Promise<void>
+```
+
+Types: [Scoped](scope.md)
+
+Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index.ts)
+
 <a id="toolschange--emit"></a>
 
 #### `tools/change` — emit

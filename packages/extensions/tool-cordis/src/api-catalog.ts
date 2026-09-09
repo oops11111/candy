@@ -3646,6 +3646,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [],
   },
   {
+    name: 'tools/authorization',
+    mode: 'parallel',
+    signature: '\'tools/authorization\'(this: Scoped<ToolRuntime>, exec: Readonly<ToolExecution>, decision: Readonly<ToolAuthorizationDecision>): void | Promise<void>',
+    summary: 'Observe the final allow/deny decision after approval and every monotonic guard, before an allowed tool body starts.',
+    description: 'Observe the final allow/deny decision after approval and every monotonic guard, before an allowed tool body starts. Listener failures are contained and cannot change the decision. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): keyed by `exec.agent`.',
+    parameters: [{ name: 'exec', description: 'the identity-protected call whose authorization is final.' }, { name: 'decision', description: 'the final authorization decision; denial reasons are diagnostic only.' }],
+  },
+  {
     name: 'tools/change',
     mode: 'emit',
     signature: '\'tools/change\'(): void',
@@ -6312,6 +6320,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TokenUsage',
     declaration: 'export interface TokenUsage {\n    inputTokens: number;\n    outputTokens: number;\n    totalTokens?: number;\n    cacheReadTokens?: number;\n    cacheWriteTokens?: number;\n    reasoningTokens?: number;\n    costMicroUsd?: number;\n}',
+  },
+  {
+    name: 'ToolAuthorizationDecision',
+    declaration: 'export type ToolAuthorizationDecision = {\n    readonly kind: \'allow\';\n} | {\n    readonly kind: \'deny\';\n    readonly reason: string;\n};',
   },
   {
     name: 'ToolCallKind',

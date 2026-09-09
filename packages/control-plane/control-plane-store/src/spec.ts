@@ -186,9 +186,9 @@ const storedAuditRecord = z.object({
   provider: z.string().optional(),
   /** Final model chosen for a routed model call. */
   model: z.string().optional(),
-  /** What the record is about: a scheduling attempt, a settlement, a vault operation, or a launched process. */
-  event: z.enum(['started', 'settled', 'refused', 'credential', 'launched', 'routed']),
-  /** The step that ran: the one that refused, the vault action, or `settle`. */
+  /** What the record is about: scheduling, settlement, credentials, routing, process launch, or tool authorization. */
+  event: z.enum(['started', 'settled', 'refused', 'credential', 'launched', 'routed', 'tool']),
+  /** The step that ran: the refusing step, vault action, `settle`, route, process, or tool name. */
   action: z.string(),
   /** `ok`, the reason the step refused, or how a settled run ended. */
   outcome: z.string(),
@@ -315,7 +315,8 @@ export const controlPlaneDomainSpec = defineDomain({
   // 9 adds final spend to terminal audit records. Reading a version 8 trail as
   // this version would silently answer a run-cost query with no figure.
   // 10 records the final provider/model route selected for managed calls.
-  version: 10,
+  // 11 records final tool authorization decisions for managed calls.
+  version: 11,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),

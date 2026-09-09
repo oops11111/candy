@@ -1942,7 +1942,7 @@ export interface RetiredCredentialKey {
 }
 ```
 
-Source: [`packages/control-plane/run-scheduler/src/index.ts:80`](../packages/control-plane/run-scheduler/src/index.ts)
+Source: [`packages/control-plane/run-scheduler/src/index.ts:81`](../packages/control-plane/run-scheduler/src/index.ts)
 
 <a id="deepseek-aidsh-sandbox-local"></a>
 
@@ -3355,7 +3355,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'ptc' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:647`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:662`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 

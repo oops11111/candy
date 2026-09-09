@@ -24,6 +24,7 @@
     { "path": "../../subprocess/subprocess" },
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },
+    { "path": "../../core/tools" },
     { "path": "../run-start" },
     { "path": "../runtime-pool" },
     { "path": "../tenant-allowance" },

@@ -143,6 +143,16 @@ declare module '@deepseek-ai/cordis' {
      */
     'tools/pre-execute'(this: Scoped<ToolRuntime>, exec: ToolExecution, next: () => Promise<PreToolDecision>): Promise<PreToolDecision>
     /**
+     * Observe the final allow/deny decision after approval and every monotonic
+     * guard, before an allowed tool body starts. Listener failures are
+     * contained and cannot change the decision.
+     * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): keyed by `exec.agent`.
+     * @param exec - the identity-protected call whose authorization is final.
+     * @param decision - the final authorization decision; denial reasons are diagnostic only.
+     * @mode parallel
+     */
+    'tools/authorization'(this: Scoped<ToolRuntime>, exec: Readonly<ToolExecution>, decision: Readonly<ToolAuthorizationDecision>): void | Promise<void>
+    /**
      * Around-dispatch waterfall for timeout, retry, or metrics. `next()` returns
      * a normalized result; wrappers may change only `exec.signal`, while call
      * identity remains immutable. The registry re-fuses the original caller
@@ -582,6 +592,11 @@ export type PreToolDecision =
   | { kind: 'allow' }
   | { kind: 'deny'; reason: string }
   | { kind: 'ask'; reason?: string }
+
+/** Final authorization result after approval resolution and monotonic guards. */
+export type ToolAuthorizationDecision =
+  | { readonly kind: 'allow' }
+  | { readonly kind: 'deny'; readonly reason: string }
 
 /**
  * Post-dispatch decision: accept, replace one projection, attach context for the
@@ -1478,6 +1493,8 @@ export class ToolRuntime extends Service {
         ? this.guardReason(exec)
         : decision.reason
       if (denialReason !== undefined) {
+        const observation = this.notifyAuthorization(exec, { kind: 'deny', reason: denialReason })
+        if (observation !== undefined) await observation
         return await next({
           kind: 'post-result',
           exec,
@@ -1491,10 +1508,36 @@ export class ToolRuntime extends Service {
       if (this.callerCancelled(exec)) {
         return await next({ kind: 'post-result', exec, result: toolAbortedBeforeDispatchResult() })
       }
+      const observation = this.notifyAuthorization(exec, { kind: 'allow' })
+      if (observation !== undefined) await observation
       return await next({ kind: 'dispatch', exec })
     } catch (error: unknown) {
       return next({ kind: 'final-result', exec, result: toolErrorResult(error) })
     }
+  }
+
+  /** Publish the final decision without giving observers an enforcement channel. */
+  private notifyAuthorization(exec: ToolExecution, decision: ToolAuthorizationDecision): Promise<void> | undefined {
+    const frozen = Object.freeze(decision)
+    const callbacks = this.ctx.events.dispatch('emit', [
+      scopeTarget(this, exec.agent), 'tools/authorization', exec, frozen,
+    ]) as Array<(execution: Readonly<ToolExecution>, result: Readonly<ToolAuthorizationDecision>) => void | Promise<void>>
+    if (callbacks.length === 0) return undefined
+    const invoke = (callback: typeof callbacks[number]): Promise<void> => {
+      try {
+        return Promise.resolve(callback(exec, frozen))
+      } catch (error: unknown) {
+        return Promise.reject(error instanceof Error ? error : new Error(errorMessage(error)))
+      }
+    }
+    return Promise.allSettled(callbacks.map(invoke)).then((results) => {
+      for (const result of results) {
+        if (result.status === 'fulfilled') continue
+        this.ctx.logger.warn(
+          `tool "${exec.name}" (${exec.callId}): tools/authorization observer failed: ${errorMessage(result.reason)}`,
+        )
+      }
+    })
   }
 
   /** Whether the original caller signal is currently aborted. */

@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
@@ -43,7 +44,10 @@ import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
-import SessionStore, { type SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, type SessionId } from '@deepseek-ai/dsh-session'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import Llm, { LlmAdapter, type GenerateOptions } from '@deepseek-ai/dsh-llm'
 import RunScheduler from '../src/index.ts'
@@ -1279,6 +1283,47 @@ describe('a booted Candy scheduler', () => {
     const chunks = await collectChunks(ctx.llm.stream(request(SESSION)))
 
     expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
+  it('audits final tool authorization without persisting arguments or denial reasons', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    ctx.tools.register(defineTool({
+      name: 'workspace_read', description: 'fixture', parameters: { path: { type: 'string' } },
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+      async execute() { return 'ok' },
+    }))
+    const session = Session.create(SESSION)
+    const agent = { session } as unknown as Agent
+
+    await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: ToolCallId('tool-allowed'),
+      name: 'workspace_read',
+      arguments: { path: 'C:/secret/project' },
+      agent,
+    })
+    ctx.tools.guard(() => 'operator-only reason')
+    await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: ToolCallId('tool-denied'),
+      name: 'workspace_read',
+      arguments: { path: 'C:/other-secret' },
+      agent,
+    })
+
+    const records = ctx.runScheduler.auditsOfTenant(ALICE).filter(record => record.event === 'tool')
+    expect(records).toEqual([
+      expect.objectContaining({ runId: RunId('run-root'), action: 'workspace_read', outcome: 'allowed' }),
+      expect.objectContaining({ runId: RunId('run-root'), action: 'workspace_read', outcome: 'denied' }),
+    ])
+    expect(JSON.stringify(records)).not.toContain('secret')
+    expect(JSON.stringify(records)).not.toContain('operator-only')
   })
 
   it('keeps secrets and other tenants out of what an operator reads', async () => {

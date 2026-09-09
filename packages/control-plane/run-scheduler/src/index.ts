@@ -55,6 +55,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { isProviderAccountUsable, type ProviderAccountRecord } from '@deepseek-ai/dsh-provider-accounts'
 import { runtimePoolKey, runtimePoolRoot } from '@deepseek-ai/dsh-runtime-pool'
 import type { SubprocessLaunched } from '@deepseek-ai/dsh-subprocess'
+import type { ToolAuthorizationDecision, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { CREDENTIAL_REVOKED, meterRun, refusedCall, RUN_NOT_OPEN } from '@deepseek-ai/dsh-run-metering'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
@@ -336,6 +337,9 @@ export class RunScheduler extends Service {
     // it belongs to no tenant, and filing it would push a tenant's records out
     // of a trail bounded per subject.
     this.ctx.on('subprocess/launched', (launch) => { this.fileLaunch(launch) }, { global: true })
+    this.ctx.on('tools/authorization', (execution, decision) => this.fileToolAuthorization(execution, decision), {
+      global: true,
+    })
     this.ctx.interval(() => {
       // A sweep now writes to the medium, and a rejected write must not become
       // an unhandled rejection that takes the runtime down: the holds it failed
@@ -733,6 +737,34 @@ export class RunScheduler extends Service {
       this.config.auditRetention,
     ).catch((error: unknown) => {
       this.ctx.logger.warn(`run-scheduler: could not record route for run '${run.record.runId}': ${String(error)}`)
+    })
+  }
+
+  /** Persist only the final decision and tool name; arguments and reasons stay out of the trail. */
+  private async fileToolAuthorization(
+    execution: Readonly<ToolExecution>,
+    decision: Readonly<ToolAuthorizationDecision>,
+  ): Promise<void> {
+    const sessionId = execution.agent?.session.id
+    if (sessionId === undefined) return
+    const run = this.runOfSession(sessionId)
+    if (run === undefined) return
+    const record: RunAuditRecord = {
+      at: Date.now(),
+      runId: run.record.runId,
+      ...lineage(run.record.parentRunId),
+      userId: run.userId,
+      accountId: run.accountId,
+      event: 'tool',
+      action: execution.name,
+      outcome: decision.kind === 'allow' ? 'allowed' : 'denied',
+    }
+    await this.ctx.controlPlaneStore.recordAudit(
+      tenantSubject(run.userId),
+      [record],
+      this.config.auditRetention,
+    ).catch((error: unknown) => {
+      this.ctx.logger.warn(`run-scheduler: could not record tool authorization for run '${run.record.runId}': ${String(error)}`)
     })
   }
 

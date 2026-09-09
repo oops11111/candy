@@ -4949,6 +4949,9 @@ importers:
       '@deepseek-ai/dsh-tenant-allowance':
         specifier: workspace:^
         version: link:../tenant-allowance
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:^
         version: link:../../util/values

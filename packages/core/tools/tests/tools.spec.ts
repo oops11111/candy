@@ -11,7 +11,8 @@ import ToolRuntime, {
   defineContentToolFixture, defineTool, JsonSchemaError, parameterSchemaSpecToJsonSchema, validateArgs, ToolArgsError, ToolNotFoundError,
   TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH,
   type InferArgs, type ParameterSchemaSpec, type PreToolDecision, type PostToolDecision,
-  type JsonSchemaNode, type ToolDefinition, type ToolDispatchExecution, type ToolExecutionResult, type ToolExecutionToken,
+  type JsonSchemaNode, type ToolAuthorizationDecision, type ToolDefinition, type ToolDispatchExecution,
+  type ToolExecutionResult, type ToolExecutionToken,
 } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
@@ -95,6 +96,46 @@ describe('ToolRuntime', () => {
     const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: { text: 'hi' } })
     expect(result).toEqual({ content: [{ type: 'text', text: 'hi' }], isError: false, value: 'hi' })
     expect(observed).toEqual(result)
+  })
+
+  it('publishes final tool authorization after guards and before dispatch', async () => {
+    const ctx = await setup()
+    const order: string[] = []
+    const decisions: ToolAuthorizationDecision[] = []
+    ctx.tools.register({
+      ...echoTool,
+      async execute() {
+        order.push('dispatch')
+        return 'hi'
+      },
+    })
+    ctx.on('tools/authorization', (_exec, decision) => {
+      decisions.push(decision)
+      order.push(`authorization:${decision.kind}`)
+    })
+
+    const allowed = await ctx.tools.execute({
+      signal: testToolSignal, callId: ToolCallId('allowed'), name: 'echo', arguments: { text: 'hi' },
+    })
+    ctx.tools.guard(() => 'sealed by final guard')
+    const denied = await ctx.tools.execute({
+      signal: testToolSignal, callId: ToolCallId('denied'), name: 'echo', arguments: { text: 'no' },
+    })
+
+    expect(allowed.isError).toBe(false)
+    expect(denied).toMatchObject({ isError: true, error: { message: 'sealed by final guard' } })
+    expect(decisions).toEqual([{ kind: 'allow' }, { kind: 'deny', reason: 'sealed by final guard' }])
+    expect(order).toEqual(['authorization:allow', 'dispatch', 'authorization:deny'])
+  })
+
+  it('contains a failing tool authorization observer', async () => {
+    const ctx = await setup()
+    ctx.tools.register(echoTool)
+    ctx.on('tools/authorization', async () => { throw new Error('audit medium is gone') })
+
+    await expect(ctx.tools.execute({
+      signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: { text: 'hi' },
+    })).resolves.toMatchObject({ isError: false })
   })
 
   it('projects presentation metadata from the canonical value', async () => {
