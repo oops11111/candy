@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-tenant-state-is-not-a-system-cli-login.md
+2026-09-09-tenant-state-is-not-a-system-cli-login.md: 42b1b1b28fc145146470d9bbec59712f5ea5807c
+2026-09-09-tenant-state-is-not-a-system-cli-login.zh.md: 3de1727e791813ff462cd32ec632ca93dc9546bd

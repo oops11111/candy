@@ -13,7 +13,7 @@ This package contributes one page to the dsh settings panel: who this browser is
 
 Its data does not ride `ctx.remote`. Candy's control-plane routes authenticate a browser user through the session cookie its OAuth callback set, while the dsh `/api` carrier authenticates a process launch token; the two are different authorities over the same origin, so the page speaks same-origin HTTP and injects no Remote namespace.
 
-A credential goes in and never comes back. The create form is the only field that holds one, it is cleared when the form closes, and every row is drawn from the control plane's secret-free account view.
+A credential goes in and never comes back. The create form is the only field that holds one, it is cleared when the form closes, and every row is drawn from the control plane's secret-free account view. The server CLI summary derives configured, revoked-only, and absent states from that same authenticated tenant roster; it never inspects or reuses the service user's Claude or Codex home.
 
 ## Table of Contents
 
@@ -43,6 +43,8 @@ The page has no configuration. It reads the paths those two plugins mount, at th
 | Revoke credential | Ends the credential, keeping the record readable |
 | Delete | Removes the account and blocks its identifier from being issued again |
 | Sign out | Ends the browser session and returns to the sign-in entry point |
+
+The Claude CLI and Codex CLI summary is an account state, not a live process probe. A usable tenant account reads **Configured**, an all-revoked provider reads **Credential revoked**, and a provider with no account reads **Not configured**. CLI providers have no live credential check here, so the page does not claim that an ambient system CLI session is authenticated.
 
 Revoked accounts stay listed, because seeing why a provider stopped working is the reason to come here; deleted ones are gone from the roster entirely.
 
@@ -100,7 +102,7 @@ None; the package never assembles or sends provider requests.
 
 These are current package constraints, not a task backlog.
 
-- **A credential check answers `unsupported-provider` until an integration composes** — nothing registers a provider credential check yet, so the button works as a route and reports that no provider could be asked.
+- **Only DeepSeek credentials have a live check** — the deployment validates `deepseek-api` through its model catalog. Claude CLI and Codex CLI show the tenant's stored account state and answer `unsupported-provider` when checked; they never inspect a shared CLI home.
 - **No administrator view** — the page acts on the acting tenant's own accounts. An administrator managing another tenant's has no surface here, because the API has none either.
 - **The roster is answered whole** — there is no pagination; the count is bounded by what an operator provisions.
 - **A signed-out page cannot recover in place** — the sign-in entry point is a full navigation, so an expired session ends the page rather than refreshing it behind a dialog.

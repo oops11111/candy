@@ -78,6 +78,54 @@ const FAILURE_KEY = {
   unavailable: 'failureUnavailable',
 } as const satisfies Record<CandyFailureKind, CandyAccountKey>
 
+/** Providers whose tenant-owned credentials are consumed by server CLI processes. */
+const CLI_PROVIDERS = ['claude-cli', 'codex-cli'] as const satisfies readonly CandyProvider[]
+
+/** One CLI provider's state derived from the authenticated tenant roster. */
+type CliState =
+  | { readonly kind: 'configured'; readonly label: string }
+  | { readonly kind: 'revoked' }
+  | { readonly kind: 'not-configured' }
+
+/**
+ * Derive the state a tenant may safely see without inspecting a shared CLI home.
+ * @param accounts - the authenticated tenant's secret-free account roster.
+ * @param provider - the CLI provider to summarize.
+ * @returns the active account label, a revoked-only state, or an absent state.
+ */
+function cliStateOf(accounts: readonly CandyAccountView[], provider: CandyProvider): CliState {
+  const matching = accounts.filter(account => account.provider === provider)
+  const active = matching.find(account => account.revokedAt === undefined && account.isDefault)
+    ?? matching.find(account => account.revokedAt === undefined)
+  if (active !== undefined) return { kind: 'configured', label: active.label }
+  return matching.length === 0 ? { kind: 'not-configured' } : { kind: 'revoked' }
+}
+
+/** Render the two tenant-scoped CLI states beside the account roster that supplies them. */
+function CliStates({ accounts, t }: { accounts: readonly CandyAccountView[]; t: T }): ReactNode {
+  return (
+    <div className={css.cli} aria-labelledby="candy-cli-state-title">
+      <h4 id="candy-cli-state-title" className={css.cliTitle}>{t('cliTitle')}</h4>
+      <p className={css.cliIntro}>{t('cliIntro')}</p>
+      <div className={css.cliRows}>
+        {CLI_PROVIDERS.map((provider) => {
+          const state = cliStateOf(accounts, provider)
+          const text = state.kind === 'configured'
+            ? t('cliConfigured', { label: state.label })
+            : t(state.kind === 'revoked' ? 'cliRevoked' : 'cliNotConfigured')
+          return (
+            <div key={provider} className={css.cliRow}>
+              <span className={css.cliProvider}>{t(PROVIDER_KEY[provider])}</span>
+              <span className={state.kind === 'configured' ? css.ok : css.cliState}>{text}</span>
+            </div>
+          )
+        })}
+      </div>
+      <p className={css.cliIntro}>{t('cliUnchecked')}</p>
+    </div>
+  )
+}
+
 /** The create form's own props: the draft plus what mutates it. */
 interface CreateFormProps {
   draft: NonNullable<CandyAccountState['draft']>
@@ -268,6 +316,8 @@ export function CandyAccountSection(props: CandyAccountSectionProps): ReactNode 
               : <Button size="sm" onClick={() => { void load() }}>{t('retry')}</Button>}
           </div>
         )}
+
+      {state.status === 'ready' ? <CliStates accounts={state.rows} t={t} /> : null}
 
       {state.draft === null
         ? (

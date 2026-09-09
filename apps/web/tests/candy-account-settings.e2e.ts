@@ -170,6 +170,10 @@ describe('web e2e: the Candy account page in the settings panel', () => {
     const row = dialog.getByRole('listitem').filter({ hasText: 'work laptop' })
     await row.waitFor({ timeout: 10_000 })
     expect(await row.getByText('Default').count()).toBe(1)
+    const cli = dialog.getByRole('heading', { name: 'Server CLI sign-in state' }).locator('..')
+    expect(await cli.getByText('Configured for this tenant: work laptop').count()).toBe(1)
+    expect(await cli.getByText('Not configured', { exact: true }).count()).toBe(1)
+    expect(await cli.getByText(/do not inspect or reuse/u).count()).toBe(1)
   })
 
   it('creates an account, sending the credential once and never showing it again', async () => {
@@ -244,6 +248,8 @@ describe('web e2e: the Candy account page in the settings panel', () => {
     await row.waitFor({ timeout: 10_000 })
     expect(await row.getByRole('button').allTextContents())
       .toEqual(['Check credential', 'Revoke credential', 'Delete'])
+    expect(await dialog.getByText('Configured for this tenant: work laptop').count()).toBe(1)
+    expect(await dialog.getByText('Not configured', { exact: true }).count()).toBe(1)
 
     const overflow = await page.evaluate(() => ({
       document: document.documentElement.scrollWidth - document.documentElement.clientWidth,

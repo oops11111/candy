@@ -88,6 +88,24 @@ function mount(next: CandyAccountState): ReturnType<typeof actions> {
 }
 
 describe('the Candy account page', () => {
+  it('shows tenant CLI credential states without claiming a shared live login', () => {
+    mount(state({
+      rows: [
+        account({ id: 'claude', provider: 'claude-cli', label: 'tenant claude', isDefault: true }),
+        account({ id: 'codex', provider: 'codex-cli', label: 'old codex', revokedAt: 7 }),
+      ],
+    }))
+
+    expect(screen.getByRole('heading', { name: en.cliTitle })).toBeTruthy()
+    expect(screen.getByText('Configured for this tenant: tenant claude')).toBeTruthy()
+    expect(screen.getByText(en.cliRevoked)).toBeTruthy()
+    expect(screen.getByText(en.cliUnchecked)).toBeTruthy()
+    cleanup()
+
+    mount(state())
+    expect(screen.getAllByText(en.cliNotConfigured)).toHaveLength(2)
+  })
+
   it('reads the roster once when it first renders', () => {
     const spies = mount(state())
 

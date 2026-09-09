@@ -152,10 +152,10 @@ R3 的路由授权部分现在已由 [`dsh-tenant-route-policy`](../../../../pac
 
 ### R4 — Harness Web and account configuration
 
-状态修正（2026-09-09）：继承的 Harness 设置框架现在包含租户自有 Provider 账户页和独立的管理员审计页。DeepSeek 凭据已有真实且脱敏的 HTTP 校验，一条 bundle 集成测试也证明登录 → 创建账户 → 会话/运行 → 租户计量 → 撤销后拒绝的链路。剩余 Web 工作是服务器端 Claude/Codex CLI 登录状态展示，以及真实桌面/手机视口验收。
+状态修正（2026-09-09）：继承的 Harness 设置框架包含租户自有 Provider 账户页和独立的管理员审计页。DeepSeek 凭据已有真实且脱敏的 HTTP 校验，一条 bundle 集成测试也证明登录 → 创建账户 → 会话/运行 → 租户计量 → 撤销后拒绝的链路。账户页从已认证租户列表推导 Claude/Codex 的已配置、仅有已撤销凭据和未配置状态，不检查共享 CLI 主目录；随发 Web 组合在桌面和手机视口宽度下均已验收。
 
 - [x] 增加提供方账户列表、创建、验证、默认选择、撤销和删除 API，并执行所有权检查（[`dsh-provider-accounts`](../../implemented/architecture/2026-09-03-provider-account-management.zh.md)）；Web controller 与各提供方验证探测仍未构建。每个租户与提供方之下只有一个默认，现在是一个不变量而不再只是一个意图（[两个被标为默认的账户](../../implemented/architecture/2026-09-06-two-accounts-marked-default.zh.md)）:撤销或删除账户时会无条件提升一个替补，于是移除一个非默认账户会留下两个被标为默认的账户,而解析默认项的一方拿到的是其中任意一个。
-- [ ] 扩展现有 Harness Web 设置以管理 DeepSeek API 密钥以及服务器端 Claude CLI 和 Codex CLI 登录状态；在桌面和手机视口尺寸下验证相同路由。DeepSeek 账户管理与校验已经实现；CLI 登录状态展示和视口证据仍未完成。
+- [x] 扩展现有 Harness Web 设置以管理 DeepSeek API 密钥以及服务器端 Claude CLI 和 Codex CLI 登录状态；在桌面和手机视口尺寸下验证相同路由（见[租户状态不是系统 CLI 登录](../../implemented/architecture/2026-09-09-tenant-state-is-not-a-system-cli-login.zh.md)）。DeepSeek 账户管理与校验使用控制面的已认证路由。Claude/Codex 状态来自同一份归租户所有、不含密钥的列表，并刻意不声称共享 CLI 已实时登录；真实浏览器场景在继承的设置面板中验证 1680px 桌面宽度和 390px 手机宽度。
 - [x] 复用 Harness 主题和品牌 slot 插件；移除 Candy 专用调色板、主题选择器、重复布局或独立手机界面。Candy 只贡献设置 section occupant；样式测试要求使用继承的主题 token，bundle 组合既有响应式 Web 界面。
 - [x] 提供安全诊断，但不返回 token、凭据路径、原始环境值或其他租户的元数据（[运维人员做的第一件事](../../implemented/architecture/2026-09-06-the-first-thing-an-operator-logs.zh.md)）。这个运行时的每一个读取接口——某个租户的踪迹、运行时踪迹、一次被拒绝的结果、一条账本记录——探测下来都不含秘密、密钥、池路径与其他租户,并被以这个状态钉住。不干净的那一个,是运维人员最先伸手去拿的:对一次成功启动结果做 `JSON.stringify`,会一个字节一个字节地带出租户已解密的提供方密钥,因为 `AdmittedRun.secret` 曾是一个普通属性。它现在不可枚举,并带有一个把它脱敏的 `toJSON`——两者都要,因为 `JSON.stringify` 会用 `toJSON`,而 `console.log` 与 `util.inspect` 遍历自有属性并忽略它。这一条还剩下 Web 接口本身:这些都是库层的读取者,而把它们经 HTTP 暴露出去的控制器,有它自己一套要做对的授权。
 
