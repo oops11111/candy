@@ -513,7 +513,10 @@ export class RunScheduler extends Service {
   ): AsyncIterable<StreamChunk> {
     if (options.sessionId === undefined) return next()
     const resolved = this.findSessionRun(options.sessionId)
-    if (resolved.ok) return this.meter(resolved.run.record.runId, next())
+    if (resolved.ok) {
+      const source = next()
+      return this.routeAndMeter(resolved.run, options, source)
+    }
     const { rejection } = resolved
     switch (rejection.reason) {
       case 'no-open-run': {
@@ -567,6 +570,16 @@ export class RunScheduler extends Service {
       charge: (id, spend) => this.charge(id, spend),
       refused: (id, code, message) => this.fileRefusal(id, code, message),
     }))
+  }
+
+  /** Record the final waterfall-selected route before its managed stream reaches the provider. */
+  private async * routeAndMeter(
+    run: DurableRunRecord,
+    options: GenerateOptions,
+    source: AsyncIterable<StreamChunk>,
+  ): AsyncIterable<StreamChunk> {
+    await this.fileRoute(run, options.provider, options.model)
+    yield* this.meter(run.record.runId, source)
   }
 
   /**
@@ -697,6 +710,29 @@ export class RunScheduler extends Service {
     const retain = this.config.auditRetention
     await this.ctx.controlPlaneStore.recordAudit(tenantSubject(userId), [record], retain).catch((error: unknown) => {
       this.ctx.logger.warn(`run-scheduler: could not record a credential open for tenant '${userId}': ${String(error)}`)
+    })
+  }
+
+  /** Persist the provider/model pair selected after LLM routing middleware. */
+  private async fileRoute(run: DurableRunRecord, provider: string, model: string): Promise<void> {
+    const record: RunAuditRecord = {
+      at: Date.now(),
+      runId: run.record.runId,
+      ...lineage(run.record.parentRunId),
+      userId: run.userId,
+      accountId: run.accountId,
+      provider,
+      model,
+      event: 'routed',
+      action: 'select',
+      outcome: 'ok',
+    }
+    await this.ctx.controlPlaneStore.recordAudit(
+      tenantSubject(run.userId),
+      [record],
+      this.config.auditRetention,
+    ).catch((error: unknown) => {
+      this.ctx.logger.warn(`run-scheduler: could not record route for run '${run.record.runId}': ${String(error)}`)
     })
   }
 

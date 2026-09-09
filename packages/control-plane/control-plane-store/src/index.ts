@@ -101,6 +101,8 @@ function sameEvent(last: RunAuditRecord, record: RunAuditRecord): boolean {
     && last.runId === record.runId
     && last.userId === record.userId
     && last.accountId === record.accountId
+    && last.provider === record.provider
+    && last.model === record.model
     && sameSpend(last.spent, record.spent)
 }
 

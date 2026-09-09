@@ -1244,6 +1244,43 @@ describe('a booted Candy scheduler', () => {
     expect(trail.at(-1)).toMatchObject({ count: 8 })
   })
 
+  it('audits the provider and model selected after routing middleware', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['routed'], new FakeAdapter())
+    ctx.on('llm/stream', (options, next) => {
+      options.provider = 'routed'
+      options.model = 'final-model'
+      return next()
+    })
+
+    await collectChunks(ctx.llm.stream(request(SESSION)))
+
+    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toContainEqual(expect.objectContaining({
+      runId: RunId('run-root'), event: 'routed', action: 'select', outcome: 'ok',
+      provider: 'routed', model: 'final-model',
+    }))
+  })
+
+  it('keeps a routed call running when its audit record cannot be written', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(Llm)
+    ctx.llm.registerAdapter(['fake'], new FakeAdapter())
+    vi.spyOn(ctx.controlPlaneStore, 'recordAudit').mockRejectedValue(new Error('medium is gone'))
+
+    const chunks = await collectChunks(ctx.llm.stream(request(SESSION)))
+
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'stop' } })
+  })
+
   it('keeps secrets and other tenants out of what an operator reads', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)
@@ -1486,7 +1523,9 @@ describe('a booted Candy scheduler', () => {
 
     await collectChunks(ctx.llm.stream(request(SESSION)))
 
-    expect(ctx.runScheduler.auditsOfTenant(ALICE)).toHaveLength(before)
+    const added = ctx.runScheduler.auditsOfTenant(ALICE).slice(before)
+    expect(added).toEqual([expect.objectContaining({ event: 'routed', provider: 'fake' })])
+    expect(added).not.toContainEqual(expect.objectContaining({ event: 'launched' }))
   })
 
   it('keeps streaming when the trail cannot take a launch record', async () => {

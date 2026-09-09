@@ -624,9 +624,11 @@ describe('a booted control-plane store', () => {
       { ...base, at: 2, outcome: 'CREDENTIAL_REVOKED' },
       { ...base, at: 3, runId: RunId('run-2'), outcome: 'CREDENTIAL_REVOKED' },
       { ...base, at: 4, runId: RunId('run-2'), outcome: 'CREDENTIAL_REVOKED', userId: ALICE },
+      { ...base, at: 5, runId: RunId('run-2'), outcome: 'CREDENTIAL_REVOKED', userId: ALICE, provider: 'claude-cli' },
+      { ...base, at: 6, runId: RunId('run-2'), outcome: 'CREDENTIAL_REVOKED', userId: ALICE, provider: 'claude-cli', model: 'sonnet' },
     ], 10)
 
-    expect(ctx.controlPlaneStore.auditsOf(subject)).toHaveLength(4)
+    expect(ctx.controlPlaneStore.auditsOf(subject)).toHaveLength(6)
   })
 
   it('keeps terminal records with different final spend apart', async () => {
