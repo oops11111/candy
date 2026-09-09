@@ -46,7 +46,7 @@ import * as StorageSqlite from '@deepseek-ai/dsh-storage-sqlite'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import SessionStore, { Session, type SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { TOOL_ABORTED, defineTool, type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import Llm, { LlmAdapter, type GenerateOptions } from '@deepseek-ai/dsh-llm'
@@ -1324,6 +1324,67 @@ describe('a booted Candy scheduler', () => {
     ])
     expect(JSON.stringify(records)).not.toContain('secret')
     expect(JSON.stringify(records)).not.toContain('operator-only')
+  })
+
+  it('lets a cancelled managed tool quiesce before publishing its final result', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    const entered = Promise.withResolvers<undefined>()
+    const sawAbort = Promise.withResolvers<undefined>()
+    const releaseCleanup = Promise.withResolvers<string>()
+    ctx.tools.register(defineTool({
+      name: 'cooperative_write', description: 'fixture', parameters: {},
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+      execute(_args, exec) {
+        entered.resolve(undefined)
+        exec.signal.addEventListener('abort', () => { sawAbort.resolve(undefined) }, { once: true })
+        return releaseCleanup.promise
+      },
+    }))
+    const session = Session.create(SESSION)
+    const agent = { session } as unknown as Agent
+    const results: ToolExecutionResult[] = []
+    ctx.on('tools/result', (_exec, result) => { results.push(result) })
+    const controller = new AbortController()
+
+    const pending = ctx.tools.execute({
+      signal: controller.signal,
+      callId: ToolCallId('tool-cancelled'),
+      name: 'cooperative_write',
+      arguments: {},
+      agent,
+    })
+    await entered.promise
+    let settled = false
+    void pending.then(() => { settled = true })
+    controller.abort('run cancelled')
+    await sawAbort.promise
+    await new Promise<void>(resolve => setImmediate(resolve))
+
+    // Candy's awaited authorization observer must not alter Harness lifecycle:
+    // a started body is still live, and no terminal event exists, until that
+    // body has completed its own cleanup.
+    expect(settled).toBe(false)
+    expect(results).toEqual([])
+
+    releaseCleanup.resolve('cleaned')
+    const result = await pending
+
+    expect(result).toMatchObject({
+      isError: true,
+      error: { info: { name: 'AbortError', code: TOOL_ABORTED } },
+    })
+    expect(results).toEqual([result])
+    expect(ctx.runScheduler.auditsOfTenant(ALICE).filter(record => record.event === 'tool')).toEqual([
+      expect.objectContaining({
+        runId: RunId('run-root'), action: 'cooperative_write', outcome: 'allowed',
+      }),
+    ])
   })
 
   it('keeps secrets and other tenants out of what an operator reads', async () => {

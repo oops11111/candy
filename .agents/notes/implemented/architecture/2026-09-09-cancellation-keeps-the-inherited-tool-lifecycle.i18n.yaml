@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-cancellation-keeps-the-inherited-tool-lifecycle.md
+2026-09-09-cancellation-keeps-the-inherited-tool-lifecycle.md: 68746498e7de06b0e2df41f623497c6073a8dce9
+2026-09-09-cancellation-keeps-the-inherited-tool-lifecycle.zh.md: a46becbf82d07694dfe337913adb52516764f1a7
