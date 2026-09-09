@@ -24,6 +24,8 @@ A revoked or narrowed record affects the next executor operation in the current 
 
 Candy does not gain a second filesystem, shell, sandbox, or Windows transport. It contributes authorization to the existing DSH capability implementations. Compositions without `dsh-workspace-grant-execution` retain the admission check but do not gain local root enforcement.
 
+The generated capability and Cordis catalogs classify `ctx.workspaceAuthority` as a `dsh-sandbox` seam, `dsh-workspace-grant-execution` as its Candy implementation, and the inherited filesystem and shell packages as its consumers. This makes the ownership boundary fail closed when service declarations change.
+
 The process sandbox's read visibility remains platform-owned. This change constrains the process workdir and file-effect mode without parsing shell source, because a command parser would be a bypassable second shell policy. A stronger process read boundary requires a platform sandbox that can enforce it while still starting the runtime.
 
 ## Alternatives considered

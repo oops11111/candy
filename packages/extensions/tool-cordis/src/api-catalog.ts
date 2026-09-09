@@ -714,7 +714,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the bearer and independent CSRF token exactly once, plus the secret-free durable record.',
       },
       {
-        signature: 'authenticateUserSession(token: string, now: number): Promise<UserSessionRecord | undefined>',
+        signature: 'async authenticateUserSession(token: string, now: number): Promise<UserSessionRecord | undefined>',
         description: 'Authenticate one bearer without accepting identity or role from the request.',
         parameters: [{ name: 'token', description: 'opaque token returned once at session creation.' }, { name: 'now', description: 'current epoch milliseconds.' }],
         returns: 'the active session, or undefined for unknown, revoked, or expired credentials.',
@@ -879,6 +879,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read the grant an execution assertion names.\n\nAnswering `undefined` denies the run: a grant this store does not hold is never an unlimited one, which is the rule {@link',
         parameters: [{ name: 'id', description: 'the grant id the assertion carries.' }],
         returns: 'the grant, or `undefined` when none is stored under that id.',
+      },
+      {
+        signature: 'grantSnapshot(id: WorkspaceGrantId): WorkspaceGrantRecord | undefined',
+        description: 'Read one grant from this process\'s current store view for a synchronous executor boundary. Callers that can await use findGrant so a future medium-backed refresh remains transparent.',
+        parameters: [{ name: 'id', description: 'grant identifier carried by the current run.' }],
+        returns: 'a defensive record copy, or undefined when absent.',
       },
       {
         signature: 'async saveGrant(record: WorkspaceGrantRecord): Promise<void>',
@@ -1578,6 +1584,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Resolve what a provider binding needs to launch one call for the run driving a session: an opened credential, the pool it may use, and this call\'s own spend ceiling.\n\nThis is the reach `dsh-run-admission` gives a run once, at start, made available again for every later call the same run makes. Nothing here is cached from that first admission: the account is read fresh, and the credential is opened fresh, so a binding built on this method inherits the same property `meterRequest` already does — a revocation that happens between two calls of one run stops the second rather than only the next metered chunk.\n\nThe opened secret is not retained here, and this method does not itself launch anything: a caller that never calls it, and the ledger\'s own per-call metering, are both unaffected by whether anything ever does.',
         parameters: [{ name: 'sessionId', description: 'the session a provider binding\'s call was assembled for.' }],
         returns: 'the launch identity, or the reason none could be resolved.',
+      },
+      {
+        signature: 'runOfSession(sessionId: SessionId): DurableRunRecord | undefined',
+        description: 'Resolve the one open durable run that owns a session in this runtime.',
+        parameters: [{ name: 'sessionId', description: 'session whose workspace authority is about to be used.' }],
+        returns: 'the run record, or undefined when this runtime owns no unique open run.',
       },
       {
         signature: 'async startChildRun( parentSessionId: SessionId, childSessionId: SessionId, share: (run: { budget: RunBudget }) => RunBudget, now: number = Date.now(), ): Promise<StartChildRunResult>',
@@ -3082,6 +3094,36 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Parse and execute a workflow script.',
         parameters: [{ name: 'request', description: 'the script, its `args`, the parent agent, and an optional cancel signal.' }],
         returns: 'the live run; its `result` resolves when the script settles.',
+      },
+    ],
+  },
+  {
+    key: 'workspaceAuthority',
+    summary: 'Optional same-host authorization applied by filesystem and shell executors.',
+    description: 'Optional same-host authorization applied by filesystem and shell executors.\n\nA deployment that mounts this service establishes a session scope before a tool body runs. Enforcing providers consult it at the operation that reads, writes, or starts a process; an outer tool guard is not the authority.',
+    methods: [
+      {
+        signature: 'abstract enter<T>(sessionId: SessionId, operation: () => Promise<T>): Promise<T>',
+        description: 'Run one tool dispatch under the calling session\'s current authority.',
+        parameters: [{ name: 'sessionId', description: 'The DSH session whose admitted Candy run supplies authority.' }, { name: 'operation', description: 'The executor dispatch to run inside that authority context.' }],
+        returns: 'The dispatch result after the authority context has been established.',
+      },
+      {
+        signature: 'abstract authorizePath(path: string, access: WorkspaceAccess): Promise<void>',
+        description: 'Revalidate and authorize one canonical host path immediately before use.',
+        parameters: [{ name: 'path', description: 'The canonical host path the executor is about to use.' }, { name: 'access', description: 'Whether the operation reads from or writes to the path.' }],
+      },
+      {
+        signature: 'abstract authorizePolicy(policy: SandboxExecutionPolicy): Promise<SandboxExecutionPolicy>',
+        description: 'Revalidate and narrow one process policy immediately before foreground execution.',
+        parameters: [{ name: 'policy', description: 'The fully resolved process policy requested by the executor.' }],
+        returns: 'The policy narrowed to the current durable workspace grant.',
+      },
+      {
+        signature: 'abstract constrainPolicy(policy: SandboxExecutionPolicy): SandboxExecutionPolicy',
+        description: 'Narrow one process policy from the authority resolved for the current dispatch.',
+        parameters: [{ name: 'policy', description: 'The process policy to constrain without another medium read.' }],
+        returns: 'The policy narrowed to the authority already resolved for this dispatch.',
       },
     ],
   },
@@ -4641,11 +4683,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KvTable',
-    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    compareExchange(key: K, expected: V | undefined, replacement: V | undefined): Promise<{\n        exchanged: boolean;\n        current: V | undefined;\n    }>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n}',
+    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    getCurrent(key: K): Promise<V | undefined>;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    compareExchange(key: K, expected: V | undefined, replacement: V | undefined): Promise<{\n        exchanged: boolean;\n        current: V | undefined;\n    }>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n}',
   },
   {
     name: 'KvUnit',
-    declaration: 'export interface KvUnit {\n    loadAll(): Promise<{\n        tables: Record<string, Record<string, unknown>>;\n        global: unknown;\n    }>;\n    putRecord(table: string, key: string, value: unknown): Promise<void>;\n    compareExchangeRecord?(table: string, key: string, expected: unknown, replacement: unknown): Promise<{\n        exchanged: boolean;\n        current: unknown;\n    }>;\n    deleteRecord(table: string, key: string): Promise<void>;\n    backupRecord?(table: string, key: string): Promise<string>;\n    setGlobal(value: unknown): Promise<void>;\n    close(): Promise<void>;\n}',
+    declaration: 'export interface KvUnit {\n    loadAll(): Promise<{\n        tables: Record<string, Record<string, unknown>>;\n        global: unknown;\n    }>;\n    readRecord?(table: string, key: string): Promise<unknown>;\n    putRecord(table: string, key: string, value: unknown): Promise<void>;\n    compareExchangeRecord?(table: string, key: string, expected: unknown, replacement: unknown): Promise<{\n        exchanged: boolean;\n        current: unknown;\n    }>;\n    deleteRecord(table: string, key: string): Promise<void>;\n    backupRecord?(table: string, key: string): Promise<string>;\n    setGlobal(value: unknown): Promise<void>;\n    close(): Promise<void>;\n}',
   },
   {
     name: 'KvUnitDescriptor',
@@ -6670,6 +6712,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'Workspace',
     declaration: 'export interface Workspace {\n    readonly id: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
+  },
+  {
+    name: 'WorkspaceAccess',
+    declaration: 'export type WorkspaceAccess = \'read\' | \'write\';',
   },
   {
     name: 'WorkspaceArchiveSessionRequest',

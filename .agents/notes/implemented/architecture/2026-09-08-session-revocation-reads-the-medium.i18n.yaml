@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-08-session-revocation-reads-the-medium.md
-2026-09-08-session-revocation-reads-the-medium.md: 1bb21d642445c20500b1d7e15884c2c946d4d0b9
-2026-09-08-session-revocation-reads-the-medium.zh.md: 698243388e6b8fbc6c330b9cd6f058fbe2978be0
+2026-09-08-session-revocation-reads-the-medium.md: c1e71a737d95dac73e1773acfd711e1b5282a8aa
+2026-09-08-session-revocation-reads-the-medium.zh.md: ea0ca37259641192d667cd9e85f116cba30dbeec

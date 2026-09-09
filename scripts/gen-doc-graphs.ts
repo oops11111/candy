@@ -517,6 +517,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Consumers hand over the exact argv they are about to spawn; same-world backends wrap it under a per-call policy and report enforcement.',
   },
   {
+    key: 'workspaceAuthority',
+    pkg: 'sandbox',
+    title: 'Same-host workspace authority seam',
+    mode: 'seam',
+    implementations: ['workspace-grant-execution'],
+    consumers: ['fs-sandbox', 'bash-sandbox'],
+    note: 'Candy supplies the admitted run identity and durable grant; inherited filesystem and shell executors revalidate and enforce it immediately before the operation that creates the effect.',
+  },
+  {
     key: 'sandboxPolicy',
     pkg: 'sandbox-policy',
     title: 'Sandbox policy home',

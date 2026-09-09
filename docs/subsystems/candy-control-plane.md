@@ -129,7 +129,7 @@ async createUserSession( userId: UserId, role: ControlPlaneRole, identity: OAuth
  * @param now - current epoch milliseconds.
  * @returns the active session, or undefined for unknown, revoked, or expired credentials.
  */
-authenticateUserSession(token: string, now: number): UserSessionRecord | undefined
+async authenticateUserSession(token: string, now: number): Promise<UserSessionRecord | undefined>
 
 /**
  * Verify the independent anti-CSRF token for an authenticated session.
@@ -438,6 +438,15 @@ async recordAudit( subject: AuditSubject, records: readonly RunAuditRecord[], re
 findGrant(id: WorkspaceGrantId): Promise<WorkspaceGrantRecord | undefined>
 
 /**
+ * Read one grant from this process's current store view for a synchronous
+ * executor boundary. Callers that can await use {@link findGrant} so a
+ * future medium-backed refresh remains transparent.
+ * @param id - grant identifier carried by the current run.
+ * @returns a defensive record copy, or undefined when absent.
+ */
+grantSnapshot(id: WorkspaceGrantId): WorkspaceGrantRecord | undefined
+
+/**
  * Write one grant, replacing any record under the same id.
  *
  * A revocation is this same call with `revokedAt` set: the record is the
@@ -586,6 +595,13 @@ meter(runId: RunId, source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChu
  * @returns the launch identity, or the reason none could be resolved.
  */
 async runIdentityFor(sessionId: SessionId): Promise<RunIdentityResult>
+
+/**
+ * Resolve the one open durable run that owns a session in this runtime.
+ * @param sessionId - session whose workspace authority is about to be used.
+ * @returns the run record, or undefined when this runtime owns no unique open run.
+ */
+runOfSession(sessionId: SessionId): DurableRunRecord | undefined
 
 /**
  * Mint and admit a child run for a session delegated from an already-open

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-the-audit-window-has-a-door.md
-2026-09-09-the-audit-window-has-a-door.md: 1cd222281ef041dc64d2223fe7d6567afa68a68f
-2026-09-09-the-audit-window-has-a-door.zh.md: 634e3f78d3d8b1d9e3e64894811094aa07c2d300
+2026-09-09-the-audit-window-has-a-door.md: 99ba8b04c462a41703194e6c8f6a022c5d4447a9
+2026-09-09-the-audit-window-has-a-door.zh.md: f503491ece6e9af91fdace6bfcbd8ec613ee4970

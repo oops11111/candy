@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/control-plane/deepseek-credential-check/README.md
-README.md: f9b4e2cc189bf512d2f16fc97d1ef21a082a94a7
-README.zh.md: 56aa885c0082b22b152b650db79a9fb90b68a9e1
+README.md: cd8b61cb47b64f691756e3d4307e8d7750dd5e1e
+README.zh.md: 2ff57eacc60a81f4367bcc4a399c8646de5bd8e8

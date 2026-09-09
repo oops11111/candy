@@ -268,6 +268,24 @@ export interface Config {
 
 Source: [`packages/attachment/attachment-local/src/index.ts:55`](../packages/attachment/attachment-local/src/index.ts)
 
+<a id="deepseek-aidsh-audit-api"></a>
+
+## `@deepseek-ai/dsh-audit-api`
+
+Requires: `webServer` · `controlPlaneStore` · `runScheduler`
+
+```ts config-catalog
+/** Configuration for the administrator audit-window route. */
+export interface Config {
+  /** Canonical public origin used by the inherited authenticated API envelope. */
+  publicOrigin: string
+  /** Maximum records returned from each bounded audit window. */
+  auditRetention?: number
+}
+```
+
+Source: [`packages/control-plane/audit-api/src/index.ts:14`](../packages/control-plane/audit-api/src/index.ts)
+
 <a id="deepseek-aidsh-bash-local"></a>
 
 ## `@deepseek-ai/dsh-bash-local`
@@ -518,6 +536,24 @@ export interface Config {
 ```
 
 Source: [`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
+
+<a id="deepseek-aidsh-deepseek-credential-check"></a>
+
+## `@deepseek-ai/dsh-deepseek-credential-check`
+
+Requires: `providerCredentialChecks`
+
+```ts config-catalog
+/** Configuration for the DeepSeek HTTP credential probe. */
+export interface Config {
+  /** Trusted DeepSeek-compatible API origin whose authenticated model catalog is queried. */
+  baseURL?: string
+  /** Maximum milliseconds allowed for the credential probe. */
+  timeoutMs?: number
+}
+```
+
+Source: [`packages/control-plane/deepseek-credential-check/src/index.ts:12`](../packages/control-plane/deepseek-credential-check/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 
@@ -771,7 +807,7 @@ export type Config = LocalConfig
 
 Depends on: [`LocalConfig`](#deepseek-aidsh-fs-local)
 
-Source: [`packages/fs/fs-sandbox/src/index.ts:45`](../packages/fs/fs-sandbox/src/index.ts)
+Source: [`packages/fs/fs-sandbox/src/index.ts:55`](../packages/fs/fs-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-goal"></a>
 
@@ -3653,6 +3689,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-user-questions` ([`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts))
 - `@deepseek-ai/dsh-webhook` — requires `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry` ([`packages/webhook/webhook/src/index.ts`](../packages/webhook/webhook/src/index.ts))
 - `@deepseek-ai/dsh-workspace` — requires `storageDomain` · `sessionPersistence` ([`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts))
+- `@deepseek-ai/dsh-workspace-grant-execution` — requires `controlPlaneStore` · `runScheduler` ([`packages/control-plane/workspace-grant-execution/src/index.ts`](../packages/control-plane/workspace-grant-execution/src/index.ts))
 
 ## Seam packages (not directly loadable)
 

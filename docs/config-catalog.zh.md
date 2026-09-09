@@ -270,6 +270,24 @@ export interface Config {
 
 来源：[`packages/attachment/attachment-local/src/index.ts:55`](../packages/attachment/attachment-local/src/index.ts)
 
+<a id="deepseek-aidsh-audit-api"></a>
+
+## `@deepseek-ai/dsh-audit-api`
+
+需要：`webServer` · `controlPlaneStore` · `runScheduler`
+
+```ts config-catalog
+/** Configuration for the administrator audit-window route. */
+export interface Config {
+  /** Canonical public origin used by the inherited authenticated API envelope. */
+  publicOrigin: string
+  /** Maximum records returned from each bounded audit window. */
+  auditRetention?: number
+}
+```
+
+来源：[`packages/control-plane/audit-api/src/index.ts:14`](../packages/control-plane/audit-api/src/index.ts)
+
 <a id="deepseek-aidsh-bash-local"></a>
 
 ## `@deepseek-ai/dsh-bash-local`
@@ -520,6 +538,24 @@ export interface Config {
 ```
 
 来源：[`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
+
+<a id="deepseek-aidsh-deepseek-credential-check"></a>
+
+## `@deepseek-ai/dsh-deepseek-credential-check`
+
+需要：`providerCredentialChecks`
+
+```ts config-catalog
+/** Configuration for the DeepSeek HTTP credential probe. */
+export interface Config {
+  /** Trusted DeepSeek-compatible API origin whose authenticated model catalog is queried. */
+  baseURL?: string
+  /** Maximum milliseconds allowed for the credential probe. */
+  timeoutMs?: number
+}
+```
+
+来源：[`packages/control-plane/deepseek-credential-check/src/index.ts:12`](../packages/control-plane/deepseek-credential-check/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 
@@ -773,7 +809,7 @@ export type Config = LocalConfig
 
 依赖：[`LocalConfig`](#deepseek-aidsh-fs-local)
 
-来源：[`packages/fs/fs-sandbox/src/index.ts:45`](../packages/fs/fs-sandbox/src/index.ts)
+来源：[`packages/fs/fs-sandbox/src/index.ts:55`](../packages/fs/fs-sandbox/src/index.ts)
 
 <a id="deepseek-aidsh-goal"></a>
 
@@ -3655,6 +3691,7 @@ export interface Config {
 - `@deepseek-ai/dsh-user-questions`（[`packages/interaction/user-questions/src/index.ts`](../packages/interaction/user-questions/src/index.ts)）
 - `@deepseek-ai/dsh-webhook` — 需要 `agents` · `agentDefaultModel` · `agentPresets` · `permissionPresets` · `sessionTitle` · `workspaceRegistry`（[`packages/webhook/webhook/src/index.ts`](../packages/webhook/webhook/src/index.ts)）
 - `@deepseek-ai/dsh-workspace` — 需要 `storageDomain` · `sessionPersistence`（[`packages/workspace/workspace/src/index.ts`](../packages/workspace/workspace/src/index.ts)）
+- `@deepseek-ai/dsh-workspace-grant-execution` — 需要 `controlPlaneStore` · `runScheduler`（[`packages/control-plane/workspace-grant-execution/src/index.ts`](../packages/control-plane/workspace-grant-execution/src/index.ts)）
 
 ## Seam 包（不可直接加载）
 

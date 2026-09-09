@@ -61,8 +61,6 @@
 
     - id: deepseek-credential-check
       name: '@deepseek-ai/dsh-deepseek-credential-check'
-      config:
-        baseURL: !!js process.env.DEEPSEEK_BASE_URL
 
     # Establishes the current run's durable grant around each inherited tool
     # dispatch. Filesystem and shell sandbox providers make the final decision

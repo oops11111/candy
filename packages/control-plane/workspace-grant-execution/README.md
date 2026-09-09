@@ -11,6 +11,15 @@ English | [中文](README.zh.md)
 
 This package supplies `ctx.workspaceAuthority`, the Candy-owned provider for the generic authority point declared by `dsh-sandbox`. It resolves the open Candy run for each tool dispatch, re-reads its workspace grant, and lets the inherited filesystem and shell sandbox providers enforce the result at their own operation boundary. It does not define tools, file operations, shell syntax, remote transport, or a second sandbox.
 
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
 ## Use this package
 
 Mount it beside `dsh-control-plane-store`, `dsh-run-scheduler`, and the existing sandboxed filesystem and shell providers. A tool dispatch without an open Candy run is denied before its body starts. Agentless calls remain governed by the deployment sandbox because they carry no tenant identity this provider may infer.
@@ -34,12 +43,6 @@ No runtime invariant companion is published; this package keeps only async call 
 - [`dsh-sandbox`](../../sandbox/sandbox/README.md) — shared process-policy vocabulary and authority service definition.
 - [Candy Runtime Boundaries](../../../docs/candy-runtime-boundaries.md) — the two-stage workspace authorization requirement.
 
-## Known Limitations and Deferred Work
-
-- Agentless operations have no Candy run identity and therefore use only the ordinary deployment sandbox.
-- The workspace grant constrains the shell sandbox's mode and workdir. Read visibility inside a platform process remains the platform sandbox's contract; this package does not parse commands or create a second shell protocol.
-- Cross-process visibility of grant changes depends on the control-plane store's medium-refresh behavior.
-
 ## Dev Note
 
 <details>
@@ -48,3 +51,25 @@ No runtime invariant companion is published; this package keeps only async call 
 None.
 
 </details>
+
+## Model Experience
+
+### Executor authorization
+
+#### What the model sees
+
+Nothing from `ctx.workspaceAuthority`. Existing tools report their own allowed result or structured denial after the executor applies the grant.
+
+#### Token effect
+
+No standing prompt cost; only an inherited tool's ordinary result or denial reaches the conversation.
+
+#### KV Cache effect
+
+None beyond the inherited tool result, which is appended through the existing tool protocol.
+
+## Known Limitations and Deferred Work
+
+- Agentless operations have no Candy run identity and therefore use only the ordinary deployment sandbox.
+- The workspace grant constrains the shell sandbox's mode and workdir. Read visibility inside a platform process remains the platform sandbox's contract; this package does not parse commands or create a second shell protocol.
+- Cross-process visibility of grant changes depends on the control-plane store's medium-refresh behavior.

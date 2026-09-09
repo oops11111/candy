@@ -8,10 +8,22 @@ import type {} from '@deepseek-ai/dsh-run-scheduler'
 
 export const name = 'audit-api'
 export const inject = ['webServer', 'controlPlaneStore', 'runScheduler']
+/** HTTP path serving the administrator-only retained audit window. */
 export const AUDIT_PATH = '/api/candy/audits'
-export interface Config { publicOrigin: string; auditRetention?: number }
+/** Configuration for the administrator audit-window route. */
+export interface Config {
+  /** Canonical public origin used by the inherited authenticated API envelope. */
+  publicOrigin: string
+  /** Maximum records returned from each bounded audit window. */
+  auditRetention?: number
+}
 export const Config: z<Config> = z.object({ publicOrigin: z.string().required(), auditRetention: z.number().step(1).min(1).default(200) })
 
+/**
+ * Register the administrator-only retained audit-window route.
+ * @param ctx - Candy application context containing the Web and control-plane services.
+ * @param config - Public-origin and bounded-retention settings for the route.
+ */
 export function apply(ctx: Context, config: Config): void {
   const retain = config.auditRetention ?? 200
   const host: ApiHost = {

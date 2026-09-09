@@ -24,6 +24,8 @@
 
 Candy 没有得到第二套文件系统、Shell、沙箱或 Windows 传输。它向现有 DSH 能力实现贡献授权。没有装载 `dsh-workspace-grant-execution` 的组合仍有准入检查，但没有本地根目录强制检查。
 
+生成的能力与 Cordis 目录把 `ctx.workspaceAuthority` 归类为 `dsh-sandbox` 接缝，把 `dsh-workspace-grant-execution` 归类为 Candy 实现，并把继承的文件系统与 Shell 包归类为 Consumer。这样，服务声明发生变化时，所有权边界会默认拒绝漂移。
+
 进程沙箱的读取可见性仍由平台实现负责。本改动约束进程工作目录和文件效应模式，但不解析 Shell 源码，因为命令解析器会成为可绕过的第二套 Shell 策略。更强的进程读取边界需要能在正常启动运行时的同时执行该限制的平台沙箱。
 
 ## 考虑过的替代方案

@@ -165,16 +165,33 @@ export abstract class WorkspaceAuthority extends Service {
     super(ctx, 'workspaceAuthority')
   }
 
-  /** Run one tool dispatch under the calling session's current authority. */
+  /**
+   * Run one tool dispatch under the calling session's current authority.
+   * @param sessionId - The DSH session whose admitted Candy run supplies authority.
+   * @param operation - The executor dispatch to run inside that authority context.
+   * @returns The dispatch result after the authority context has been established.
+   */
   abstract enter<T>(sessionId: SessionId, operation: () => Promise<T>): Promise<T>
 
-  /** Revalidate and authorize one canonical host path immediately before use. */
+  /**
+   * Revalidate and authorize one canonical host path immediately before use.
+   * @param path - The canonical host path the executor is about to use.
+   * @param access - Whether the operation reads from or writes to the path.
+   */
   abstract authorizePath(path: string, access: WorkspaceAccess): Promise<void>
 
-  /** Revalidate and narrow one process policy immediately before foreground execution. */
+  /**
+   * Revalidate and narrow one process policy immediately before foreground execution.
+   * @param policy - The fully resolved process policy requested by the executor.
+   * @returns The policy narrowed to the current durable workspace grant.
+   */
   abstract authorizePolicy(policy: SandboxExecutionPolicy): Promise<SandboxExecutionPolicy>
 
-  /** Narrow one process policy from the authority resolved for the current dispatch. */
+  /**
+   * Narrow one process policy from the authority resolved for the current dispatch.
+   * @param policy - The process policy to constrain without another medium read.
+   * @returns The policy narrowed to the authority already resolved for this dispatch.
+   */
   abstract constrainPolicy(policy: SandboxExecutionPolicy): SandboxExecutionPolicy
 }
 
