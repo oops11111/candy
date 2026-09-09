@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-07-a-trail-that-only-said-a-run-began.md
-2026-09-07-a-trail-that-only-said-a-run-began.md: 3e7f55277b7c1dbd176b657e71c32d92a20cff1f
-2026-09-07-a-trail-that-only-said-a-run-began.zh.md: 181f2bba21c2c2dd0f05ae185367ccb8430fa135
+2026-09-07-a-trail-that-only-said-a-run-began.md: 72ba2f495cdf83704595c25fb20ddfdbd5d6718b
+2026-09-07-a-trail-that-only-said-a-run-began.zh.md: 71d4200ab822a48582b7ee0b2705b3b5787b03d8

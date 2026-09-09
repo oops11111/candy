@@ -26,6 +26,8 @@ The record is written after the charge lands and the run records are deleted, so
 
 `parentRunId` takes no part in `sameEvent`, the fold that collapses a repeated record into a count. It is a property of `runId`, which is already compared: two records naming one run name one parent, and a record naming no run was refused before any lineage was believed.
 
+The terminal record now also carries `spent`: the exact `RunSpend` settlement computed before it charged the funder, including spend absorbed from descendants. The fold compares all three dimensions by value, so two otherwise identical terminal records with different tokens, wall time, or micro-USD cost cannot collapse into one.
+
 The durable declaration moves to version 5. Under the pre-release stance a version 4 medium is not read as one, and the reason is not that its records are the wrong shape — they parse — but that they would answer both new questions wrongly rather than not at all: every run in an old trail reads as parentless, and every run that finished reads as still open.
 
 ## Consequences
@@ -34,9 +36,9 @@ An operator reading `auditsOfTenant` can reconstruct a delegating agent's run tr
 
 The trail is a window, not an archive, and a terminal record per settlement makes it fill roughly twice as fast at the same `auditRetention`. A deployment that reads the trail for recent activity is unaffected; one that wanted history was already being told to ship the records somewhere that is an archive.
 
-What a run cost is still not in the trail. `settledSpent` is computed at settlement and folded into the funder, and the terminal record names the cause without the figure — so "what did this run spend" remains answerable only while the run is open. Recording it means a nested value in a record whose folding compares fields one by one, and it is a separate decision from making an end visible at all.
+What a run cost is now survives settlement in the same terminal record that names why it ended. The durable declaration advances to version 9: a version 8 trail can parse without `spent`, but accepting it as current would silently turn an operator's run-cost query into an absent answer.
 
-A real-composition test in `dsh-run-delegation` pins the delegated case end to end: a real scheduler, a real SQLite-backed store and a real subagent runtime produce a child whose `started` and `settled` records both name the parent's run, against a parent whose own records name none. Four tests in `dsh-run-scheduler` pin each cause, and one pins that a settlement completes when the trail cannot take its record. Mutation checks confirm each: dropping the filing fails five of them, and collapsing the sweep's two causes into one fails the revocation test alone.
+A real-composition test in `dsh-run-delegation` pins the delegated case end to end: a real scheduler, a real SQLite-backed store and a real subagent runtime produce a child whose `started` and `settled` records both name the parent's run, against a parent whose own records name none. Four tests in `dsh-run-scheduler` pin each cause, one pins the final spend, and one pins that a settlement completes when the trail cannot take its record. A store test proves different spend figures do not fold together. Mutation checks confirm the usage seam: removing `spent` from the terminal record makes the focused close test fail.
 
 ## Alternatives considered
 

@@ -188,6 +188,8 @@ const storedAuditRecord = z.object({
   action: z.string(),
   /** `ok`, the reason the step refused, or how a settled run ended. */
   outcome: z.string(),
+  /** Final billable usage, present on a settled run's terminal record. */
+  spent: storedConsumed.optional(),
   /**
    * How many times this record happened, when the same thing happened more
    * than once in a row. Absent means once; `at` is the most recent.
@@ -306,7 +308,9 @@ export const controlPlaneDomainSpec = defineDomain({
   // rejects a unit-version mismatch and can materialize the new table while
   // preserving every account, grant, run, audit and nonce already stored.
   // An older store has no route records, which is the correct fail-closed state.
-  version: 8,
+  // 9 adds final spend to terminal audit records. Reading a version 8 trail as
+  // this version would silently answer a run-cost query with no figure.
+  version: 9,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),

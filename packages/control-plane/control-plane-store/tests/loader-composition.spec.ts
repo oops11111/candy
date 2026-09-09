@@ -629,6 +629,21 @@ describe('a booted control-plane store', () => {
     expect(ctx.controlPlaneStore.auditsOf(subject)).toHaveLength(4)
   })
 
+  it('keeps terminal records with different final spend apart', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const subject = tenantSubject(ALICE)
+    const first: RunAuditRecord = {
+      at: 1, runId: RunId('run-1'), event: 'settled', action: 'settle', outcome: 'closed',
+      spent: { tokens: 1, wallMs: 2, costMicroUsd: 3 },
+    }
+    const second: RunAuditRecord = { ...first, at: 2, spent: { ...first.spent!, tokens: 2 } }
+
+    await ctx.controlPlaneStore.recordAudit(subject, [first, second], 10)
+
+    expect(ctx.controlPlaneStore.auditsOf(subject)).toEqual([first, second])
+  })
+
   it('charges every settlement when they arrive at once', async () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
     const ctx = await boot(root)

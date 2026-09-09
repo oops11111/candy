@@ -101,6 +101,15 @@ function sameEvent(last: RunAuditRecord, record: RunAuditRecord): boolean {
     && last.runId === record.runId
     && last.userId === record.userId
     && last.accountId === record.accountId
+    && sameSpend(last.spent, record.spent)
+}
+
+/** Compare optional terminal usage by value rather than object identity. */
+function sameSpend(left: RunAuditRecord['spent'], right: RunAuditRecord['spent']): boolean {
+  if (left === undefined || right === undefined) return left === right
+  return left.tokens === right.tokens
+    && left.wallMs === right.wallMs
+    && left.costMicroUsd === right.costMicroUsd
 }
 
 declare module '@deepseek-ai/cordis' {

@@ -1046,7 +1046,7 @@ export class RunScheduler extends Service {
     for (const descendant of preview.closed) await store.deleteRun(descendant)
     await store.deleteRun(runId)
     this.remember(marked.sessionId)
-    await this.fileSettlement(marked, cause)
+    await this.fileSettlement(marked, cause, preview.spent)
     // Nothing between the preview and here removed the run, because every write
     // to a run record queues on the chain this call already holds.
     return this.ledger.close(runId)
@@ -1224,8 +1224,9 @@ export class RunScheduler extends Service {
    *
    * @param run - the settled run, read before its record was deleted.
    * @param cause - how the settlement came about, filed as the outcome.
+   * @param spent - final billable usage, including descendants closed with it.
    */
-  private async fileSettlement(run: DurableRunRecord, cause: SettlementCause): Promise<void> {
+  private async fileSettlement(run: DurableRunRecord, cause: SettlementCause, spent: RunSpend): Promise<void> {
     const record: RunAuditRecord = {
       at: Date.now(),
       runId: run.record.runId,
@@ -1235,6 +1236,7 @@ export class RunScheduler extends Service {
       event: 'settled',
       action: 'settle',
       outcome: cause,
+      spent,
     }
     const retain = this.config.auditRetention
     await this.ctx.controlPlaneStore.recordAudit(tenantSubject(run.userId), [record], retain).catch((error: unknown) => {

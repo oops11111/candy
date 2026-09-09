@@ -1554,12 +1554,14 @@ describe('a booted Candy scheduler', () => {
     const now = Date.now()
     await provision(ctx, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
+    await ctx.runScheduler.charge(RunId('run-root'), { tokens: 42, wallMs: 7, costMicroUsd: 900 })
 
     await ctx.runScheduler.close(RunId('run-root'))
 
     expect(ctx.runScheduler.auditsOfTenant(ALICE)).toContainEqual(expect.objectContaining({
       runId: RunId('run-root'), userId: ALICE, accountId: ACCOUNT,
       event: 'settled', action: 'settle', outcome: 'closed',
+      spent: { tokens: 42, wallMs: 7, costMicroUsd: 900 },
     }))
   })
 
