@@ -4487,6 +4487,9 @@ importers:
 
   packages/control-plane/control-plane-store:
     dependencies:
+      '@deepseek-ai/dsh-device-registry':
+        specifier: workspace:^
+        version: link:../device-registry
       '@deepseek-ai/dsh-workspace-grant':
         specifier: workspace:^
         version: link:../workspace-grant

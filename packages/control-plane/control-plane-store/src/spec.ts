@@ -21,6 +21,7 @@ import type { ProviderAccountEntry, ProviderAccountRecord } from '@deepseek-ai/d
 import type { RunBudget, RunSpend } from '@deepseek-ai/dsh-run-budget'
 import type { RunRecord } from '@deepseek-ai/dsh-run-ledger'
 import type { TenantAllowance } from '@deepseek-ai/dsh-tenant-allowance'
+import type { DeviceRecord, PairingCodeRecord } from '@deepseek-ai/dsh-device-registry'
 import type { WorkspaceGrantRecord } from '@deepseek-ai/dsh-workspace-grant'
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
 
@@ -157,6 +158,40 @@ const storedGrantRecord = z.object({
   createdAt: z.number(),
   updatedAt: z.number(),
   revokedAt: z.number().optional(),
+})
+
+/**
+ * One host paired to one tenant.
+ *
+ * Only the digest of the device's token is stored, so a copy of this record
+ * authenticates as nobody. The tenant is written once and never rewritten:
+ * every later check reads it, and moving a device would make one audit trail
+ * describe two machines.
+ */
+const storedDevice = z.object({
+  id: z.string(),
+  userId: z.string(),
+  label: z.string(),
+  tokenDigest: z.string(),
+  pairedAt: z.number(),
+  revokedAt: z.number().optional(),
+})
+
+/**
+ * One invitation for a host to become a device, keyed by the code's digest.
+ *
+ * The record survives its own consumption and names the device it produced.
+ * Refusing the code a second time is then a fact this record states rather
+ * than the absence of a record.
+ */
+const storedPairingCode = z.object({
+  digest: z.string(),
+  userId: z.string(),
+  label: z.string(),
+  issuedAt: z.number(),
+  expiresAt: z.number(),
+  consumedAt: z.number().optional(),
+  deviceId: z.string().optional(),
 })
 
 /**
@@ -316,7 +351,11 @@ export const controlPlaneDomainSpec = defineDomain({
   // this version would silently answer a run-cost query with no figure.
   // 10 records the final provider/model route selected for managed calls.
   // 11 records final tool authorization decisions for managed calls.
-  version: 11,
+  // 12 adds devices and pairing codes. A version 11 store holds neither, and
+  // every workspace grant in it names a device that would now resolve to
+  // nothing — so it is discarded rather than recovered into grants whose
+  // device check has no record to read.
+  version: 12,
   layout: 'per-record',
   tables: {
     accounts: domainTable<ProviderAccountId, z.infer<typeof storedEntry>>(storedEntry),
@@ -324,6 +363,8 @@ export const controlPlaneDomainSpec = defineDomain({
     runs: domainTable<RunId, z.infer<typeof storedRun>>(storedRun),
     audits: domainTable<AuditSubject, z.infer<typeof storedAuditTrail>>(storedAuditTrail),
     grants: domainTable<WorkspaceGrantId, z.infer<typeof storedGrantRecord>>(storedGrantRecord),
+    devices: domainTable<DeviceId, z.infer<typeof storedDevice>>(storedDevice),
+    pairing_codes: domainTable<string, z.infer<typeof storedPairingCode>>(storedPairingCode),
     managed_sessions: domainTable<SessionId, z.infer<typeof storedManagedSession>>(storedManagedSession),
     spent_nonces: domainTable<string, z.infer<typeof storedReplayNonce>>(storedReplayNonce),
     tenant_routes: domainTable<UserId, z.infer<typeof storedTenantRoutePolicy>>(storedTenantRoutePolicy),
@@ -698,5 +739,78 @@ export function fromStoredGrantRecord(stored: StoredWorkspaceGrant): WorkspaceGr
     createdAt: stored.createdAt,
     updatedAt: stored.updatedAt,
     revokedAt: stored.revokedAt,
+  }
+}
+
+
+/** The stored device form, for a caller writing one. */
+export type StoredDevice = z.infer<typeof storedDevice>
+
+/** The stored pairing-code form, for a caller writing one. */
+export type StoredPairingCode = z.infer<typeof storedPairingCode>
+
+/**
+ * Project one device onto the medium.
+ * @param record - the runtime device.
+ * @returns the stored form, with an absent revocation omitted.
+ */
+export function toStoredDevice(record: DeviceRecord): StoredDevice {
+  return {
+    id: record.id,
+    userId: record.userId,
+    label: record.label,
+    tokenDigest: record.tokenDigest,
+    pairedAt: record.pairedAt,
+    ...present('revokedAt', record.revokedAt),
+  }
+}
+
+/**
+ * Rebuild one device from the medium.
+ * @param stored - the validated stored device.
+ * @returns the runtime device, with its ids branded.
+ */
+export function fromStoredDevice(stored: StoredDevice): DeviceRecord {
+  return {
+    id: DeviceId(stored.id),
+    userId: UserId(stored.userId),
+    label: stored.label,
+    tokenDigest: stored.tokenDigest,
+    pairedAt: stored.pairedAt,
+    revokedAt: stored.revokedAt,
+  }
+}
+
+/**
+ * Project one pairing code onto the medium.
+ * @param record - the runtime pairing code.
+ * @returns the stored form, with an outstanding code's absent fields omitted.
+ */
+export function toStoredPairingCode(record: PairingCodeRecord): StoredPairingCode {
+  return {
+    digest: record.digest,
+    userId: record.userId,
+    label: record.label,
+    issuedAt: record.issuedAt,
+    expiresAt: record.expiresAt,
+    ...present('consumedAt', record.consumedAt),
+    ...present('deviceId', record.deviceId),
+  }
+}
+
+/**
+ * Rebuild one pairing code from the medium.
+ * @param stored - the validated stored pairing code.
+ * @returns the runtime pairing code, with its ids branded.
+ */
+export function fromStoredPairingCode(stored: StoredPairingCode): PairingCodeRecord {
+  return {
+    digest: stored.digest,
+    userId: UserId(stored.userId),
+    label: stored.label,
+    issuedAt: stored.issuedAt,
+    expiresAt: stored.expiresAt,
+    consumedAt: stored.consumedAt,
+    deviceId: stored.deviceId === undefined ? undefined : DeviceId(stored.deviceId),
   }
 }

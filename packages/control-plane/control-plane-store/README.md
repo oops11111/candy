@@ -11,9 +11,9 @@ English | [中文](README.zh.md)
 
 [`dsh-provider-accounts`](../provider-accounts/README.md) defines its account store as a port, and [`dsh-run-admission`](../run-admission/README.md) requires a credential lookup and a budget lookup as ports. Every one of them was a parameter no deployment could fill, because nothing in the repository held the data.
 
-This service holds it: revocable OAuth-backed user sessions, provider accounts with their sealed credentials, each tenant's allowance and exact model-route policy, the workspace grants a device issued, one record per live run, and a trail of what each tenant's runs did, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
+This service holds it: revocable OAuth-backed user sessions, provider accounts with their sealed credentials, each tenant's allowance and exact model-route policy, the devices a tenant paired and the codes that paired them, the workspace grants a device issued, one record per live run, and a trail of what each tenant's runs did, in one [storage domain](../../../docs/subsystems/storage.md) over the SQLite backend. A restart keeps them, which is the whole point.
 
-It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once. Session ownership is written before each run and retained after settlement; `isManagedSession` identifies these sessions for their runtime without a live run. Domain version 11 rejects older records; upgrading an existing deployment requires a separately verified data transition. Terminal audit records retain final usage, routed-call records retain the selected provider/model pair, and tool records retain final authorization outcomes without arguments or reasons. Ownership records have no automatic expiry.
+It is not the ledger. `RunLedger` stays the accounting authority and answers what a run may still spend; what lives here is the record that survives a restart, and the two markers that let an interrupted settlement be finished exactly once. Session ownership is written before each run and retained after settlement; `isManagedSession` identifies these sessions for their runtime without a live run. Domain version 12 rejects older records; upgrading an existing deployment requires a separately verified data transition. Terminal audit records retain final usage, routed-call records retain the selected provider/model pair, and tool records retain final authorization outcomes without arguments or reasons. Ownership records have no automatic expiry.
 
 `createUserSession` returns an independent 256-bit bearer and CSRF token once and stores only their SHA-256 digests with the Candy user, Candy-assigned role, verified OAuth issuer/subject, and expiry. `authenticateUserSession` derives identity and role only from the active bearer record; `verifyUserSessionCsrf` separately proves that a state-changing request repeated the readable same-site token. Unknown, expired, and revoked bearers return no identity, and revocation also rejects the CSRF token across restart.
 
@@ -151,6 +151,14 @@ Every stage past the assertion works from verified claims, so its record names t
 
 An execution assertion names a workspace grant by id, and the record is the authority behind it. A deleted record reads as a grant that was never issued, which is a different fact from one that was withdrawn — and the run refused for it should say `revoked`, because that is what an operator investigating the refusal needs. [`dsh-workspace-grant`](../workspace-grant/README.md) reads `revokedAt` and nothing else to decide which.
 
+### Why a pairing code is claimed rather than read and written
+
+A code is single-use, and two hosts exchanging one both read it outstanding. `claimPairingCode` therefore decides consumption and expiry in one compare/exchange — the same mechanism `spendNonce` uses, and for the same reason: only the exchange can tell the two apart, and it has to hold across processes and restarts, not just within this one's queue.
+
+### Why a token lookup re-reads the medium
+
+The snapshot narrows the scan to one candidate; the answer comes from `getCurrent`. A device another process revoked is still standing in this one's snapshot, and authenticating from it would admit a binding the tenant has already withdrawn. A record replaced under the same id no longer presents that digest, so the stale snapshot resolves to nobody rather than to its successor.
+
 ### Why a run record names its account
 
 A child run inherits a subset of its parent's grants, and tenant and account are the two a runtime can decide: the parent held exactly one of each. `findRun` is what `dsh-run-admission` checks a child's claimed identity against, and this record is where the parent's is written down.
@@ -193,6 +201,8 @@ These are current package constraints, not a task backlog.
 - **A restart ends every run it recovers** — a record this runtime wrote is a run it was driving, and the process that drove it is gone, so `dsh-run-scheduler` settles what it finds rather than resuming it. Nothing here can tell a crashed run from one whose provider is somehow still alive.
 - **Recovery repairs one damage shape, not every one** — a record naming a parent the store does not hold is settled against its own tenant and cleared, because recovery settles every root it restores anyway. Damage this does not name — a record that fails its schema, a tenant allowance that is gone — still fails the boot, and there is no repair path for those.
 - **One runtime per audience** — `runsOf` partitions by the runtime stamp, so two processes sharing an audience recover each other's records. An assertion is audience-bound already, so this is a deployment rule rather than a check made here.
+- **Nothing evicts a spent pairing code** — consumed and expired records stay in `pairing_codes`, unlike `spent_nonces`, which `evictNonces` sweeps. A deployment issuing codes continuously grows that table.
+- **Device and pairing reads are process-local snapshots, except the token lookup** — `findDevice` and the two list operations answer from this process's snapshot, so a device another process paired or revoked is not visible until this one restarts. `findDeviceByTokenDigest` and `claimPairingCode` reach the medium, because authenticating a withdrawn binding and pairing one code twice are the two failures that must not happen.
 - **A run's grants are its tenant and account** — the record carries what a child can be checked against. A workspace grant is not among them: narrowing one is legitimate and nothing here models containment.
 - **`runsOfSession` scans** — the domain keeps every run record in memory and this filters them, which is right at a runtime's live-run count and would not be at a fleet's.
 - **Read-modify-writes are serialized store-wide** — a slow medium therefore orders a charge for one tenant behind an audit append for another. The alternative is per-record chains, which nothing yet needs.

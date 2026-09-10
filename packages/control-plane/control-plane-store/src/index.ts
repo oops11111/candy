@@ -18,7 +18,7 @@
 
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { Service, type Context } from '@deepseek-ai/cordis'
-import { UserId, UserSessionId, type ControlPlaneRole, type OAuthIdentity, type ProviderAccountId, type RunId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import { UserId, UserSessionId, type ControlPlaneRole, type DeviceId, type OAuthIdentity, type ProviderAccountId, type RunId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { CredentialEnvelope } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry, ProviderAccountRecord, ProviderAccountStore } from '@deepseek-ai/dsh-provider-accounts'
@@ -27,23 +27,30 @@ import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assert
 import { replayKey } from '@deepseek-ai/dsh-run-replay'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { consumeAllowance, openAllowance, type TenantAllowance } from '@deepseek-ai/dsh-tenant-allowance'
+import type { DeviceRecord, DeviceRegistryStore, PairingCodeRecord } from '@deepseek-ai/dsh-device-registry'
 import type { WorkspaceGrantRecord, WorkspaceGrantStore } from '@deepseek-ai/dsh-workspace-grant'
 import {
   controlPlaneDomainSpec,
   fromStoredAllowance,
+  fromStoredDevice,
   fromStoredEntry,
   fromStoredGrantRecord,
+  fromStoredPairingCode,
   fromStoredRecord,
   fromStoredRun,
   fromStoredUserSession,
   toStoredAllowance,
+  toStoredDevice,
   toStoredEntry,
   toStoredGrant,
+  toStoredPairingCode,
   toStoredRun,
   type AuditSubject,
   type DurableRunRecord,
   type RunAuditRecord,
   type StoredAuditTrail,
+  type StoredDevice,
+  type StoredPairingCode,
   type StoredRun,
   type StoredTenantAllowance,
   type StoredTenantRoutePolicy,
@@ -56,7 +63,7 @@ import {
 } from './spec.ts'
 
 export { controlPlaneDomainSpec, runtimeSubject, tenantSubject } from './spec.ts'
-export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredRun, StoredTenantAllowance, StoredTenantRoutePolicy, StoredWorkspaceGrant, TenantModelRoute, UserSessionRecord } from './spec.ts'
+export type { AuditSubject, DurableRunRecord, RunAuditRecord, StoredAuditTrail, StoredDevice, StoredPairingCode, StoredRun, StoredTenantAllowance, StoredTenantRoutePolicy, StoredWorkspaceGrant, TenantModelRoute, UserSessionRecord } from './spec.ts'
 
 /**
  * Add one record to a trail, folding it into the last when it says the same
@@ -128,7 +135,7 @@ declare module '@deepseek-ai/cordis' {
  * the medium before memory, so a read never sees a record the medium does not
  * hold.
  */
-export class ControlPlaneStore extends Service implements ProviderAccountStore, WorkspaceGrantStore {
+export class ControlPlaneStore extends Service implements DeviceRegistryStore, ProviderAccountStore, WorkspaceGrantStore {
   static inject = ['storageDomain']
 
   // Assigned by `Service.init`, which Cordis awaits before the service is
@@ -150,6 +157,8 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
   private runs!: KvTable<RunId, StoredRun>
   private audits!: KvTable<AuditSubject, StoredAuditTrail>
   private grants!: KvTable<WorkspaceGrantId, StoredWorkspaceGrant>
+  private devices!: KvTable<DeviceId, StoredDevice>
+  private pairingCodes!: KvTable<string, StoredPairingCode>
   private managedSessions!: KvTable<SessionId, { runtime: string }>
   private spentNonces!: KvTable<string, { expiresAt: number }>
   private tenantRoutes!: KvTable<UserId, StoredTenantRoutePolicy>
@@ -170,6 +179,8 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
     this.runs = domain.table('runs')
     this.audits = domain.table('audits')
     this.grants = domain.table('grants')
+    this.devices = domain.table('devices')
+    this.pairingCodes = domain.table('pairing_codes')
     this.managedSessions = domain.table('managed_sessions')
     this.spentNonces = domain.table('spent_nonces')
     this.tenantRoutes = domain.table('tenant_routes')
@@ -842,6 +853,125 @@ export class ControlPlaneStore extends Service implements ProviderAccountStore, 
    */
   async saveGrant(record: WorkspaceGrantRecord): Promise<void> {
     await this.grants.put(record.id, toStoredGrant(record))
+  }
+
+  /**
+   * Read one device by the id an assertion names.
+   * @param id - the device id.
+   * @returns the device, or `undefined` when nothing resolves the id.
+   */
+  findDevice(id: DeviceId): Promise<DeviceRecord | undefined> {
+    const stored = this.devices.get(id)
+    return Promise.resolve(stored === undefined ? undefined : fromStoredDevice(stored))
+  }
+
+  /**
+   * Read one tenant's devices, revoked ones included.
+   * @param userId - the tenant.
+   * @returns their devices, in no defined order.
+   */
+  listDevicesOfUser(userId: UserId): Promise<readonly DeviceRecord[]> {
+    const records: DeviceRecord[] = []
+    for (const [, stored] of this.devices.entries()) {
+      if (stored.userId === userId) records.push(fromStoredDevice(stored))
+    }
+    return Promise.resolve(records)
+  }
+
+  /**
+   * Read the device presenting one token digest.
+   *
+   * The snapshot narrows the scan to one candidate and the medium is then
+   * re-read, for the reason {@link authenticateUserSession} re-reads: a device
+   * another process revoked is still in this one's snapshot, and answering
+   * from it would authenticate a binding that no longer exists.
+   * @param tokenDigest - the digest of the presented token.
+   * @returns the device, or `undefined` when none holds that digest.
+   */
+  async findDeviceByTokenDigest(tokenDigest: string): Promise<DeviceRecord | undefined> {
+    for (const [id, snapshot] of this.devices.entries()) {
+      if (snapshot.tokenDigest !== tokenDigest) continue
+      const stored = await this.devices.getCurrent(id)
+      if (stored === undefined || stored.tokenDigest !== tokenDigest) return undefined
+      return fromStoredDevice(stored)
+    }
+    return undefined
+  }
+
+  /**
+   * Write one device, replacing any record under the same id.
+   * @param record - the device to store.
+   * @returns resolution once the medium holds it.
+   */
+  async saveDevice(record: DeviceRecord): Promise<void> {
+    await this.devices.put(record.id, toStoredDevice(record))
+  }
+
+  /**
+   * Read one pairing code by digest, consumed and expired ones included.
+   * @param digest - the normalized code's digest.
+   * @returns the code, or `undefined` when nothing resolves the digest.
+   */
+  findPairingCode(digest: string): Promise<PairingCodeRecord | undefined> {
+    const stored = this.pairingCodes.get(digest)
+    return Promise.resolve(stored === undefined ? undefined : fromStoredPairingCode(stored))
+  }
+
+  /**
+   * Read one tenant's pairing codes, consumed and expired ones included.
+   * @param userId - the tenant.
+   * @returns their codes, in no defined order.
+   */
+  listPairingCodesOfUser(userId: UserId): Promise<readonly PairingCodeRecord[]> {
+    const records: PairingCodeRecord[] = []
+    for (const [, stored] of this.pairingCodes.entries()) {
+      if (stored.userId === userId) records.push(fromStoredPairingCode(stored))
+    }
+    return Promise.resolve(records)
+  }
+
+  /**
+   * Write one pairing code, replacing any record under the same digest.
+   * @param record - the code to store.
+   * @returns resolution once the medium holds it.
+   */
+  async savePairingCode(record: PairingCodeRecord): Promise<void> {
+    await this.pairingCodes.put(record.digest, toStoredPairingCode(record))
+  }
+
+  /**
+   * Mark one outstanding, unexpired code consumed by one device, indivisibly.
+   *
+   * The compare/exchange is what makes a code single-use across processes and
+   * restarts, the same mechanism {@link spendNonce} uses: two hosts exchanging
+   * one code both read it outstanding, and only the exchange can tell them
+   * apart. A failed exchange returns the medium's current value, so each retry
+   * decides against what is there rather than this process's snapshot.
+   * @param digest - the normalized code's digest.
+   * @param deviceId - the device the claiming host becomes.
+   * @param at - epoch milliseconds of the exchange, also the expiry boundary.
+   * @returns the record as it stood before the claim, or `undefined` when the
+   * code was already consumed, expired or absent.
+   */
+  async claimPairingCode(
+    digest: string,
+    deviceId: DeviceId,
+    at: number,
+  ): Promise<PairingCodeRecord | undefined> {
+    let expected = this.pairingCodes.get(digest)
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      if (expected === undefined || expected.consumedAt !== undefined || expected.expiresAt <= at) {
+        return undefined
+      }
+      const replacement: StoredPairingCode = { ...expected, consumedAt: at, deviceId }
+      const result = await this.pairingCodes.compareExchange(digest, expected, replacement)
+      if (result.exchanged) return fromStoredPairingCode(expected)
+      expected = result.current
+    }
+    // Reached only if another runtime wins the same code on eight consecutive
+    // exchanges; refusing keeps a contended code from pairing two hosts.
+    /* v8 ignore next -- sustained cross-process contention cannot be scheduled deterministically. */
+    return undefined
   }
 
   /** Queue one read-modify-write, so no other reads the record it is about to replace. */

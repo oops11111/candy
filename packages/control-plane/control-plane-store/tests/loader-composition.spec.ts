@@ -26,6 +26,7 @@ import {
 } from '@deepseek-ai/dsh-credential-vault'
 import type { ProviderAccountEntry } from '@deepseek-ai/dsh-provider-accounts'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
+import { deviceTokenDigest, pairingCodeDigest, type DeviceRecord, type PairingCodeRecord } from '@deepseek-ai/dsh-device-registry'
 import type { WorkspaceGrantRecord } from '@deepseek-ai/dsh-workspace-grant'
 import type { ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -812,5 +813,156 @@ describe('a booted control-plane store', () => {
     expect(await second.controlPlaneStore.findGrant(WorkspaceGrantId('grant-2')))
       .toMatchObject({ roots: [], mode: 'read-only', revokedAt: NOW + 1 })
     expect(await second.controlPlaneStore.findGrant(WorkspaceGrantId('grant-9'))).toBeUndefined()
+  })
+
+  it('keeps a device, and its revocation, across a restart', async () => {
+    // A binding that did not survive the process would let a revoked device
+    // come back as never-paired, and every assertion naming a live one resolve
+    // to nothing at boot.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+    const paired: DeviceRecord = {
+      id: DEVICE,
+      userId: ALICE,
+      label: 'Studio desktop',
+      tokenDigest: deviceTokenDigest('device-token'),
+      pairedAt: NOW,
+      revokedAt: undefined,
+    }
+    await first.controlPlaneStore.saveDevice(paired)
+    await first.controlPlaneStore.saveDevice({
+      ...paired, id: DeviceId('device-2'), label: 'Retired laptop',
+      tokenDigest: deviceTokenDigest('retired-token'), revokedAt: NOW + 1,
+    })
+    await first.controlPlaneStore.saveDevice({
+      ...paired, id: DeviceId('device-3'), userId: BOBBY,
+      tokenDigest: deviceTokenDigest('bobby-token'),
+    })
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    expect(await second.controlPlaneStore.findDevice(DEVICE)).toEqual(paired)
+    expect(await second.controlPlaneStore.findDevice(DeviceId('device-2')))
+      .toMatchObject({ label: 'Retired laptop', revokedAt: NOW + 1 })
+    expect(await second.controlPlaneStore.findDevice(DeviceId('device-9'))).toBeUndefined()
+    // A tenant reads their own devices and nobody else's.
+    expect((await second.controlPlaneStore.listDevicesOfUser(ALICE)).map(one => one.id))
+      .toEqual([DEVICE, DeviceId('device-2')])
+    expect((await second.controlPlaneStore.listDevicesOfUser(BOBBY)).map(one => one.id))
+      .toEqual([DeviceId('device-3')])
+  })
+
+  it('identifies a device by its token digest, reading the medium rather than its snapshot', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const reader = await boot(root)
+    const paired: DeviceRecord = {
+      id: DEVICE,
+      userId: ALICE,
+      label: 'Studio desktop',
+      tokenDigest: deviceTokenDigest('device-token'),
+      pairedAt: NOW,
+      revokedAt: undefined,
+    }
+    await reader.controlPlaneStore.saveDevice(paired)
+
+    const other = await boot(root)
+    try {
+      expect(await reader.controlPlaneStore.findDeviceByTokenDigest(deviceTokenDigest('device-token')))
+        .toEqual(paired)
+      expect(await reader.controlPlaneStore.findDeviceByTokenDigest(deviceTokenDigest('other-token')))
+        .toBeUndefined()
+
+      // The reader's snapshot still shows a standing binding; only the medium
+      // knows the tenant revoked it, and authenticating from the snapshot
+      // would admit a device that no longer exists.
+      await other.controlPlaneStore.saveDevice({ ...paired, revokedAt: NOW + 1 })
+      expect(await reader.controlPlaneStore.findDeviceByTokenDigest(deviceTokenDigest('device-token')))
+        .toMatchObject({ revokedAt: NOW + 1 })
+
+      // A record replaced under the same id no longer presents that digest,
+      // so the stale snapshot resolves to nobody rather than to the successor.
+      await other.controlPlaneStore.saveDevice({ ...paired, tokenDigest: deviceTokenDigest('replaced') })
+      expect(await reader.controlPlaneStore.findDeviceByTokenDigest(deviceTokenDigest('device-token')))
+        .toBeUndefined()
+    } finally {
+      await other.fiber.dispose()
+    }
+  })
+
+  it('keeps a pairing code and what it produced across a restart', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const first = await boot(root)
+    const code: PairingCodeRecord = {
+      digest: pairingCodeDigest('RJKM-4T7Q'),
+      userId: ALICE,
+      label: 'Studio desktop',
+      issuedAt: NOW,
+      expiresAt: NOW + 900_000,
+      consumedAt: undefined,
+      deviceId: undefined,
+    }
+    await first.controlPlaneStore.savePairingCode(code)
+    await first.controlPlaneStore.savePairingCode({
+      ...code, digest: pairingCodeDigest('BOBB-9999'), userId: BOBBY,
+    })
+
+    expect(await first.controlPlaneStore.claimPairingCode(code.digest, DEVICE, NOW + 60_000))
+      .toEqual(code)
+    await first.fiber.dispose()
+    context = undefined
+
+    const second = await boot(root)
+
+    // The record survives its own consumption and names the device it made.
+    expect(await second.controlPlaneStore.findPairingCode(code.digest))
+      .toMatchObject({ consumedAt: NOW + 60_000, deviceId: DEVICE })
+    expect(await second.controlPlaneStore.findPairingCode(pairingCodeDigest('NEVER'))).toBeUndefined()
+    expect((await second.controlPlaneStore.listPairingCodesOfUser(ALICE)).map(one => one.label))
+      .toEqual(['Studio desktop'])
+    expect((await second.controlPlaneStore.listPairingCodesOfUser(BOBBY))).toHaveLength(1)
+  })
+
+  it('refuses a claim on a code that is spent, expired or absent', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const ctx = await boot(root)
+    const digest = pairingCodeDigest('RJKM-4T7Q')
+    await ctx.controlPlaneStore.savePairingCode({
+      digest, userId: ALICE, label: 'Studio desktop',
+      issuedAt: NOW, expiresAt: NOW + 10, consumedAt: undefined, deviceId: undefined,
+    })
+
+    expect(await ctx.controlPlaneStore.claimPairingCode(pairingCodeDigest('NEVER'), DEVICE, NOW))
+      .toBeUndefined()
+    expect(await ctx.controlPlaneStore.claimPairingCode(digest, DEVICE, NOW + 10)).toBeUndefined()
+    expect(await ctx.controlPlaneStore.claimPairingCode(digest, DEVICE, NOW + 5))
+      .toMatchObject({ userId: ALICE })
+    expect(await ctx.controlPlaneStore.claimPairingCode(digest, DeviceId('device-2'), NOW + 6))
+      .toBeUndefined()
+  })
+
+  it('pairs one host when two runtimes claim one code', async () => {
+    // Both runtimes open before either writes, so the loser's own view still
+    // shows the code outstanding; only the refused exchange reports the truth.
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const loser = await boot(root)
+    const digest = pairingCodeDigest('RJKM-4T7Q')
+    await loser.controlPlaneStore.savePairingCode({
+      digest, userId: ALICE, label: 'Studio desktop',
+      issuedAt: NOW, expiresAt: NOW + 900_000, consumedAt: undefined, deviceId: undefined,
+    })
+    const winner = await boot(root)
+
+    try {
+      expect(await winner.controlPlaneStore.claimPairingCode(digest, DEVICE, NOW + 1))
+        .toMatchObject({ userId: ALICE, consumedAt: undefined })
+      expect(await loser.controlPlaneStore.claimPairingCode(digest, DeviceId('device-2'), NOW + 1))
+        .toBeUndefined()
+      expect(await loser.controlPlaneStore.findPairingCode(digest))
+        .toMatchObject({ deviceId: DEVICE })
+    } finally {
+      await loser.fiber.dispose()
+    }
   })
 })

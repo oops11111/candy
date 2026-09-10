@@ -12,6 +12,7 @@
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
     { "path": "../control-plane" },
+    { "path": "../device-registry" },
     { "path": "../credential-vault" },
     { "path": "../provider-accounts" },
     { "path": "../../util/brand" },
