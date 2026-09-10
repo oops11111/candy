@@ -40,6 +40,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/control-plane/run-admission': 'The package only decides whether a run may start; nothing it produces reaches a model request.',
   'packages/control-plane/run-budget': 'The package only does arithmetic over allowances; nothing it produces reaches a model request.',
   'packages/control-plane/workspace-grant': 'The package only decides whether a run may hold a filesystem grant; nothing it produces reaches a model request.',
+  'packages/control-plane/device-registry': 'The package only decides which tenant a device is bound to; nothing it produces reaches a model request.',
   'packages/control-plane/oauth-sign-in-web': 'The package only mounts sign-in routes and enrolls an administrator; nothing it produces reaches a model request.',
   'packages/control-plane/control-plane-api': 'The package only authenticates and authorizes management requests; nothing it produces reaches a model request.',
   'packages/control-plane/provider-account-api': 'The package only manages stored account records and sealed credentials; nothing it produces reaches a model request.',

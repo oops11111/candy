@@ -32,6 +32,7 @@ control-plane 组提供共享且互不可替换的身份，以及使用这些身
 | [`credential-vault`](credential-vault/README.zh.md) | 封装租户的提供方账户密钥、轮换其密钥、吊销它,并记录每一次访问 |
 | [`provider-accounts`](provider-accounts/README.zh.md) | 拥有租户提供方账户元数据、加密凭据生命周期、默认选择与不含密钥的账户视图 |
 | [`run-budget`](run-budget/README.zh.md) | 通过让每个子运行的额度从父运行那里扣除，为委派树的 token、时间、金额与并发设界 |
+| [`device-registry`](device-registry/README.zh.md) | 签发一次性配对码,把它一次性兑换成终身绑定该租户的设备,并回答该绑定是否仍然成立 |
 | [`workspace-grant`](workspace-grant/README.zh.md) | 把断言所指名的工作区授权 id 解析成一次运行所持有的根目录与文件效应上限,并拒绝指名了任何其他授权的子代 |
 | [`workspace-grant-execution`](workspace-grant-execution/README.zh.md) | 在继承的文件系统与 shell 执行器处重新校验持久授权，包括规范链接包含关系与撤销状态 |
 | [`provider-credential-checks`](provider-credential-checks/README.zh.md) | 提供方集成用来说出一份已存储凭据是否仍然有效的注册表 |

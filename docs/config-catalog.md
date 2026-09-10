@@ -3735,6 +3735,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-control-plane-api` ([`packages/control-plane/control-plane-api/src/index.ts`](../packages/control-plane/control-plane-api/src/index.ts))
 - `@deepseek-ai/dsh-credential-vault` ([`packages/control-plane/credential-vault/src/index.ts`](../packages/control-plane/credential-vault/src/index.ts))
 - `@deepseek-ai/dsh-deque` ([`packages/util/deque/src/index.ts`](../packages/util/deque/src/index.ts))
+- `@deepseek-ai/dsh-device-registry` ([`packages/control-plane/device-registry/src/index.ts`](../packages/control-plane/device-registry/src/index.ts))
 - `@deepseek-ai/dsh-execution-assertion` ([`packages/control-plane/execution-assertion/src/index.ts`](../packages/control-plane/execution-assertion/src/index.ts))
 - `@deepseek-ai/dsh-experimental-agent-team-profile` ([`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts))
 - `@deepseek-ai/dsh-experimental-agent-team-web-profile` ([`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts))
