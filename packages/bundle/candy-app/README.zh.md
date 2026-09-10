@@ -80,6 +80,10 @@ kind: "package-bundle"
 
 API 封存凭据，运行时打开它。用运行时打不开的版本封存的凭据，是一个租户配置了却没有任何运行能使用的账户，而两者之间没有任何东西会报告这件事。一个变量同时喂给两行。
 
+### 为什么设备兑换不需要会话
+
+其他每条管理路由都在浏览器会话上作答。而完成配对兑换的 Harness Host 没有浏览器,此前也还不是任何人:它请求体中的配对码就是它声明的全部,而绑定它的租户正是签发那个配对码的租户。该行挂载它时使用的是不交出 `Actor` 的注册方式,因此"持有 `Actor` 即意味着已认证会话"这条规则并未被放宽以容纳它。
+
 ### 为什么这一层不带任何字面量
 
 写死了来源、issuer 或数据库路径的 bundle，是一个必须先编辑才能运行的 bundle，而被编辑过的 bundle 就不再是被测试过的那个产物。读取环境使发布的层在每次安装中保持一致，也使部署的密钥不落入一个因其他原因而被读取的文件。
@@ -96,6 +100,7 @@ API 封存凭据，运行时打开它。用运行时打不开的版本封存的�
 - [`dsh-run-scheduler`](../../control-plane/run-scheduler/README.zh.md) —— 准入、出资并结算一次运行的组件。
 - [`dsh-oauth-sign-in-web`](../../control-plane/oauth-sign-in-web/README.zh.md) —— 登录路由与管理员引导。
 - [`dsh-provider-account-api`](../../control-plane/provider-account-api/README.zh.md) —— 页面驱动的六个账户操作。
+- [`dsh-device-api`](../../control-plane/device-api/README.zh.md) —— 租户的设备配对,以及主机不带会话完成的兑换。
 
 -----
 

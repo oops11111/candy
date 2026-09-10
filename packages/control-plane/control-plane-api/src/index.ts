@@ -10,6 +10,14 @@
  * {@link Actor}, and the only way to obtain one is to have presented a session
  * cookie the store authenticated.
  *
+ * One kind of caller has no browser session to present: a Harness Host
+ * exchanging a pairing code has not been anyone yet, and the code in its body
+ * is the whole of its claim. {@link registerAnonymousRoute} serves that case
+ * without weakening the sentence above — such a route receives no
+ * {@link Actor} at all, so the only way to hold one is still a session the
+ * store authenticated, and a handler that needs an identity derives one from
+ * the credential it was given.
+ *
  * It also owns the failure vocabulary, because the failures are where a
  * management API leaks. A record belonging to another tenant answers exactly
  * as a record that does not exist; a refusal names the step and never the
@@ -58,6 +66,16 @@ export interface ApiHost {
   readonly audit: (event: ApiAuditEvent) => Promise<void>
   /** Reports a refusal the envelope decided, for the deployment's own log. */
   readonly log?: (rejection: ApiRejection, path: string) => void
+  /**
+   * Reports the error behind a `handler-failed`, for the deployment's own log.
+   *
+   * The envelope answers the request and returns rather than rethrowing: the
+   * Harness Host web server destroys a response whose handler rejects after
+   * its headers are sent, which replaces the decided `500` with a hang-up the
+   * caller cannot tell from a crash. The error still has to reach somebody,
+   * and this is who.
+   */
+  readonly report?: (error: unknown, path: string) => void
 }
 
 /** One management route's own policy and handler. */
@@ -83,6 +101,32 @@ export interface ApiRoute {
     body: unknown,
     request: IncomingMessage,
   ) => ApiResult | Promise<ApiResult>
+}
+
+/**
+ * One route whose caller carries its own credential rather than a session.
+ *
+ * There is no `role`, because there is nobody to have one yet. The handler is
+ * given the body and the request and establishes whatever identity the
+ * credential in them proves, which is why this cannot be a variant of
+ * {@link ApiRoute}: an `Actor` is session-derived by construction and this
+ * caller has no session.
+ */
+export interface AnonymousApiRoute {
+  /** Absolute pathname, no trailing slash. */
+  readonly path: string
+  /** Methods this route serves; anything else is refused before the body is read. */
+  readonly methods: readonly string[]
+  /** This route's own body cap. @default DEFAULT_MAX_BODY_BYTES */
+  readonly maxBodyBytes?: number
+  /** The operation name reported to the deployment's log on a refusal. */
+  readonly action: string
+  /**
+   * The operation, run for any caller that addressed this deployment.
+   * @param body - the parsed JSON body, or `undefined` for a bodyless method.
+   * @param request - the raw request, for a route that reads its own headers.
+   */
+  readonly handle: (body: unknown, request: IncomingMessage) => ApiResult | Promise<ApiResult>
 }
 
 /** Status and text for each refusal the envelope decides. */
@@ -308,10 +352,11 @@ export function registerApiRoute(server: ApiWebServer, host: ApiHost, route: Api
         // A handler that throws is a defect or a dependency that failed, and
         // either way its message is the deployment's to read and never the
         // caller's: it carries whatever the failing operation was holding.
+        host.report?.(error, route.path)
         host.log?.('handler-failed', route.path)
         await host.audit({ userId: actor.userId, action: route.action, outcome: 'handler-failed' })
         reply(response, REJECTIONS['handler-failed'].status, REJECTIONS['handler-failed'].text)
-        throw error
+        return
       }
       send(response, result)
       await host.audit({
@@ -319,6 +364,84 @@ export function registerApiRoute(server: ApiWebServer, host: ApiHost, route: Api
         action: route.action,
         outcome: result.kind === 'json' || result.kind === 'empty' ? 'ok' : result.kind,
       })
+    },
+  })
+}
+
+/**
+ * Register one route whose caller proves itself with a credential it carries.
+ *
+ * The origin check is by `Host` only. Requiring an `Origin` header, as a
+ * session write does, would refuse every caller that is not a browser, and
+ * this route exists for one that is not; the protection a matching `Origin`
+ * gives a session write is against a cookie the browser attaches by itself,
+ * and there is no cookie here. A page that forges this request must already
+ * hold the credential, and cannot read the reply — no response of this
+ * deployment carries a cross-origin allowance.
+ *
+ * Nothing is filed against a tenant here. The handler learns whose request
+ * this is only by resolving the credential, so recording the attempt is its
+ * own to do, once it knows a tenant to file it against.
+ *
+ * @param server - the Harness Host route registry.
+ * @param host - the origin and audit sink shared with the session routes.
+ * @param route - this route's path, methods and handler.
+ * @returns the disposer removing the route.
+ */
+export function registerAnonymousRoute(
+  server: ApiWebServer,
+  host: ApiHost,
+  route: AnonymousApiRoute,
+): () => void {
+  const origin = new URL(host.publicOrigin)
+  const limit = route.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
+  return server.register({
+    kind: 'exact',
+    path: route.path,
+    handler: async (request, response) => {
+      const method = (request.method ?? 'GET').toUpperCase()
+      if (!addressesThisDeployment(request, origin, false)) {
+        reply(response, REJECTIONS['untrusted-origin'].status, REJECTIONS['untrusted-origin'].text)
+        host.log?.('untrusted-origin', route.path)
+        return
+      }
+      if (!route.methods.includes(method)) {
+        reply(response, REJECTIONS['method-not-allowed'].status, REJECTIONS['method-not-allowed'].text)
+        host.log?.('method-not-allowed', route.path)
+        return
+      }
+      let body: unknown
+      if (!SAFE_METHODS.has(method)) {
+        const text = await readBody(request, limit)
+        if (text === undefined) {
+          reply(response, REJECTIONS['body-too-large'].status, REJECTIONS['body-too-large'].text)
+          host.log?.('body-too-large', route.path)
+          // Answered first, then the unread remainder is dropped.
+          request.destroy()
+          return
+        }
+        if (text !== '') {
+          try {
+            body = JSON.parse(text)
+          } catch {
+            reply(response, REJECTIONS['malformed-body'].status, REJECTIONS['malformed-body'].text)
+            host.log?.('malformed-body', route.path)
+            return
+          }
+        }
+      }
+      let result: ApiResult
+      try {
+        result = await route.handle(body, request)
+      } catch (error) {
+        // The message is the deployment's to read and never the caller's: it
+        // carries whatever the failing operation was holding.
+        host.report?.(error, route.path)
+        host.log?.('handler-failed', route.path)
+        reply(response, REJECTIONS['handler-failed'].status, REJECTIONS['handler-failed'].text)
+        return
+      }
+      send(response, result)
     },
   })
 }

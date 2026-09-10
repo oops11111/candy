@@ -458,6 +458,76 @@ grantSnapshot(id: WorkspaceGrantId): WorkspaceGrantRecord | undefined
 async saveGrant(record: WorkspaceGrantRecord): Promise<void>
 
 /**
+ * Read one device by the id an assertion names.
+ * @param id - the device id.
+ * @returns the device, or `undefined` when nothing resolves the id.
+ */
+findDevice(id: DeviceId): Promise<DeviceRecord | undefined>
+
+/**
+ * Read one tenant's devices, revoked ones included.
+ * @param userId - the tenant.
+ * @returns their devices, in no defined order.
+ */
+listDevicesOfUser(userId: UserId): Promise<readonly DeviceRecord[]>
+
+/**
+ * Read the device presenting one token digest.
+ *
+ * The snapshot narrows the scan to one candidate and the medium is then
+ * re-read, for the reason {@link authenticateUserSession} re-reads: a device
+ * another process revoked is still in this one's snapshot, and answering
+ * from it would authenticate a binding that no longer exists.
+ * @param tokenDigest - the digest of the presented token.
+ * @returns the device, or `undefined` when none holds that digest.
+ */
+async findDeviceByTokenDigest(tokenDigest: string): Promise<DeviceRecord | undefined>
+
+/**
+ * Write one device, replacing any record under the same id.
+ * @param record - the device to store.
+ * @returns resolution once the medium holds it.
+ */
+async saveDevice(record: DeviceRecord): Promise<void>
+
+/**
+ * Read one pairing code by digest, consumed and expired ones included.
+ * @param digest - the normalized code's digest.
+ * @returns the code, or `undefined` when nothing resolves the digest.
+ */
+findPairingCode(digest: string): Promise<PairingCodeRecord | undefined>
+
+/**
+ * Read one tenant's pairing codes, consumed and expired ones included.
+ * @param userId - the tenant.
+ * @returns their codes, in no defined order.
+ */
+listPairingCodesOfUser(userId: UserId): Promise<readonly PairingCodeRecord[]>
+
+/**
+ * Write one pairing code, replacing any record under the same digest.
+ * @param record - the code to store.
+ * @returns resolution once the medium holds it.
+ */
+async savePairingCode(record: PairingCodeRecord): Promise<void>
+
+/**
+ * Mark one outstanding, unexpired code consumed by one device, indivisibly.
+ *
+ * The compare/exchange is what makes a code single-use across processes and
+ * restarts, the same mechanism {@link spendNonce} uses: two hosts exchanging
+ * one code both read it outstanding, and only the exchange can tell them
+ * apart. A failed exchange returns the medium's current value, so each retry
+ * decides against what is there rather than this process's snapshot.
+ * @param digest - the normalized code's digest.
+ * @param deviceId - the device the claiming host becomes.
+ * @param at - epoch milliseconds of the exchange, also the expiry boundary.
+ * @returns the record as it stood before the claim, or `undefined` when the
+ * code was already consumed, expired or absent.
+ */
+async claimPairingCode( digest: string, deviceId: DeviceId, at: number, ): Promise<PairingCodeRecord | undefined>
+
+/**
  * One subject's recorded activity, oldest first.
  * @param subject - the tenant or runtime to read.
  * @returns its retained records; empty when nothing is recorded for it.

@@ -893,6 +893,54 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution once the medium holds it.',
       },
       {
+        signature: 'findDevice(id: DeviceId): Promise<DeviceRecord | undefined>',
+        description: 'Read one device by the id an assertion names.',
+        parameters: [{ name: 'id', description: 'the device id.' }],
+        returns: 'the device, or `undefined` when nothing resolves the id.',
+      },
+      {
+        signature: 'listDevicesOfUser(userId: UserId): Promise<readonly DeviceRecord[]>',
+        description: 'Read one tenant\'s devices, revoked ones included.',
+        parameters: [{ name: 'userId', description: 'the tenant.' }],
+        returns: 'their devices, in no defined order.',
+      },
+      {
+        signature: 'async findDeviceByTokenDigest(tokenDigest: string): Promise<DeviceRecord | undefined>',
+        description: 'Read the device presenting one token digest.\n\nThe snapshot narrows the scan to one candidate and the medium is then re-read, for the reason authenticateUserSession re-reads: a device another process revoked is still in this one\'s snapshot, and answering from it would authenticate a binding that no longer exists.',
+        parameters: [{ name: 'tokenDigest', description: 'the digest of the presented token.' }],
+        returns: 'the device, or `undefined` when none holds that digest.',
+      },
+      {
+        signature: 'async saveDevice(record: DeviceRecord): Promise<void>',
+        description: 'Write one device, replacing any record under the same id.',
+        parameters: [{ name: 'record', description: 'the device to store.' }],
+        returns: 'resolution once the medium holds it.',
+      },
+      {
+        signature: 'findPairingCode(digest: string): Promise<PairingCodeRecord | undefined>',
+        description: 'Read one pairing code by digest, consumed and expired ones included.',
+        parameters: [{ name: 'digest', description: 'the normalized code\'s digest.' }],
+        returns: 'the code, or `undefined` when nothing resolves the digest.',
+      },
+      {
+        signature: 'listPairingCodesOfUser(userId: UserId): Promise<readonly PairingCodeRecord[]>',
+        description: 'Read one tenant\'s pairing codes, consumed and expired ones included.',
+        parameters: [{ name: 'userId', description: 'the tenant.' }],
+        returns: 'their codes, in no defined order.',
+      },
+      {
+        signature: 'async savePairingCode(record: PairingCodeRecord): Promise<void>',
+        description: 'Write one pairing code, replacing any record under the same digest.',
+        parameters: [{ name: 'record', description: 'the code to store.' }],
+        returns: 'resolution once the medium holds it.',
+      },
+      {
+        signature: 'async claimPairingCode( digest: string, deviceId: DeviceId, at: number, ): Promise<PairingCodeRecord | undefined>',
+        description: 'Mark one outstanding, unexpired code consumed by one device, indivisibly.\n\nThe compare/exchange is what makes a code single-use across processes and restarts, the same mechanism spendNonce uses: two hosts exchanging one code both read it outstanding, and only the exchange can tell them apart. A failed exchange returns the medium\'s current value, so each retry decides against what is there rather than this process\'s snapshot.',
+        parameters: [{ name: 'digest', description: 'the normalized code\'s digest.' }, { name: 'deviceId', description: 'the device the claiming host becomes.' }, { name: 'at', description: 'epoch milliseconds of the exchange, also the expiry boundary.' }],
+        returns: 'the record as it stood before the claim, or `undefined` when the code was already consumed, expired or absent.',
+      },
+      {
         signature: 'auditsOf(subject: AuditSubject): readonly RunAuditRecord[]',
         description: 'One subject\'s recorded activity, oldest first.',
         parameters: [{ name: 'subject', description: 'the tenant or runtime to read.' }],
@@ -4302,6 +4350,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DeviceId = Branded<\'DeviceId\'>;',
   },
   {
+    name: 'DeviceRecord',
+    declaration: 'export interface DeviceRecord {\n    readonly id: DeviceId;\n    readonly userId: UserId;\n    readonly label: string;\n    readonly tokenDigest: string;\n    readonly pairedAt: number;\n    readonly revokedAt: number | undefined;\n}',
+  },
+  {
     name: 'DiffCallView',
     declaration: 'export interface DiffCallView {\n    card: \'diff\';\n    title: string;\n    diffs: FileDiff[];\n    locations?: FileLocation[];\n}',
   },
@@ -4964,6 +5016,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'OptionalSessionSeq',
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
+  },
+  {
+    name: 'PairingCodeRecord',
+    declaration: 'export interface PairingCodeRecord {\n    readonly digest: string;\n    readonly userId: UserId;\n    readonly label: string;\n    readonly issuedAt: number;\n    readonly expiresAt: number;\n    readonly consumedAt: number | undefined;\n    readonly deviceId: DeviceId | undefined;\n}',
   },
   {
     name: 'PermissionSelect',

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/bundle/candy-app/README.md
-README.md: af2a0d31d1d098a39f785836cf821670a0cb1b85
-README.zh.md: 158d3c40af70e7c3e19f0d9024df60a81a69bc90
+README.md: 6eef3a91d99c35a58763aa3f4d10049efd8185f4
+README.zh.md: e156f2a3f531d4d742470328b6fe2b140f1a77e2

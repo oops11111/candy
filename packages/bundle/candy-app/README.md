@@ -80,6 +80,10 @@ The inherited base routes storage through the JSON backend, which has no compare
 
 The API seals a credential; the runtime opens it. A credential sealed under a version the runtime cannot open is an account a tenant configured and no run can use, and nothing between them would report it. One variable feeds both rows.
 
+### Why the device exchange needs no session
+
+Every other management route answers on a browser session. A Harness Host completing the pairing exchange has no browser and has not been anyone yet: the code in its body is the whole of its claim, and the tenant it binds to is the one that issued that code. The row mounts it through the registration that hands out no `Actor`, so the rule that an `Actor` means an authenticated session is not loosened to admit it.
+
 ### Why the layer carries no literals
 
 A bundle that hard-codes an origin, an issuer or a database path is a bundle that has to be edited before it can run, and an edited bundle is no longer the artifact that was tested. Reading the environment keeps the published layer identical on every install, and keeps the deployment's secrets out of a file that is read for other reasons.
@@ -96,6 +100,7 @@ A bundle that hard-codes an origin, an issuer or a database path is a bundle tha
 - [`dsh-run-scheduler`](../../control-plane/run-scheduler/README.md) — what admits, funds and settles a run.
 - [`dsh-oauth-sign-in-web`](../../control-plane/oauth-sign-in-web/README.md) — the sign-in routes and the administrator bootstrap.
 - [`dsh-provider-account-api`](../../control-plane/provider-account-api/README.md) — the six account operations the page drives.
+- [`dsh-device-api`](../../control-plane/device-api/README.md) — tenant device pairing, and the exchange a host completes without a session.
 
 -----
 

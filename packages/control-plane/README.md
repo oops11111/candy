@@ -33,6 +33,7 @@ The scheduler description above uses the original ownership shorthand. Replay de
 | [`provider-accounts`](provider-accounts/README.md) | Owns tenant provider-account metadata, encrypted credential lifecycle, default selection, and secret-free account views |
 | [`run-budget`](run-budget/README.md) | Bounds a delegation tree's tokens, time, money, and concurrency by drawing each child's allowance out of its parent's |
 | [`device-registry`](device-registry/README.md) | Issues a single-use pairing code, exchanges it once for a device bound to that tenant for life, and answers whether the binding still stands |
+| [`device-api`](device-api/README.md) | The three tenant device operations on the management envelope, and the pairing exchange a host completes with a code and no session |
 | [`workspace-grant`](workspace-grant/README.md) | Resolves the workspace-grant id an assertion names into the roots and file-effect ceiling a run holds, and refuses a child that names any other |
 | [`workspace-grant-execution`](workspace-grant-execution/README.md) | Revalidates that durable grant at inherited filesystem and shell executors, including canonical link containment and revocation |
 | [`provider-credential-checks`](provider-credential-checks/README.md) | The registry a provider integration says through whether one stored credential still authenticates |

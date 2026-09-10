@@ -192,6 +192,9 @@ export function apply(ctx: Context, config: Config): void {
     log: (rejection, path) => {
       ctx.logger.info(`provider-account-api: refused ${path} (${rejection})`)
     },
+    report: (error, path) => {
+      ctx.logger.warn(`provider-account-api: ${path} failed: ${String(error)}`)
+    },
   }
 
   /** Record the vault's own audits for one mutation, beside the API's. */

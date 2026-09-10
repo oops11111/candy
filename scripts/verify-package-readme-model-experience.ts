@@ -44,6 +44,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/control-plane/oauth-sign-in-web': 'The package only mounts sign-in routes and enrolls an administrator; nothing it produces reaches a model request.',
   'packages/control-plane/control-plane-api': 'The package only authenticates and authorizes management requests; nothing it produces reaches a model request.',
   'packages/control-plane/provider-account-api': 'The package only manages stored account records and sealed credentials; nothing it produces reaches a model request.',
+  'packages/control-plane/device-api': 'The package only answers device pairing over HTTP; nothing it produces reaches a model request.',
   'packages/control-plane/provider-credential-checks': 'The package only answers whether a stored credential authenticates; nothing it produces reaches a model request.',
   'packages/control-plane/run-ledger': 'The package only records what open runs hold and have spent; nothing it produces reaches a model request.',
   'packages/control-plane/run-replay': 'The package only records which nonces were spent; nothing it produces reaches a model request.',

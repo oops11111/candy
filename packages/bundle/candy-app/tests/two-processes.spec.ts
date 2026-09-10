@@ -33,6 +33,7 @@ import WorkspaceGrantExecution from '@deepseek-ai/dsh-workspace-grant-execution'
 import * as OauthSignInWeb from '@deepseek-ai/dsh-oauth-sign-in-web'
 import * as ProviderAccountApi from '@deepseek-ai/dsh-provider-account-api'
 import * as AuditApi from '@deepseek-ai/dsh-audit-api'
+import * as DeviceApi from '@deepseek-ai/dsh-device-api'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const PATCH = fileURLToPath(new URL('../cordis.patch.yml', import.meta.url))
@@ -53,6 +54,7 @@ const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-oauth-sign-in-web', OauthSignInWeb],
   ['@deepseek-ai/dsh-provider-account-api', ProviderAccountApi],
   ['@deepseek-ai/dsh-audit-api', AuditApi],
+  ['@deepseek-ai/dsh-device-api', DeviceApi],
   ['@deepseek-ai/dsh-client-ui-settings-candy-account', { apply() {} }],
 ])
 

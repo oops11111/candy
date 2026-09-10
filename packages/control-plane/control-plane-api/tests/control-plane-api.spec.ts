@@ -12,7 +12,16 @@ import { UserId, UserSessionId, type ControlPlaneRole } from '@deepseek-ai/dsh-c
 import type { UserSessionRecord } from '@deepseek-ai/dsh-control-plane-store'
 import { OAUTH_CSRF_HEADER } from '@deepseek-ai/dsh-oauth-sign-in'
 import { afterEach, describe, expect, it } from 'vitest'
-import { registerApiRoute, type Actor, type ApiAuditEvent, type ApiHost, type ApiResult, type ApiRoute } from '../src/index.ts'
+import {
+  registerAnonymousRoute,
+  registerApiRoute,
+  type AnonymousApiRoute,
+  type Actor,
+  type ApiAuditEvent,
+  type ApiHost,
+  type ApiResult,
+  type ApiRoute,
+} from '../src/index.ts'
 
 const ORIGIN = 'https://candy.example'
 const ALICE = UserId('user-alice')
@@ -53,11 +62,13 @@ interface Harness {
  *
  * @param route - the route's own policy, minus the handler's defaults.
  * @param sessions - the token the store accepts, and the record it answers.
+ * @param reporting - the deployment's optional log and error sink.
  * @returns the port, the audit records written, and what the handler saw.
  */
 async function mount(
   route: Partial<ApiRoute> = {},
   sessions: { token?: string; csrf?: string; record?: UserSessionRecord } = {},
+  reporting: Pick<ApiHost, 'log' | 'report'> = {},
 ): Promise<Harness> {
   const audits: ApiAuditEvent[] = []
   const handled: Harness['handled'] = { count: 0, actor: undefined, body: undefined }
@@ -73,6 +84,7 @@ async function mount(
       verifyUserSessionCsrf: (id, token) => id === record.id && token === csrf,
     },
     audit: (event) => { audits.push(event); return Promise.resolve() },
+    ...reporting,
   }
   registerApiRoute({ register: (r) => { registrations.push(r); return () => {} } }, host, {
     path: '/api/candy/probe',
@@ -359,6 +371,190 @@ describe('the authenticated management envelope', () => {
 
     expect(response.status).toBeGreaterThanOrEqual(400)
     expect(seen.count).toBe(0)
+  })
+
+  it('answers a handler that throws without letting the failure reach the socket', async () => {
+    // The Harness Host web server destroys a response whose handler rejects
+    // after its headers are sent, which would replace this 500 with a hang-up.
+    const reported: string[] = []
+    const { port, audits } = await mount({
+      handle: () => { throw new Error('the medium named /srv/candy/candy.db') },
+    }, {}, { report: (error, path) => { reported.push(`${String(error)} ${path}`) } })
+
+    const reply = await call(port)
+
+    expect(reply.status).toBe(500)
+    expect(reply.body).toBe('the operation could not be completed')
+    expect(reply.body).not.toContain('/srv/candy')
+    // The deployment still learns what failed, and the tenant's trail records
+    // that their operation did not complete.
+    expect(reported).toEqual(['Error: the medium named /srv/candy/candy.db /api/candy/probe'])
+    expect(audits).toEqual([{ userId: ALICE, action: 'probe', outcome: 'handler-failed' }])
+  })
+
+  describe('a route whose caller carries its own credential', () => {
+    /** Mount one anonymous route on a real listening server. */
+    async function mountAnonymous(
+      route: Partial<AnonymousApiRoute> = {},
+      reporting: Pick<ApiHost, 'log' | 'report'> = {},
+    ): Promise<{ port: number; audits: ApiAuditEvent[]; handled: { count: number; body: unknown } }> {
+      const audits: ApiAuditEvent[] = []
+      const handled = { count: 0, body: undefined as unknown }
+      const registrations: { handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }[] = []
+      registerAnonymousRoute({ register: (r) => { registrations.push(r); return () => {} } }, {
+        publicOrigin: ORIGIN,
+        sessions: {
+          authenticateUserSession: () => Promise.resolve(undefined),
+          verifyUserSessionCsrf: () => false,
+        },
+        audit: (event) => { audits.push(event); return Promise.resolve() },
+        ...reporting,
+      }, {
+        path: '/api/candy/probe',
+        methods: ['POST'],
+        action: 'exchange',
+        handle: (body) => {
+          handled.count += 1
+          handled.body = body
+          return { kind: 'json', status: 201, body: { paired: true } } satisfies ApiResult
+        },
+        ...route,
+      })
+      const listening = createServer((req, res) => { void registrations[0]?.handler(req, res) })
+      server = listening
+      await new Promise<void>(resolve => listening.listen(0, '127.0.0.1', resolve))
+      return { port: (listening.address() as AddressInfo).port, audits, handled }
+    }
+
+    it('runs the handler for a caller with no session, cookie or origin', async () => {
+      // A Harness Host is not a browser: it sends none of the three, and the
+      // credential it does send is in the body for the handler to resolve.
+      const { port, audits, handled } = await mountAnonymous()
+
+      const reply = await call(port, {
+        method: 'POST', cookie: null, csrf: null, origin: null, body: '{"code":"RJKM"}',
+      })
+
+      expect(reply.status).toBe(201)
+      expect(handled).toEqual({ count: 1, body: { code: 'RJKM' } })
+      expect(reply.cacheControl).toBe('no-store')
+      // Nothing is filed here: the handler learns whose request this is only
+      // by resolving the credential, so recording it is its own to do.
+      expect(audits).toEqual([])
+    })
+
+    it('still refuses a request that does not address this deployment', async () => {
+      const { port, handled } = await mountAnonymous()
+
+      const reply = await call(port, { method: 'POST', host: 'attacker.example', origin: null, body: '{}' })
+
+      expect(reply.status).toBe(403)
+      expect(handled.count).toBe(0)
+    })
+
+    it('refuses a method the route does not serve, before reading a body', async () => {
+      const { port, handled } = await mountAnonymous()
+
+      expect((await call(port, { method: 'GET', origin: null })).status).toBe(405)
+      expect(handled.count).toBe(0)
+    })
+
+    it('reads a bodyless safe method the route serves, without a body', async () => {
+      const { port, handled } = await mountAnonymous({ methods: ['GET', 'POST'] })
+
+      expect((await call(port, { method: 'GET', origin: null })).status).toBe(201)
+      expect(handled.body).toBeUndefined()
+    })
+
+    it('refuses a body over the cap and one that is not the JSON it reads', async () => {
+      const { port, handled } = await mountAnonymous({ maxBodyBytes: 16 })
+
+      expect((await call(port, { method: 'POST', origin: null, body: 'x'.repeat(64) })).status).toBe(413)
+      expect((await call(port, { method: 'POST', origin: null, body: '{' })).status).toBe(400)
+      // An empty write body is no body rather than malformed JSON.
+      expect((await call(port, { method: 'POST', origin: null, body: '' })).status).toBe(201)
+      expect(handled.count).toBe(1)
+    })
+
+    it('answers a handler that throws without letting the failure reach the socket', async () => {
+      const reported: string[] = []
+      const refused: string[] = []
+      const { port } = await mountAnonymous(
+        { handle: () => { throw new Error('the medium named /srv/candy/candy.db') } },
+        {
+          report: (error, path) => { reported.push(`${String(error)} ${path}`) },
+          log: (rejection, path) => { refused.push(`${rejection} ${path}`) },
+        },
+      )
+
+      const reply = await call(port, { method: 'POST', origin: null, body: '{}' })
+
+      expect(reply.status).toBe(500)
+      expect(reply.body).not.toContain('/srv/candy')
+      expect(reported).toEqual(['Error: the medium named /srv/candy/candy.db /api/candy/probe'])
+      expect(refused).toEqual(['handler-failed /api/candy/probe'])
+    })
+
+    it('reports each refusal it decides to the deployment log', async () => {
+      const refused: string[] = []
+      const { port } = await mountAnonymous({}, { log: (rejection, path) => { refused.push(`${rejection} ${path}`) } })
+
+      await call(port, { method: 'POST', host: 'attacker.example', origin: null, body: '{}' })
+      await call(port, { method: 'GET', origin: null })
+      await call(port, { method: 'POST', origin: null, body: '{' })
+
+      expect(refused).toEqual([
+        'untrusted-origin /api/candy/probe',
+        'method-not-allowed /api/candy/probe',
+        'malformed-body /api/candy/probe',
+      ])
+    })
+
+    it('reads a request with no method as a GET', async () => {
+      // Reached by calling the handler directly: an HTTP client cannot send a
+      // request without a method, and node types the field as optional.
+      const registrations: { handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void> }[] = []
+      registerAnonymousRoute({ register: (r) => { registrations.push(r); return () => {} } }, {
+        publicOrigin: ORIGIN,
+        sessions: {
+          authenticateUserSession: () => Promise.resolve(undefined),
+          verifyUserSessionCsrf: () => false,
+        },
+        audit: () => Promise.resolve(),
+      }, {
+        path: '/api/candy/probe', methods: ['POST'], action: 'exchange',
+        handle: () => ({ kind: 'empty', status: 204 }),
+      })
+      let status = 0
+
+      await registrations[0]?.handler(
+        { headers: { host: 'candy.example' } } as unknown as IncomingMessage,
+        { writeHead: (code: number) => { status = code }, end: () => {} } as unknown as ServerResponse,
+      )
+
+      // A GET this route does not serve, rather than an unmethoded request
+      // reaching the handler.
+      expect(status).toBe(405)
+    })
+
+    it('removes the route when its registration is disposed', () => {
+      let disposed = false
+
+      const dispose = registerAnonymousRoute({ register: () => () => { disposed = true } }, {
+        publicOrigin: ORIGIN,
+        sessions: {
+          authenticateUserSession: () => Promise.resolve(undefined),
+          verifyUserSessionCsrf: () => false,
+        },
+        audit: () => Promise.resolve(),
+      }, {
+        path: '/api/candy/probe', methods: ['POST'], action: 'exchange',
+        handle: () => ({ kind: 'empty', status: 204 }),
+      })
+      dispose()
+
+      expect(disposed).toBe(true)
+    })
   })
 
   it('removes the route when its registration is disposed', async () => {

@@ -557,6 +557,31 @@ export interface Config {
 
 来源：[`packages/control-plane/deepseek-credential-check/src/index.ts:12`](../packages/control-plane/deepseek-credential-check/src/index.ts)
 
+<a id="deepseek-aidsh-device-api"></a>
+
+## `@deepseek-ai/dsh-device-api`
+
+需要：`webServer` · `controlPlaneStore`
+
+```ts config-catalog
+/** Deployment-owned facts this API needs beyond what the envelope carries. */
+export interface Config {
+  /** Exact externally visible HTTPS origin, matching what sign-in was configured with. */
+  publicOrigin: string
+  /**
+   * How long an issued pairing code stays exchangeable, in milliseconds.
+   *
+   * It is the time a person needs to carry the code to the machine, which is
+   * a minute in one deployment and an afternoon in another.
+   */
+  pairingCodeTtlMs: number
+  /** Most audit records kept per tenant. */
+  auditRetention: number
+}
+```
+
+来源：[`packages/control-plane/device-api/src/index.ts:90`](../packages/control-plane/device-api/src/index.ts)
+
 <a id="deepseek-aidsh-e2b"></a>
 
 ## `@deepseek-ai/dsh-e2b`

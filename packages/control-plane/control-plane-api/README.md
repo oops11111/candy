@@ -13,6 +13,8 @@ Candy's management operations decide who owns a provider account, which routes a
 
 This module is the one place an HTTP request becomes an [`Actor`](src/types.ts), and the only way to obtain one is to have presented a session cookie [`ControlPlaneStore`](../control-plane-store/README.md) authenticated. A handler receives the actor and the parsed body; it is given no way to read a tenant from anywhere else.
 
+One kind of caller has no session to present: a Harness Host exchanging a pairing code has not been anyone yet, and the code in its body is the whole of its claim. `registerAnonymousRoute` serves that case without weakening the sentence above — such a route receives no `Actor` at all, so the only way to hold one is still an authenticated session, and a handler that needs an identity derives one from the credential it was given.
+
 It also owns the failure vocabulary, because failures are where a management API leaks. A record belonging to another tenant answers exactly as a record that does not exist, and a refusal names the step without the token, code, key or provider response that produced it.
 
 ## Table of Contents
@@ -76,6 +78,16 @@ The origin is checked first, so a request that does not address this deployment 
 
 The CSRF cookie and header are proved by [`dsh-oauth-sign-in`](../oauth-sign-in/README.md)'s own check, in the same call that authenticates the session. An absent session and a failed CSRF proof answer identically: telling a caller which of the two it was reports whether the cookie it holds is a live session.
 
+### Why an anonymous route checks `Host` and not `Origin`
+
+A session write is checked against `Origin` because a browser attaches the session cookie by itself, and the header separates this deployment's own page from a page that merely knows the URL. A caller that carries its own credential has no cookie and is usually not a browser, so requiring the header would refuse every real client. A page that forges such a request must already hold the credential, and cannot read the reply.
+
+Nothing is filed against a tenant for one of these, either: the handler learns whose request it is only by resolving the credential, so recording the attempt is its own to do, once it knows a tenant to file it against.
+
+### Why a failed handler is answered rather than rethrown
+
+The Harness Host web server destroys a response whose handler rejects after its headers are sent. Rethrowing therefore replaced the `500` this envelope had just decided with a hang-up the caller could not tell from a crash. The error goes to `ApiHost.report` instead, so the deployment still reads what failed and the caller still receives the answer.
+
 ### Why every reply is `no-store`
 
 Each of these is one tenant's data answered on one session. A shared cache or a restored back-forward page would hand it to whoever holds the browser next. The same headers deny the JSON any ability to be framed, sniffed into another type, or to leak its path as a referrer.
@@ -102,6 +114,7 @@ An oversized body on an authenticated endpoint is a mistake or an attempt to exh
 These are current package constraints, not a task backlog.
 
 - **No routes of its own** — this is the envelope. Every path, method and handler comes from a mounting plugin; nothing here is reachable until one registers something.
+- **An anonymous route's authority is entirely its handler's** — this module checks the addressed host, the method and the body cap, then hands the request over. Whether the credential in it proves anything, and what the refusal costs, are decisions the mounting plugin makes.
 - **One role ladder** — `member` and `administrator`, where an administrator satisfies both. There is no per-operation grant, and no way to give one person one extra capability.
 - **No rate limiting** — an authenticated caller may call as often as it likes. Bounding that belongs to the reverse proxy in front of the deployment.
 - **The audit sink is a parameter** — this module decides what to record and the mounting plugin decides where. A deployment that supplies no sink records nothing.

@@ -34,13 +34,14 @@
     }
   },
   "dependencies": {
+    "@deepseek-ai/dsh-audit-api": "workspace:^",
     "@deepseek-ai/dsh-client-ui-settings-candy-account": "workspace:^",
     "@deepseek-ai/dsh-control-plane-store": "workspace:^",
+    "@deepseek-ai/dsh-deepseek-credential-check": "workspace:^",
+    "@deepseek-ai/dsh-device-api": "workspace:^",
     "@deepseek-ai/dsh-oauth-sign-in-web": "workspace:^",
     "@deepseek-ai/dsh-provider-account-api": "workspace:^",
-    "@deepseek-ai/dsh-audit-api": "workspace:^",
     "@deepseek-ai/dsh-provider-credential-checks": "workspace:^",
-    "@deepseek-ai/dsh-deepseek-credential-check": "workspace:^",
     "@deepseek-ai/dsh-run-scheduler": "workspace:^",
     "@deepseek-ai/dsh-storage-sqlite": "workspace:^",
     "@deepseek-ai/dsh-workspace-grant-execution": "workspace:^"
@@ -54,6 +55,7 @@
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/cordis-plugin-timer": "workspace:^",
     "@deepseek-ai/dsh-app-boot": "workspace:^",
+    "@deepseek-ai/dsh-device-api": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-llm-replay": "workspace:^",

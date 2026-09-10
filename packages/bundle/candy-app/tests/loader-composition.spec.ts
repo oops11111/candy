@@ -51,7 +51,9 @@ import WorkspaceGrantExecution from '@deepseek-ai/dsh-workspace-grant-execution'
 import * as OauthSignInWeb from '@deepseek-ai/dsh-oauth-sign-in-web'
 import * as ProviderAccountApi from '@deepseek-ai/dsh-provider-account-api'
 import * as AuditApi from '@deepseek-ai/dsh-audit-api'
+import * as DeviceApi from '@deepseek-ai/dsh-device-api'
 import { ACCOUNT_PATHS } from '@deepseek-ai/dsh-provider-account-api'
+import { DEVICE_PATHS } from '@deepseek-ai/dsh-device-api'
 import { OAUTH_START_PATH } from '@deepseek-ai/dsh-oauth-sign-in'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -72,6 +74,7 @@ const MODULES = new Map<string, unknown>([
   ['@deepseek-ai/dsh-oauth-sign-in-web', OauthSignInWeb],
   ['@deepseek-ai/dsh-provider-account-api', ProviderAccountApi],
   ['@deepseek-ai/dsh-audit-api', AuditApi],
+  ['@deepseek-ai/dsh-device-api', DeviceApi],
   // The account page's Node half is an inert Loader entry by construction —
   // its browser half is what the row exists for, and it is proved in its own
   // package. Importing the real module here would put a Client-face source
@@ -321,6 +324,22 @@ describe('the shipped Candy deployment layer', () => {
 
     // Sign-in is mounted on the same authority and redirects rather than 404s.
     expect(await status(port, 'candy.example', OAUTH_START_PATH)).toBe(303)
+  })
+
+  it('mounts device pairing, including the one route no session authenticates', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-candy-app-'))
+    const ctx = await boot(root)
+    const port = ctx.webServer.port
+
+    // The three tenant routes sit behind the same envelope as every other
+    // management operation: no cookie, no operation.
+    expect(await status(port, 'candy.example', DEVICE_PATHS.list)).toBe(401)
+    expect(await status(port, 'attacker.example', DEVICE_PATHS.list)).toBe(403)
+
+    // The exchange is mounted and does not ask for a session — a Harness Host
+    // has none — so a GET reaches its method check rather than an auth check.
+    expect(await status(port, 'candy.example', DEVICE_PATHS.exchange)).toBe(405)
+    expect(await status(port, 'attacker.example', DEVICE_PATHS.exchange)).toBe(403)
   })
 
   it('names an account page the workspace actually publishes', async () => {

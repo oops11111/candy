@@ -108,6 +108,18 @@
       config:
         publicOrigin: !!js process.env.CANDY_PUBLIC_ORIGIN
 
+    # Device pairing. Three operations on the browser session above, plus the
+    # exchange a Harness Host completes with a pairing code and no session at
+    # all — the one route here that a cookie does not authenticate.
+    #
+    # `pairingCodeTtlMs` is left at its default: how long a person needs to
+    # carry a code to a machine is a preference rather than a fact about the
+    # deployment, and a bundle that demanded it would refuse to start over one.
+    - id: device-api
+      name: '@deepseek-ai/dsh-device-api'
+      config:
+        publicOrigin: !!js process.env.CANDY_PUBLIC_ORIGIN
+
     # The account page in the settings panel the Web surface already carries.
     - id: ui-settings-candy-account
       name: '@deepseek-ai/dsh-client-ui-settings-candy-account'
