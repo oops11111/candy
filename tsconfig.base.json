@@ -279,6 +279,7 @@
       "@deepseek-ai/dsh-deepseek-llm-api-extensions": ["./packages/llm/deepseek-llm-api-extensions/src"],
       "@deepseek-ai/dsh-deque": ["./packages/util/deque/src"],
       "@deepseek-ai/dsh-device-api": ["./packages/control-plane/device-api/src"],
+      "@deepseek-ai/dsh-device-binding": ["./packages/control-plane/device-binding/src"],
       "@deepseek-ai/dsh-device-registry": ["./packages/control-plane/device-registry/src"],
       "@deepseek-ai/dsh-e2b": ["./packages/e2b/e2b/src"],
       "@deepseek-ai/dsh-execution-assertion": ["./packages/control-plane/execution-assertion/src"],

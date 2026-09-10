@@ -13,6 +13,8 @@ flowchart LR
   svc_controlPlaneStore["ctx.controlPlaneStore<br/>Durable Candy provider accounts and tenant allowances"]
   pkg_run_admission["run-admission"]
   pkg_provider_accounts["provider-accounts"]
+  pkg_device_binding["device-binding"]
+  svc_deviceBinding["ctx.deviceBinding<br/>Which deployment this host serves, and as which device"]
   pkg_provider_credential_checks["provider-credential-checks"]
   svc_providerCredentialChecks["ctx.providerCredentialChecks<br/>Whether one stored provider credential still authenticates"]
   pkg_provider_account_api["provider-account-api"]
@@ -259,6 +261,7 @@ flowchart LR
   pkg_credentials --> svc_credentials
   pkg_credentials_local --> svc_credentials
   pkg_deepseek_llm_api_extensions --> svc_deepseekLlmApiExtensions
+  pkg_device_binding --> svc_deviceBinding
   pkg_e2b --> svc_e2b
   pkg_experimental_agent_team --> svc_agentTeams
   pkg_experimental_code_runtime_python --> svc_codeRuntime
@@ -488,6 +491,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- | --- |
 | `ctx.runScheduler` | `core` | [`run-scheduler`](../packages/control-plane/run-scheduler) | - | - | - | Owns the ledger and replay store a run is admitted against, composes the admission policy from the store, and drives the clock that releases a hold no settlement claimed. It starts the run a caller asks for; whether a tenant may start another is a decision nothing makes yet. |
 | `ctx.controlPlaneStore` | `core` | [`control-plane-store`](../packages/control-plane/control-plane-store) | - | [`run-admission`](../packages/control-plane/run-admission), [`provider-accounts`](../packages/control-plane/provider-accounts) | - | Holds the account and allowance records the admission ports read; a child run is still admitted against its parent's remainder, which the in-memory run ledger holds. |
+| `ctx.deviceBinding` | `core` | [`device-binding`](../packages/control-plane/device-binding) | - | - | - | Holds the server, tenant, device and token one pairing produced, in the credential store where the seam already serializes writes. It answers which server to reach and as whom; reaching it, noticing a dropped link and reconnecting stay with the inherited transport. |
 | `ctx.providerCredentialChecks` | `core` | [`provider-credential-checks`](../packages/control-plane/provider-credential-checks) | - | [`provider-account-api`](../packages/control-plane/provider-account-api) | - | The seam a provider integration answers through: the management API asks for a verdict and never learns the endpoint, the request or the response, and a provider nothing registered for answers unsupported rather than invalid. |
 | `ctx.attachments` | `seam` | [`attachment`](../packages/attachment/attachment) | [`attachment-local`](../packages/attachment/attachment-local) | [`api-session-controller`](../packages/api/session-controller), [`tool-fs`](../packages/fs/tool-fs), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-deepseek`](../packages/llm/llm-deepseek) | - | The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content. |
 | `ctx.llm` | `seam` | [`llm`](../packages/llm/llm) | [`llm-deepseek`](../packages/llm/llm-deepseek), [`llm-pi-ai`](../packages/llm/llm-pi-ai), [`llm-replay`](../packages/test-support/llm-replay) | [`agent-loop`](../packages/core/agent-loop), [`compaction-basic`](../packages/compaction/compaction-basic) | - | Adapters register provider implementations; the loop and compaction call the provider-neutral stream service. |

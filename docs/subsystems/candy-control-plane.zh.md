@@ -539,6 +539,60 @@ Types: [SessionId](core.zh.md)
 
 Source: [`packages/control-plane/control-plane-store/src/index.ts`](../../packages/control-plane/control-plane-store/src/index.ts)
 
+<a id="ctxdevicebinding--devicebinding"></a>
+
+### `ctx.deviceBinding` — `DeviceBinding`
+
+The host's own record of which deployment it serves and as which device.
+
+Every write goes through the credential seam's serialized read-modify-write, which holds across processes where the store supports it. That is what makes "one binding" a fact rather than an intention: two `dsh` processes starting on one machine and pairing at the same moment cannot both install one.
+
+```ts cordis-catalog
+/**
+ * The binding this host holds.
+ * @returns the binding, or `undefined` while this host is unpaired.
+ */
+async read(): Promise<HostDeviceBinding | undefined>
+
+/**
+ * The binding this host holds, without its token.
+ * @returns the binding's server, tenant, device and instant, or `undefined`
+ * while this host is unpaired.
+ */
+async describe(): Promise<HostDeviceBindingView | undefined>
+
+/**
+ * Take one binding, if this host holds none.
+ *
+ * Re-binding to the exact deployment, tenant and device already stored is
+ * accepted and replaces the token, because that is what a host does when a
+ * tenant re-pairs it after rotating its credential. Anything else is
+ * refused: changing which tenant a machine serves without releasing it first
+ * would leave one tenant's work reachable from the next tenant's session.
+ *
+ * @param request - the deployment, identity and token the pairing produced.
+ * @param now - epoch milliseconds recorded as the binding's instant.
+ * @returns the binding now stored.
+ * @throws DeviceBindingError `invalid-origin` for a server that is not an
+ * absolute `http` or `https` URL, `invalid-identity` for a blank tenant,
+ * device or token, and `already-bound` when a different binding stands.
+ */
+async bind( request: { readonly serverOrigin: string readonly userId: UserId readonly deviceId: DeviceId readonly token: string }, now: number, ): Promise<HostDeviceBinding>
+
+/**
+ * Give up this host's binding.
+ *
+ * It is the operator action that follows a revocation, and the one that has
+ * to happen before a machine can serve someone else. Releasing an unpaired
+ * host changes nothing, so an operator repeating it is not told they were
+ * too late.
+ * @returns resolution once no binding is stored.
+ */
+async release(): Promise<void>
+```
+
+Source: [`packages/control-plane/device-binding/src/index.ts`](../../packages/control-plane/device-binding/src/index.ts)
+
 <a id="ctxprovidercredentialchecks--providercredentialchecks"></a>
 
 ### `ctx.providerCredentialChecks` — `ProviderCredentialChecks`

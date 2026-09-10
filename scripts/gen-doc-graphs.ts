@@ -115,6 +115,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Holds the account and allowance records the admission ports read; a child run is still admitted against its parent\'s remainder, which the in-memory run ledger holds.',
   },
   {
+    key: 'deviceBinding',
+    pkg: 'device-binding',
+    title: 'Which deployment this host serves, and as which device',
+    mode: 'core',
+    consumers: [],
+    note: 'Holds the server, tenant, device and token one pairing produced, in the credential store where the seam already serializes writes. It answers which server to reach and as whom; reaching it, noticing a dropped link and reconnecting stay with the inherited transport.',
+  },
+  {
     key: 'providerCredentialChecks',
     pkg: 'provider-credential-checks',
     title: 'Whether one stored provider credential still authenticates',

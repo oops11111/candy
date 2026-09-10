@@ -1052,6 +1052,38 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'deviceBinding',
+    summary: 'The host\'s own record of which deployment it serves and as which device.',
+    description: 'The host\'s own record of which deployment it serves and as which device.\n\nEvery write goes through the credential seam\'s serialized read-modify-write, which holds across processes where the store supports it. That is what makes "one binding" a fact rather than an intention: two `dsh` processes starting on one machine and pairing at the same moment cannot both install one.',
+    methods: [
+      {
+        signature: 'async read(): Promise<HostDeviceBinding | undefined>',
+        description: 'The binding this host holds.',
+        parameters: [],
+        returns: 'the binding, or `undefined` while this host is unpaired.',
+      },
+      {
+        signature: 'async describe(): Promise<HostDeviceBindingView | undefined>',
+        description: 'The binding this host holds, without its token.',
+        parameters: [],
+        returns: 'the binding\'s server, tenant, device and instant, or `undefined` while this host is unpaired.',
+      },
+      {
+        signature: 'async bind( request: { readonly serverOrigin: string readonly userId: UserId readonly deviceId: DeviceId readonly token: string }, now: number, ): Promise<HostDeviceBinding>',
+        description: 'Take one binding, if this host holds none.\n\nRe-binding to the exact deployment, tenant and device already stored is accepted and replaces the token, because that is what a host does when a tenant re-pairs it after rotating its credential. Anything else is refused: changing which tenant a machine serves without releasing it first would leave one tenant\'s work reachable from the next tenant\'s session.',
+        parameters: [{ name: 'request', description: 'the deployment, identity and token the pairing produced.' }, { name: 'now', description: 'epoch milliseconds recorded as the binding\'s instant.' }],
+        returns: 'the binding now stored.',
+        throws: ['DeviceBindingError `invalid-origin` for a server that is not an absolute `http` or `https` URL, `invalid-identity` for a blank tenant, device or token, and `already-bound` when a different binding stands.'],
+      },
+      {
+        signature: 'async release(): Promise<void>',
+        description: 'Give up this host\'s binding.\n\nIt is the operator action that follows a revocation, and the one that has to happen before a machine can serve someone else. Releasing an unpaired host changes nothing, so an operator repeating it is not told they were too late.',
+        parameters: [],
+        returns: 'resolution once no binding is stored.',
+      },
+    ],
+  },
+  {
     key: 'directoryPicker',
     summary: 'Abstract directory-picking service.',
     description: 'Abstract directory-picking service. Subclass, implement `capability()`, and load the subclass as a plugin — it registers as `ctx.directoryPicker` (one implementation per context; loading a second throws, cordis\' standard duplicate-service behavior). The capability object must be stable for the service lifetime: consumers may capture it across calls.',
@@ -4604,6 +4636,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'GrantRecord',
     declaration: 'export interface GrantRecord {\n    readonly kind: \'grant\';\n    readonly payload: unknown;\n}',
+  },
+  {
+    name: 'HostDeviceBinding',
+    declaration: 'export interface HostDeviceBinding {\n    readonly serverOrigin: string;\n    readonly userId: UserId;\n    readonly deviceId: DeviceId;\n    readonly token: string;\n    readonly boundAt: number;\n}',
+  },
+  {
+    name: 'HostDeviceBindingView',
+    declaration: 'export type HostDeviceBindingView = Omit<HostDeviceBinding, \'token\'>;',
   },
   {
     name: 'ImageAttachmentLimits',

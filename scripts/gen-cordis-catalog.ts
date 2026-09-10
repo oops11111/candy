@@ -56,6 +56,7 @@ export { REGION_BEGIN, REGION_END }
 export const SERVICE_PAGE: Record<string, string> = {
   agentLoop: 'core.md',
   controlPlaneStore: 'candy-control-plane.md',
+  deviceBinding: 'candy-control-plane.md',
   runScheduler: 'candy-control-plane.md',
   providerCredentialChecks: 'candy-control-plane.md',
   agentDefaultModel: 'core.md',
@@ -265,6 +266,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   WorkspaceGrantRecord: 'candy-control-plane.md',
   DeviceId: 'candy-control-plane.md',
   DeviceRecord: 'candy-control-plane.md',
+  HostDeviceBinding: 'candy-control-plane.md',
+  HostDeviceBindingView: 'candy-control-plane.md',
   PairingCodeRecord: 'candy-control-plane.md',
   TenantAllowance: 'candy-control-plane.md',
   TenantModelRoute: 'candy-control-plane.md',

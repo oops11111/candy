@@ -179,6 +179,7 @@
     { "path": "./packages/control-plane/provider-credential-checks" },
     { "path": "./packages/control-plane/deepseek-credential-check" },
     { "path": "./packages/control-plane/device-api" },
+    { "path": "./packages/control-plane/device-binding" },
     { "path": "./packages/control-plane/device-registry" },
     { "path": "./packages/control-plane/oauth-sign-in-web" },
     { "path": "./packages/control-plane/execution-assertion" },
