@@ -10,6 +10,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import { CredentialKeyVersion, sealCredential, type CredentialKeyring } from '@deepseek-ai/dsh-credential-vault'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
+import { deviceTokenDigest } from '@deepseek-ai/dsh-device-registry'
 import { admitRun, type AdmittedRun, type RunAdmission, type RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -119,6 +120,16 @@ export async function admissionFor(
     spendNonce,
     findSessionRun: () => Promise.resolve(undefined),
     findParentIdentity: () => Promise.resolve(undefined),
+    // The device the claims name, paired to the tenant they name: this helper
+    // stands in for a deployment whose store holds whatever the fixture says.
+    findDevice: id => Promise.resolve({
+      id,
+      userId: subject.userId,
+      label: 'fixture device',
+      tokenDigest: deviceTokenDigest(`token-${id}`),
+      pairedAt: NOW,
+      revokedAt: undefined,
+    }),
     findWorkspaceGrant: id => Promise.resolve({
       id,
       userId: subject.userId,

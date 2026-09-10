@@ -41,7 +41,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
-import { RunId, type ProviderAccountId, type ProviderKind, type UserId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import { RunId, type DeviceId, type ProviderAccountId, type ProviderKind, type UserId, type WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
 import {
   assembleKeyring,
   openCredential,
@@ -1052,6 +1052,10 @@ export class RunScheduler extends Service {
       // A child that named another tenant or another account would run on that
       // identity's credential while its spend settled into this parent's tree.
       findParentIdentity: (parentRunId: RunId) => Promise.resolve(store.findRun(parentRunId)),
+      // The record an assertion's device id resolves to. A revoked device is
+      // refused on its next run rather than at its assertion's expiry, which
+      // is what makes a tenant's revocation act immediately.
+      findDevice: (id: DeviceId) => store.findDevice(id),
       // The record an assertion's grant id resolves to. A run whose grant is
       // gone, revoked, or another tenant's or device's is refused before its
       // nonce is spent, so reissuing one lets the same assertion be retried.

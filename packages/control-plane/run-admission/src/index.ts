@@ -35,7 +35,12 @@ import {
   hasRemainingBudget,
   type RunBudget,
 } from '@deepseek-ai/dsh-run-budget'
-import type { ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import type { DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import {
+  admitDevice,
+  type DeviceAdmissionRejection,
+  type DeviceRecord,
+} from '@deepseek-ai/dsh-device-registry'
 import {
   admitWorkspaceGrant,
   type WorkspaceGrantRecord,
@@ -149,6 +154,21 @@ export interface RunAdmissionPolicy {
     readonly workspaceGrantId: WorkspaceGrantId
   } | undefined>
   /**
+   * Read the device these claims name.
+   *
+   * An assertion carries a device id, and until this port existed no step
+   * resolved it: a run named whatever device it liked, and the workspace
+   * grant's own device check compared that claim against the grant's — two
+   * unverified strings agreeing with each other. Answering `undefined` denies
+   * the run, because a device the deployment does not hold was never paired.
+   *
+   * This is also what makes a revocation act on the next operation rather than
+   * at an assertion's expiry. The record is the authority and the token only
+   * names it, so a tenant who revokes a host stops its next run even though
+   * the assertion it holds is still within its lifetime.
+   */
+  readonly findDevice: (id: DeviceId) => Promise<DeviceRecord | undefined>
+  /**
    * Read the workspace grant these claims name.
    *
    * An assertion carries a grant id and nothing else about the filesystem, so
@@ -245,6 +265,11 @@ export type RunRejection =
     readonly claims: ExecutionAssertionClaims
   }
   | {
+    readonly stage: 'device'
+    readonly reason: DeviceAdmissionRejection
+    readonly claims: ExecutionAssertionClaims
+  }
+  | {
     readonly stage: 'workspace'
     readonly reason: WorkspaceGrantRejection
     readonly claims: ExecutionAssertionClaims
@@ -333,6 +358,19 @@ export async function admitRun(
   const lineage = parentMismatch(parent, claims)
   if (lineage !== undefined) {
     return { admitted: false, rejection: { stage: 'lineage', reason: lineage, claims }, audits: [] }
+  }
+
+  // The device is resolved before the grant spelled for it: a grant names the
+  // device its roots belong to, and comparing that name against an unresolved
+  // claim compares two strings a caller supplied. It is before the nonce for
+  // the reason the grant is — a host paired again can retry the same still
+  // valid assertion.
+  const device = admitDevice(
+    { userId: claims.userId, deviceId: claims.deviceId },
+    await policy.findDevice(claims.deviceId),
+  )
+  if (!device.admitted) {
+    return { admitted: false, rejection: { stage: 'device', reason: device.rejection, claims }, audits: [] }
   }
 
   // Filesystem authority is resolved beside the other inherited grants and

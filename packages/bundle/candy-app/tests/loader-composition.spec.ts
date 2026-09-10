@@ -53,6 +53,7 @@ import * as ProviderAccountApi from '@deepseek-ai/dsh-provider-account-api'
 import * as AuditApi from '@deepseek-ai/dsh-audit-api'
 import * as DeviceApi from '@deepseek-ai/dsh-device-api'
 import { ACCOUNT_PATHS } from '@deepseek-ai/dsh-provider-account-api'
+import { deviceTokenDigest } from '@deepseek-ai/dsh-device-registry'
 import { DEVICE_PATHS } from '@deepseek-ai/dsh-device-api'
 import { OAUTH_START_PATH } from '@deepseek-ai/dsh-oauth-sign-in'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -251,6 +252,10 @@ describe('the shipped Candy deployment layer', () => {
     const deviceId = DeviceId('device-1')
     const workspaceGrantId = WorkspaceGrantId('grant-1')
     await ctx.controlPlaneStore.setTenantGrant(userId, budget)
+    await ctx.controlPlaneStore.saveDevice({
+      id: deviceId, userId, label: 'Studio desktop',
+      tokenDigest: deviceTokenDigest('device-token'), pairedAt: Date.now(), revokedAt: undefined,
+    })
     await ctx.controlPlaneStore.saveGrant({
       id: workspaceGrantId, userId, deviceId, roots: [root], mode: 'workspace-write', version: 1,
       createdAt: now, updatedAt: now, revokedAt: undefined,

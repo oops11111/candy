@@ -1336,6 +1336,9 @@ importers:
       '@deepseek-ai/dsh-app-boot':
         specifier: workspace:^
         version: link:../../boot/app-boot
+      '@deepseek-ai/dsh-device-registry':
+        specifier: workspace:^
+        version: link:../../control-plane/device-registry
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:^
         version: link:../../host/webserver
@@ -4334,6 +4337,9 @@ importers:
       '@deepseek-ai/dsh-credential-vault':
         specifier: workspace:^
         version: link:../credential-vault
+      '@deepseek-ai/dsh-device-registry':
+        specifier: workspace:^
+        version: link:../device-registry
       '@deepseek-ai/dsh-execution-assertion':
         specifier: workspace:^
         version: link:../execution-assertion
@@ -4401,6 +4407,9 @@ importers:
       '@deepseek-ai/dsh-credential-vault':
         specifier: workspace:^
         version: link:../credential-vault
+      '@deepseek-ai/dsh-device-registry':
+        specifier: workspace:^
+        version: link:../device-registry
       '@deepseek-ai/dsh-execution-assertion':
         specifier: workspace:^
         version: link:../execution-assertion
@@ -4783,6 +4792,9 @@ importers:
       '@deepseek-ai/dsh-credential-vault':
         specifier: workspace:^
         version: link:../credential-vault
+      '@deepseek-ai/dsh-device-registry':
+        specifier: workspace:^
+        version: link:../device-registry
       '@deepseek-ai/dsh-execution-assertion':
         specifier: workspace:^
         version: link:../execution-assertion
@@ -4842,6 +4854,9 @@ importers:
       '@deepseek-ai/dsh-credential-vault':
         specifier: workspace:^
         version: link:../credential-vault
+      '@deepseek-ai/dsh-device-registry':
+        specifier: workspace:^
+        version: link:../device-registry
       '@deepseek-ai/dsh-execution-assertion':
         specifier: workspace:^
         version: link:../execution-assertion
@@ -4957,6 +4972,9 @@ importers:
       '@deepseek-ai/dsh-credential-vault':
         specifier: workspace:^
         version: link:../credential-vault
+      '@deepseek-ai/dsh-device-registry':
+        specifier: workspace:^
+        version: link:../device-registry
       '@deepseek-ai/dsh-execution-assertion':
         specifier: workspace:^
         version: link:../execution-assertion
@@ -5026,6 +5044,9 @@ importers:
       '@deepseek-ai/dsh-credential-vault':
         specifier: workspace:^
         version: link:../credential-vault
+      '@deepseek-ai/dsh-device-registry':
+        specifier: workspace:^
+        version: link:../device-registry
       '@deepseek-ai/dsh-execution-assertion':
         specifier: workspace:^
         version: link:../execution-assertion
@@ -5100,6 +5121,9 @@ importers:
       '@deepseek-ai/dsh-control-plane':
         specifier: workspace:^
         version: link:../control-plane
+      '@deepseek-ai/dsh-device-registry':
+        specifier: workspace:^
+        version: link:../device-registry
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm

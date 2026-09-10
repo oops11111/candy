@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-a-revocation-that-waited-for-expiry.md
+2026-09-10-a-revocation-that-waited-for-expiry.md: b5e8085c322178534e211a2ccbbbb15b7a34b754
+2026-09-10-a-revocation-that-waited-for-expiry.zh.md: 05ecb2d5ce90f4d06039c3bf6b9e9a9168a11e4a

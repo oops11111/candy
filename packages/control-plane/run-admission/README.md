@@ -39,7 +39,7 @@ export const outcome = admission.admitted
   : admission.rejection
 ```
 
-An admitted run carries the verified claims, the opened credential, the pool key, the pool's directory, the allowance it may spend, and the workspace grant it holds. A denial names the stage that produced it — `assertion`, `lineage`, `workspace`, `budget`, `session`, `replay`, or `credential` — so an operator can tell a forged token from a revoked account without the caller learning anything it could retry against. Every stage past `assertion` also carries the verified claims, so a caller can say which tenant, account, and run was refused; a replayed nonce is this call's clearest attack signal, and one reported without a tenant records that something happened rather than what. The `assertion` stage carries none, because it denied the token before any claim was verified and the unverified payload is the caller-supplied identity this control plane refuses to repeat. Both outcomes carry `audits`: no path discards a record the vault produced.
+An admitted run carries the verified claims, the opened credential, the pool key, the pool's directory, the allowance it may spend, and the workspace grant it holds. A denial names the stage that produced it — `assertion`, `lineage`, `device`, `workspace`, `budget`, `session`, `replay`, or `credential` — so an operator can tell a forged token from a revoked account without the caller learning anything it could retry against. Every stage past `assertion` also carries the verified claims, so a caller can say which tenant, account, and run was refused; a replayed nonce is this call's clearest attack signal, and one reported without a tenant records that something happened rather than what. The `assertion` stage carries none, because it denied the token before any claim was verified and the unverified payload is the caller-supplied identity this control plane refuses to repeat. Both outcomes carry `audits`: no path discards a record the vault produced.
 
 ### Supplying the policy
 
@@ -51,7 +51,7 @@ import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 
 declare const partial: Omit<
   RunAdmissionPolicy,
-  'findBudget' | 'findParentIdentity' | 'findWorkspaceGrant' | 'findSessionRun' | 'spendNonce' | 'findCredential'
+  'findBudget' | 'findParentIdentity' | 'findDevice' | 'findWorkspaceGrant' | 'findSessionRun' | 'spendNonce' | 'findCredential'
 >
 declare const store: {
   budgetFor: (userId: string) => Promise<undefined>
@@ -59,6 +59,7 @@ declare const store: {
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
   runDriving: (sessionId: string) => Promise<undefined>
   runIdentity: (runId: string) => Promise<undefined>
+  deviceFor: (deviceId: string) => Promise<undefined>
   grantFor: (grantId: string) => Promise<undefined>
 }
 
@@ -70,6 +71,7 @@ export const policy: RunAdmissionPolicy = {
     ? store.budgetFor(claims.userId)
     : store.parentRemaining(claims.parentRunId),
   findParentIdentity: parentRunId => store.runIdentity(parentRunId),
+  findDevice: deviceId => store.deviceFor(deviceId),
   findWorkspaceGrant: grantId => store.grantFor(grantId),
   findSessionRun: claims => store.runDriving(claims.sessionId),
   spendNonce: claims => Promise.resolve(replay.spend(claims, Date.now())),
@@ -79,9 +81,11 @@ export const policy: RunAdmissionPolicy = {
 
 `spendNonce` returns true only the first time it sees a nonce, and this call never retries one reported as spent, so that port is the whole of replay protection. [`dsh-run-replay`](../run-replay/README.md) satisfies it for one process; a deployment running more than one runtime process needs a durable store that keeps the same three obligations — one indivisible decision, retention bounded by the assertion, and a record keyed by tenant as well as nonce.
 
-`findBudget` returning `undefined` denies the run: a tenant the store does not know is not a tenant with unlimited budget, and a deployment that means unmetered says so with an explicit large allowance. Neither it nor `findCredential` has an implementation in this repository, which is why they stay parameters: a run cannot start until the deployment has answered lineage, workspace grant, budget, session, replay, and credential lookup.
+`findBudget` returning `undefined` denies the run: a tenant the store does not know is not a tenant with unlimited budget, and a deployment that means unmetered says so with an explicit large allowance. Neither it nor `findCredential` has an implementation in this repository, which is why they stay parameters: a run cannot start until the deployment has answered lineage, device, workspace grant, budget, session, replay, and credential lookup.
 
 `findParentIdentity` reports the tenant, account and workspace grant the parent run was admitted for, and is asked only about a run that has a parent. A child naming another tenant or another account is refused: the parent held exactly one of each, and neither of a pair is a subset of the other. The grant it reports is also the only one a child may name.
+
+`findDevice` turns the device id an assertion carries into a record. Returning `undefined` denies the run: a device the store does not hold was never paired.
 
 `findWorkspaceGrant` turns the grant id an assertion carries into a record. Returning `undefined` denies the run: a grant the store does not hold is not authority with no bound.
 
@@ -110,13 +114,21 @@ The budget and the session are read before the nonce is spent. Both are denials 
 
 ### The order is the contract
 
-The assertion is verified first, so nothing downstream ever sees an unauthenticated claim — a token this runtime does not admit is denied before any port is called. A child's lineage is checked next, because a child that is not a subset of its parent should not consult an allowance it may not draw on, and its workspace grant is resolved beside it — the other authority a run claims by naming rather than by proving. The budget is read fourth and the session fifth: both are denials a caller can fix and retry, so neither may burn the nonce, and neither touches a secret. The nonce is spent sixth, serializing concurrent duplicates so two copies of one token cannot both reach the credential. The credential is opened seventh, under the binding the claims carry. The pool is resolved last, because it needs no secret.
+The assertion is verified first, so nothing downstream ever sees an unauthenticated claim — a token this runtime does not admit is denied before any port is called. A child's lineage is checked next, because a child that is not a subset of its parent should not consult an allowance it may not draw on, and its device and workspace grant are resolved beside it — the other two authorities a run claims by naming rather than by proving, the device first because the grant is spelled for it. The budget is read fourth and the session fifth: both are denials a caller can fix and retry, so neither may burn the nonce, and neither touches a secret. The nonce is spent sixth, serializing concurrent duplicates so two copies of one token cannot both reach the credential. The credential is opened seventh, under the binding the claims carry. The pool is resolved last, because it needs no secret.
 
 ### Why a child may not name another tenant or account
 
 `dsh-run-ledger` funds a child out of its parent's record and settles its spend back into it, and `dsh-credential-vault` opens whichever credential the claims name. Neither knows the other's subject. A child of one tenant under a parent of another therefore runs on the child's credential while its spend settles into the parent's tree: the parent's tenant funds work it never authorized, and the child's tenant is billed nothing. A booted runtime confirmed exactly that before this check existed.
 
 The rule is the one the boundaries page states — a child inherits a subset of its parent's grants and may not widen any. Tenant and account are decidable because the parent held exactly one of each, and the workspace grant is decidable for the same reason, through `findWorkspaceGrant`.
+
+### Why a run's device is resolved here
+
+An assertion carries a `DeviceId`, and until this stage existed nothing resolved it. A run named whatever device it liked, and the workspace grant's own device check compared that claim against the grant's — two unverified strings agreeing with each other. `findDevice` turns the id into a record and [`dsh-device-registry`](../device-registry/README.md) decides whether the run may act as it, refusing an id nothing resolves, a revoked binding, and another tenant's device.
+
+It is also what makes a revocation act immediately. An assertion stays valid for its whole lifetime, so without a record a tenant who revoked a host would keep serving its runs until that lifetime ran out. The record is the authority and the token only names it, so the next run stops.
+
+The refusal is before the nonce for the reason the grant's is: a host paired again presents the same still-valid assertion, and a burned nonce would make a recoverable refusal permanent.
 
 ### Why a run's workspace grant is resolved here
 

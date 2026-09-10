@@ -33,6 +33,7 @@ import {
   sealCredential,
   type CredentialKeyring,
 } from '@deepseek-ai/dsh-credential-vault'
+import { deviceTokenDigest } from '@deepseek-ai/dsh-device-registry'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { revokeProviderAccount } from '@deepseek-ai/dsh-provider-accounts'
@@ -114,6 +115,7 @@ const CHILD_SESSION = brandString<SessionId>('session-child')
 const BOBBY = UserId('user-bobby')
 const ACCOUNT = ProviderAccountId('account-1')
 const DEVICE = DeviceId('device-1')
+const BOBBY_DEVICE = DeviceId('device-bobby')
 const WORKSPACE_GRANT = WorkspaceGrantId('grant-1')
 /** Bobby's own grant; a run of one tenant may never name another tenant's. */
 const BOBBY_GRANT = WorkspaceGrantId('grant-2')
@@ -239,8 +241,9 @@ function claims(now: number, overrides: Partial<ExecutionAssertionClaims> = {}):
 /** Give a second tenant an allowance and a sealed credential of its own. */
 async function provisionBobby(ctx: Context, now: number): Promise<void> {
   await ctx.controlPlaneStore.setTenantGrant(BOBBY, BUDGET)
+  await pairDevice(ctx, BOBBY_DEVICE, BOBBY, now)
   await ctx.controlPlaneStore.saveGrant({
-    id: BOBBY_GRANT, userId: BOBBY, deviceId: DEVICE,
+    id: BOBBY_GRANT, userId: BOBBY, deviceId: BOBBY_DEVICE,
     roots: ['/srv/candy/bobby'], mode: 'workspace-write', version: 1,
     createdAt: now, updatedAt: now, revokedAt: undefined,
   })
@@ -259,6 +262,15 @@ async function provisionBobby(ctx: Context, now: number): Promise<void> {
 }
 
 /** Grant the tenant filesystem authority on this device, without funding it. */
+/** Pair one device to one tenant, as the pairing exchange would. */
+async function pairDevice(ctx: Context, id: DeviceId, userId: UserId, now: number): Promise<void> {
+  await ctx.controlPlaneStore.saveDevice({
+    id, userId, label: `label-${id}`,
+    tokenDigest: deviceTokenDigest(`token-${id}`),
+    pairedAt: now, revokedAt: undefined,
+  })
+}
+
 async function grantWorkspace(ctx: Context, now: number): Promise<void> {
   await ctx.controlPlaneStore.saveGrant({
     id: WORKSPACE_GRANT, userId: ALICE, deviceId: DEVICE,
@@ -270,6 +282,7 @@ async function grantWorkspace(ctx: Context, now: number): Promise<void> {
 /** Give the tenant an allowance, a workspace grant, and a sealed credential, as a control plane would. */
 async function provision(ctx: Context, now: number): Promise<void> {
   await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+  await pairDevice(ctx, DEVICE, ALICE, now)
   await grantWorkspace(ctx, now)
   await ctx.controlPlaneStore.save({
     record: {
@@ -326,6 +339,76 @@ describe('a booted Candy scheduler', () => {
     })
   })
 
+  it('refuses the next run of a device its tenant has revoked', async () => {
+    // The whole point of a device record: a token stays valid for its full
+    // lifetime, and revoking the host has to stop its next operation rather
+    // than wait for that lifetime to run out.
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    const first = await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), () => SHARE, now,
+    )
+    expect(first.started).toBe(true)
+    await ctx.runScheduler.close(RunId('run-root'))
+
+    const paired = await ctx.controlPlaneStore.findDevice(DEVICE)
+    if (paired === undefined) throw new Error('test setup: the device was not paired')
+    await ctx.controlPlaneStore.saveDevice({ ...paired, revokedAt: now + 1 })
+
+    const after = await ctx.runScheduler.start(
+      mintExecutionAssertion(
+        claims(now, { runId: RunId('run-2'), nonce: 'n-2', sessionId: SECOND_SESSION }),
+        Buffer.from(SECRET, 'utf8'),
+      ),
+      () => SHARE,
+      now,
+    )
+
+    expect(after).toMatchObject({
+      started: false,
+      rejection: { stage: 'admission', rejection: { stage: 'device', reason: 'revoked' } },
+    })
+  })
+
+  it('denies a run naming a device the store never paired', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+    await grantWorkspace(ctx, now)
+
+    const outcome = await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now,
+    )
+
+    expect(outcome).toMatchObject({
+      started: false,
+      rejection: { stage: 'admission', rejection: { stage: 'device', reason: 'not-found' } },
+    })
+  })
+
+  it("denies a run acting as another tenant's device", async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
+    const ctx = await boot(root)
+    const now = Date.now()
+    await provision(ctx, now)
+    await provisionBobby(ctx, now)
+
+    // Alice's own tenant, account and allowance — and Bobby's paired host.
+    const outcome = await ctx.runScheduler.start(
+      mintExecutionAssertion(claims(now, { deviceId: BOBBY_DEVICE }), Buffer.from(SECRET, 'utf8')),
+      undefined,
+      now,
+    )
+
+    expect(outcome).toMatchObject({
+      started: false,
+      rejection: { stage: 'admission', rejection: { stage: 'device', reason: 'tenant-mismatch' } },
+    })
+  })
+
   it('denies a run whose workspace grant the store does not hold', async () => {
     // Until the grant was a record, the id an assertion carried resolved to
     // nothing and no step looked at it: a run named whatever grant it liked.
@@ -333,6 +416,7 @@ describe('a booted Candy scheduler', () => {
     const ctx = await boot(root)
     const now = Date.now()
     await ctx.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+    await pairDevice(ctx, DEVICE, ALICE, now)
 
     const outcome = await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
 
@@ -384,6 +468,9 @@ describe('a booted Candy scheduler', () => {
     const ctx = await boot(root)
     const now = Date.now()
     await provision(ctx, now)
+    // A second device of Alice's, paired: the grant is what refuses it, not
+    // the device lookup one step earlier.
+    await pairDevice(ctx, DeviceId('device-2'), ALICE, now)
 
     const outcome = await ctx.runScheduler.start(
       mintExecutionAssertion(claims(now, { deviceId: DeviceId('device-2') }), Buffer.from(SECRET, 'utf8')),
@@ -452,7 +539,8 @@ describe('a booted Candy scheduler', () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)
     const now = Date.now()
-    // Its workspace grant stands; what it has no record of is the allowance.
+    // Its device and workspace grant stand; what it has no record of is the allowance.
+    await pairDevice(ctx, DEVICE, ALICE, now)
     await grantWorkspace(ctx, now)
 
     const outcome = await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
@@ -1130,6 +1218,7 @@ describe('a booted Candy scheduler', () => {
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8')), undefined, now)
     await ctx.runScheduler.start(mintExecutionAssertion(claims(now, {
       userId: BOBBY,
+      deviceId: BOBBY_DEVICE,
       accountId: ProviderAccountId('account-2'),
       sessionId: SECOND_SESSION,
       runId: RunId('run-bobby'),
@@ -1398,7 +1487,10 @@ describe('a booted Candy scheduler', () => {
     // it may not believe, so its record must not reach that tenant's trail.
     const denied = await ctx.runScheduler.start(
       mintExecutionAssertion(
-        claims(now, { userId: BOBBY, workspaceGrantId: BOBBY_GRANT, runId: RunId('run-x'), nonce: 'n-x' }),
+        claims(now, {
+          userId: BOBBY, deviceId: BOBBY_DEVICE, workspaceGrantId: BOBBY_GRANT,
+          runId: RunId('run-x'), nonce: 'n-x',
+        }),
         Buffer.from('another-secret-at-least-32-bytes!', 'utf8'),
       ),
       undefined,
@@ -1427,8 +1519,8 @@ describe('a booted Candy scheduler', () => {
 
     const started = await ctx.runScheduler.start(
       mintExecutionAssertion(claims(now, {
-        userId: BOBBY, accountId: ProviderAccountId('account-2'), workspaceGrantId: BOBBY_GRANT,
-        runId: RunId('run-2'), nonce: 'n-2',
+        userId: BOBBY, deviceId: BOBBY_DEVICE, accountId: ProviderAccountId('account-2'),
+        workspaceGrantId: BOBBY_GRANT, runId: RunId('run-2'), nonce: 'n-2',
       }), Buffer.from(SECRET, 'utf8')),
       undefined,
       now,
@@ -2049,7 +2141,8 @@ describe('a booted Candy scheduler', () => {
     const second = await ctx.runScheduler.start(
       mintExecutionAssertion(
         claims(now, {
-          userId: BOBBY, accountId: ProviderAccountId('account-2'), workspaceGrantId: BOBBY_GRANT,
+          userId: BOBBY, deviceId: BOBBY_DEVICE, accountId: ProviderAccountId('account-2'),
+          workspaceGrantId: BOBBY_GRANT,
           runId: RunId('run-bobby'), nonce: 'n2',
         }),
         Buffer.from(SECRET, 'utf8'),
@@ -2302,7 +2395,7 @@ describe('a booted Candy scheduler', () => {
     const child = await ctx.runScheduler.start(
       mintExecutionAssertion(
         claims(now, {
-          userId: BOBBY, accountId: ProviderAccountId('account-2'),
+          userId: BOBBY, deviceId: BOBBY_DEVICE, accountId: ProviderAccountId('account-2'),
           runId: RunId('run-child'), parentRunId: RunId('run-root'),
           nonce: 'n2', sessionId: CHILD_SESSION,
         }),
@@ -2625,6 +2718,7 @@ describe('a booted Candy scheduler', () => {
     root = await mkdtemp(join(tmpdir(), 'dsh-scheduler-'))
     const ctx = await boot(root)
     const now = Date.now()
+    await pairDevice(ctx, DEVICE, ALICE, now)
     await grantWorkspace(ctx, now)
     const token = mintExecutionAssertion(claims(now), Buffer.from(SECRET, 'utf8'))
 

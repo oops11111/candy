@@ -4346,6 +4346,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type DeepSeekLlmApiJson = null | boolean | number | string | DeepSeekLlmApiJson[] | {\n    [key: string]: DeepSeekLlmApiJson;\n};',
   },
   {
+    name: 'DeviceAdmissionRejection',
+    declaration: 'export type DeviceAdmissionRejection = \'not-found\' | \'revoked\' | \'tenant-mismatch\';',
+  },
+  {
     name: 'DeviceId',
     declaration: 'export type DeviceId = Branded<\'DeviceId\'>;',
   },
@@ -5299,7 +5303,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RunRejection',
-    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'lineage\';\n    readonly reason: \'tenant-mismatch\' | \'account-mismatch\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'workspace\';\n    readonly reason: WorkspaceGrantRejection;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'session\';\n    readonly reason: \'already-driven\';\n    readonly holder: RunId;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
+    declaration: 'export type RunRejection = {\n    readonly stage: \'assertion\';\n    readonly reason: ExecutionAssertionRejection;\n} | {\n    readonly stage: \'budget\';\n    readonly reason: \'no-budget\' | \'exhausted\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'lineage\';\n    readonly reason: \'tenant-mismatch\' | \'account-mismatch\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'device\';\n    readonly reason: DeviceAdmissionRejection;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'workspace\';\n    readonly reason: WorkspaceGrantRejection;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'session\';\n    readonly reason: \'already-driven\';\n    readonly holder: RunId;\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'replay\';\n    readonly reason: \'nonce-already-spent\';\n    readonly claims: ExecutionAssertionClaims;\n} | {\n    readonly stage: \'credential\';\n    readonly reason: \'not-found\' | CredentialRejection;\n    readonly claims: ExecutionAssertionClaims;\n};',
   },
   {
     name: 'RunSettlement',

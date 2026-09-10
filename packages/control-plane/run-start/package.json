@@ -40,6 +40,7 @@
     "@deepseek-ai/dsh-brand": "workspace:^",
     "@deepseek-ai/dsh-control-plane": "workspace:^",
     "@deepseek-ai/dsh-credential-vault": "workspace:^",
+    "@deepseek-ai/dsh-device-registry": "workspace:^",
     "@deepseek-ai/dsh-execution-assertion": "workspace:^",
     "@deepseek-ai/dsh-run-admission": "workspace:^",
     "@deepseek-ai/dsh-run-budget": "workspace:^",

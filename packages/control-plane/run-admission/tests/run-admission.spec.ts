@@ -1,5 +1,6 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId } from '@deepseek-ai/dsh-control-plane'
+import { deviceTokenDigest, type DeviceRecord } from '@deepseek-ai/dsh-device-registry'
 import type { WorkspaceGrantRecord } from '@deepseek-ai/dsh-workspace-grant'
 import {
   CredentialKeyVersion,
@@ -73,8 +74,27 @@ const STRANGER_GRANT: WorkspaceGrantRecord = {
   ...GRANT,
   id: WorkspaceGrantId('grant-2'),
   userId: UserId('user-bobby'),
+  deviceId: DeviceId('device-2'),
   roots: ['/srv/candy/bobby'],
 }
+
+/** The device the default claims name, paired to the tenant they name. */
+const DEVICE: DeviceRecord = {
+  id: DeviceId('device-1'),
+  userId: UserId('user-alice'),
+  label: 'Studio desktop',
+  tokenDigest: deviceTokenDigest('device-token'),
+  pairedAt: NOW,
+  revokedAt: undefined,
+}
+
+/** A second tenant's device, so a case naming that tenant names its own. */
+const STRANGER_DEVICE: DeviceRecord = {
+  ...DEVICE, id: DeviceId('device-2'), userId: UserId('user-bobby'),
+}
+
+/** The paired devices, read by id exactly as a deployment's store answers. */
+const DEVICES = new Map([[DEVICE.id, DEVICE], [STRANGER_DEVICE.id, STRANGER_DEVICE]])
 
 /** The stored grants, read by id exactly as a deployment's store answers. */
 const GRANTS = new Map([[GRANT.id, GRANT], [STRANGER_GRANT.id, STRANGER_GRANT]])
@@ -103,6 +123,7 @@ function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy
     spendNonce: subject => Promise.resolve(replay.spend(subject, NOW)),
     findSessionRun: () => Promise.resolve(undefined),
     findParentIdentity: () => Promise.resolve(undefined),
+    findDevice: id => Promise.resolve(DEVICES.get(id)),
     findWorkspaceGrant: id => Promise.resolve(GRANTS.get(id)),
     findCredential: subject => Promise.resolve(
       subject.userId === UserId('user-alice') ? sealedFor(subject) : undefined,
@@ -221,7 +242,11 @@ describe('admitRun', () => {
     const shared = policy({ findCredential: subject => Promise.resolve(sealedFor(subject)) })
     const alice = mintExecutionAssertion(claims(), ASSERTION_SECRET)
     const bobby = mintExecutionAssertion(
-      claims({ userId: UserId('user-bobby'), workspaceGrantId: STRANGER_GRANT.id }),
+      claims({
+        userId: UserId('user-bobby'),
+        deviceId: STRANGER_DEVICE.id,
+        workspaceGrantId: STRANGER_GRANT.id,
+      }),
       ASSERTION_SECRET,
     )
 
@@ -244,8 +269,51 @@ describe('admitRun', () => {
     expect(order).toEqual(['nonce', 'credential'])
   })
 
+  it.each([
+    ['not-found', { deviceId: DeviceId('device-9') }, undefined],
+    ['revoked', {}, { ...DEVICE, revokedAt: NOW - 1 }],
+    ['tenant-mismatch', { deviceId: STRANGER_DEVICE.id }, STRANGER_DEVICE],
+  ] as const)('denies a run whose device is %s', async (reason, overrides, record) => {
+    // Until the device was a record, an assertion's `deviceId` resolved to
+    // nothing: a run named whatever device it liked, and the workspace grant's
+    // own device check compared that claim against the grant's.
+    const subject = claims(overrides)
+    const token = mintExecutionAssertion(subject, ASSERTION_SECRET)
+
+    const admission = await admitRun(
+      { token }, policy({ findDevice: () => Promise.resolve(record) }), NOW,
+    )
+
+    expect(admission).toEqual({
+      admitted: false,
+      rejection: { stage: 'device', reason, claims: subject },
+      audits: [],
+    })
+  })
+
+  it('refuses a revoked device without burning the assertion that named it', async () => {
+    // A host paired again presents the same still-valid assertion, so the
+    // refusal must not spend its single-use nonce.
+    const subject = claims()
+    const token = mintExecutionAssertion(subject, ASSERTION_SECRET)
+    const spent: string[] = []
+    const store = policy({ spendNonce: (c) => { spent.push(c.nonce); return Promise.resolve(true) } })
+
+    const refused = await admitRun({ token }, {
+      ...store, findDevice: () => Promise.resolve({ ...DEVICE, revokedAt: NOW - 1 }),
+    }, NOW)
+
+    expect(refused.admitted).toBe(false)
+    expect(spent).toEqual([])
+    expect((await admitRun({ token }, store, NOW)).admitted).toBe(true)
+  })
+
   it('denies a tenant whose account has no stored credential', async () => {
-    const stranger = claims({ userId: UserId('user-bobby'), workspaceGrantId: STRANGER_GRANT.id })
+    const stranger = claims({
+      userId: UserId('user-bobby'),
+      deviceId: STRANGER_DEVICE.id,
+      workspaceGrantId: STRANGER_GRANT.id,
+    })
     const token = mintExecutionAssertion(stranger, ASSERTION_SECRET)
 
     const admission = await admitRun({ token }, policy(), NOW)

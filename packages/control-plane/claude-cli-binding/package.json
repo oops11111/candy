@@ -37,6 +37,7 @@
     "@deepseek-ai/dsh-brand": "workspace:^",
     "@deepseek-ai/dsh-control-plane": "workspace:^",
     "@deepseek-ai/dsh-credential-vault": "workspace:^",
+    "@deepseek-ai/dsh-device-registry": "workspace:^",
     "@deepseek-ai/dsh-execution-assertion": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-llm-claude-cli": "workspace:^",

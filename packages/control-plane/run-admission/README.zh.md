@@ -39,7 +39,7 @@ export const outcome = admission.admitted
   : admission.rejection
 ```
 
-被准入的运行携带已校验的声明、已打开的凭据、池键、池的目录、它可以花费的额度,以及它所持有的工作区授权。拒绝会指明产生它的阶段——`assertion`、`lineage`、`workspace`、`budget`、`session`、`replay` 或 `credential`——因此运维人员可以区分伪造令牌与已吊销账户,而调用方不会因此得到任何可用于重试的信息。`assertion` 之后的每一个阶段还会携带已校验的声明,因此调用方能说出被拒绝的是哪个租户、哪个账户、哪一次运行;被重放的 nonce 是本调用最清晰的攻击信号,而一个不带租户的重放报告记下的是「发生了某件事」,而不是发生了什么。`assertion` 阶段不携带任何身份,因为它在任何声明被校验之前就拒绝了该令牌,而未经校验的载荷正是本控制平面拒绝复述的、由调用方提供的身份。两种结果都携带 `audits`:没有任何路径会丢弃保险库产生的记录。
+被准入的运行携带已校验的声明、已打开的凭据、池键、池的目录、它可以花费的额度,以及它所持有的工作区授权。拒绝会指明产生它的阶段——`assertion`、`lineage`、`device`、`workspace`、`budget`、`session`、`replay` 或 `credential`——因此运维人员可以区分伪造令牌与已吊销账户,而调用方不会因此得到任何可用于重试的信息。`assertion` 之后的每一个阶段还会携带已校验的声明,因此调用方能说出被拒绝的是哪个租户、哪个账户、哪一次运行;被重放的 nonce 是本调用最清晰的攻击信号,而一个不带租户的重放报告记下的是「发生了某件事」,而不是发生了什么。`assertion` 阶段不携带任何身份,因为它在任何声明被校验之前就拒绝了该令牌,而未经校验的载荷正是本控制平面拒绝复述的、由调用方提供的身份。两种结果都携带 `audits`:没有任何路径会丢弃保险库产生的记录。
 
 ### 提供 policy
 
@@ -51,7 +51,7 @@ import { RunReplayStore } from '@deepseek-ai/dsh-run-replay'
 
 declare const partial: Omit<
   RunAdmissionPolicy,
-  'findBudget' | 'findParentIdentity' | 'findWorkspaceGrant' | 'findSessionRun' | 'spendNonce' | 'findCredential'
+  'findBudget' | 'findParentIdentity' | 'findDevice' | 'findWorkspaceGrant' | 'findSessionRun' | 'spendNonce' | 'findCredential'
 >
 declare const store: {
   budgetFor: (userId: string) => Promise<undefined>
@@ -59,6 +59,7 @@ declare const store: {
   envelopeFor: (userId: string, accountId: string) => Promise<undefined>
   runDriving: (sessionId: string) => Promise<undefined>
   runIdentity: (runId: string) => Promise<undefined>
+  deviceFor: (deviceId: string) => Promise<undefined>
   grantFor: (grantId: string) => Promise<undefined>
 }
 
@@ -70,6 +71,7 @@ export const policy: RunAdmissionPolicy = {
     ? store.budgetFor(claims.userId)
     : store.parentRemaining(claims.parentRunId),
   findParentIdentity: parentRunId => store.runIdentity(parentRunId),
+  findDevice: deviceId => store.deviceFor(deviceId),
   findWorkspaceGrant: grantId => store.grantFor(grantId),
   findSessionRun: claims => store.runDriving(claims.sessionId),
   spendNonce: claims => Promise.resolve(replay.spend(claims, Date.now())),
@@ -79,9 +81,11 @@ export const policy: RunAdmissionPolicy = {
 
 `spendNonce` 只在首次见到某个 nonce 时返回 true,而本调用从不重试一个被报告为已消费的 nonce,因此那个端口就是重放防护的全部。[`dsh-run-replay`](../run-replay/README.zh.md) 为单个进程满足它;运行多于一个运行时进程的部署,需要一个仍然守住同样三项义务的持久化存储 —— 一个不可分割的决定、由断言界定的保留期,以及一条既以租户也以 nonce 为键的记录。
 
-`findBudget` 返回 `undefined` 表示拒绝该运行:存储不认识的租户并不等于额度无限的租户,而意在「不计量」的部署应当用一个显式的大额度来表达。它与 `findCredential` 在本仓库中都没有实现,这正是它们都仍作为参数的原因:在部署方回答了世系、工作区授权、额度、会话、重放与凭据查找之前,运行无法开始。
+`findBudget` 返回 `undefined` 表示拒绝该运行:存储不认识的租户并不等于额度无限的租户,而意在「不计量」的部署应当用一个显式的大额度来表达。它与 `findCredential` 在本仓库中都没有实现,这正是它们都仍作为参数的原因:在部署方回答了世系、设备、工作区授权、额度、会话、重放与凭据查找之前,运行无法开始。
 
 `findParentIdentity` 报告父运行是为哪个租户、哪个账户、哪一份工作区授权被准入的,而且只在一次运行确有父运行时才被询问。一个指名了另一个租户或另一个账户的子运行会被拒绝:父运行各自只持有一个,而一对之中任何一个都不是另一个的子集。它所报告的授权,也是子代唯一可以指名的那一份。
+
+`findDevice` 把断言携带的设备 id 变成一条记录。返回 `undefined` 表示拒绝该运行:存储不持有的设备从未被配对过。
 
 `findWorkspaceGrant` 把断言携带的授权 id 变成一条记录。返回 `undefined` 表示拒绝该运行:存储不持有的授权并不等于没有边界的权限。
 
@@ -110,13 +114,21 @@ export const policy: RunAdmissionPolicy = {
 
 ### 顺序就是约定
 
-断言最先被校验,因此下游永远不会看到未经认证的声明——本运行时不接受的令牌,会在任何一个端口被调用之前就被拒绝。接下来检查子运行的世系,因为一个并非其父运行子集的子运行,不该去查询一份它无权动用的额度;它的工作区授权在旁边一并解析 —— 那是一次运行靠指名而非靠证明所主张的另一项权限。额度第四个、会话第五个被读取:两者都是调用方能够修复并重试的拒绝,因此都绝不能烧掉 nonce,而且都不触碰任何密钥。nonce 第六个被消费,把并发的重复请求串行化,使同一个令牌的两份副本不可能都抵达凭据。凭据第七个被打开,使用声明所携带的绑定。池最后被解析,因为它不需要任何密钥。
+断言最先被校验,因此下游永远不会看到未经认证的声明——本运行时不接受的令牌,会在任何一个端口被调用之前就被拒绝。接下来检查子运行的世系,因为一个并非其父运行子集的子运行,不该去查询一份它无权动用的额度;它的设备与工作区授权在旁边一并解析 —— 那是一次运行靠指名而非靠证明所主张的另外两项权限,设备在前,因为授权正是为它书写的。额度第四个、会话第五个被读取:两者都是调用方能够修复并重试的拒绝,因此都绝不能烧掉 nonce,而且都不触碰任何密钥。nonce 第六个被消费,把并发的重复请求串行化,使同一个令牌的两份副本不可能都抵达凭据。凭据第七个被打开,使用声明所携带的绑定。池最后被解析,因为它不需要任何密钥。
 
 ### 为什么子运行不得指名另一个租户或账户
 
 `dsh-run-ledger` 从父运行的记录里为子运行拨款,并把它的花费结算回去;而 `dsh-credential-vault` 打开声明所指名的那份凭据。两者都不知道对方的主体。于是一个属于某租户、挂在另一个租户父运行之下的子运行,会跑在子运行自己的凭据上,而它的花费结算进父运行那棵树:父运行的租户为它从未授权的工作买单,而子运行的租户一分钱也没被记。在这项检查存在之前,一次已启动的运行时证实的正是这一点。
 
 这条规则就是边界页所陈述的那一条 —— 子运行继承其父运行授权的一个子集,且不得扩大其中任何一项。租户与账户是可裁定的,因为父运行各自只持有一个;而工作区授权出于同样的理由也是可裁定的,经由 `findWorkspaceGrant`。
+
+### 为什么一次运行的设备在这里解析
+
+一份断言携带一个 `DeviceId`,而在这个阶段存在之前没有任何东西解析它。一次运行想指名哪台设备就指名哪台,而工作区授权自身的设备检查,比较的是这项主张与授权上的设备——两个未经验证的字符串彼此吻合。`findDevice` 把这个 id 变成一条记录,而 [`dsh-device-registry`](../device-registry/README.zh.md) 裁定这次运行是否可以以它的身份行事,拒绝解析不到任何东西的 id、已被撤销的绑定,以及属于另一个租户的设备。
+
+这也是撤销得以立即生效的原因。断言在其整个有效期内都保持有效,因此如果没有记录,撤销了某台主机的租户仍会看到它的运行被服务到那个有效期走完为止。记录才是权威,令牌只是指名它,于是下一次运行就被拦住。
+
+这次拒绝位于 nonce 之前,理由与授权的拒绝相同:重新配对的主机出示的是同一份仍然有效的断言,而烧掉的 nonce 会把一次可恢复的拒绝变成永久的。
 
 ### 为什么一次运行的工作区授权在这里解析
 

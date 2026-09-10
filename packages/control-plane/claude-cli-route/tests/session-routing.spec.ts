@@ -23,6 +23,7 @@ import {
   type WorkspaceGrantId,
 } from '@deepseek-ai/dsh-control-plane'
 import ControlPlaneStore from '@deepseek-ai/dsh-control-plane-store'
+import { deviceTokenDigest } from '@deepseek-ai/dsh-device-registry'
 import {
   CredentialKeyVersion,
   sealCredential,
@@ -142,6 +143,10 @@ function useStandIn(context: Context, executable: string, extraEnv: NodeJS.Proce
 /** Give the tenant an allowance and a sealed credential, as a control plane would. */
 async function provision(context: Context, now: number): Promise<void> {
   await context.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+  await context.controlPlaneStore.saveDevice({
+    id: brandString<DeviceId>('device-1'), userId: ALICE, label: 'fixture device',
+    tokenDigest: deviceTokenDigest('token-1'), pairedAt: now, revokedAt: undefined,
+  })
   await context.controlPlaneStore.saveGrant({
     id: brandString<WorkspaceGrantId>('grant-1'), userId: ALICE, deviceId: brandString<DeviceId>('device-1'),
     roots: ['/srv/candy/alice'], mode: 'workspace-write', version: 1,

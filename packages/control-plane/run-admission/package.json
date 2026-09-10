@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-credential-vault": "workspace:^",
+    "@deepseek-ai/dsh-device-registry": "workspace:^",
     "@deepseek-ai/dsh-execution-assertion": "workspace:^",
     "@deepseek-ai/dsh-runtime-pool": "workspace:^",
     "@deepseek-ai/dsh-workspace-grant": "workspace:^"

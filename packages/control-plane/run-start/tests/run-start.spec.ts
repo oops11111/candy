@@ -16,6 +16,7 @@ import {
   type CredentialKeyring,
 } from '@deepseek-ai/dsh-credential-vault'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
+import { deviceTokenDigest } from '@deepseek-ai/dsh-device-registry'
 import type { RunAdmissionPolicy } from '@deepseek-ai/dsh-run-admission'
 import type { RunBudget } from '@deepseek-ai/dsh-run-budget'
 import { RunLedger } from '@deepseek-ai/dsh-run-ledger'
@@ -76,6 +77,14 @@ function policy(overrides: Partial<RunAdmissionPolicy> = {}): RunAdmissionPolicy
     spendNonce: subject => Promise.resolve(replay.spend(subject, NOW)),
     findSessionRun: () => Promise.resolve(undefined),
     findParentIdentity: () => Promise.resolve(undefined),
+    findDevice: id => Promise.resolve({
+      id,
+      userId: UserId('user-alice'),
+      label: 'fixture device',
+      tokenDigest: deviceTokenDigest(`token-${id}`),
+      pairedAt: NOW,
+      revokedAt: undefined,
+    }),
     findWorkspaceGrant: id => Promise.resolve({
       id,
       userId: UserId('user-alice'),

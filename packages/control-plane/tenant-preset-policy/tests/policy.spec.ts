@@ -18,6 +18,7 @@ import {
   ConversationId, DeviceId, ProviderAccountId, RunId, UserId, WorkspaceGrantId,
 } from '@deepseek-ai/dsh-control-plane'
 import ControlPlaneStore from '@deepseek-ai/dsh-control-plane-store'
+import { deviceTokenDigest } from '@deepseek-ai/dsh-device-registry'
 import { CredentialKeyVersion, sealCredential, type CredentialKeyring } from '@deepseek-ai/dsh-credential-vault'
 import { mintExecutionAssertion, type ExecutionAssertionClaims } from '@deepseek-ai/dsh-execution-assertion'
 import Llm from '@deepseek-ai/dsh-llm'
@@ -113,6 +114,10 @@ async function boot(at: string, config: Config): Promise<Context> {
 /** Give the tenant an allowance and a sealed credential, as a control plane would. */
 async function provision(context: Context, now: number): Promise<void> {
   await context.controlPlaneStore.setTenantGrant(ALICE, BUDGET)
+  await context.controlPlaneStore.saveDevice({
+    id: DeviceId('device-1'), userId: ALICE, label: 'fixture device',
+    tokenDigest: deviceTokenDigest('token-1'), pairedAt: now, revokedAt: undefined,
+  })
   await context.controlPlaneStore.saveGrant({
     id: WorkspaceGrantId('grant-1'), userId: ALICE, deviceId: DeviceId('device-1'),
     roots: ['/srv/candy/alice'], mode: 'workspace-write', version: 1,

@@ -44,6 +44,7 @@
     "@deepseek-ai/dsh-control-plane": "workspace:^",
     "@deepseek-ai/dsh-control-plane-store": "workspace:^",
     "@deepseek-ai/dsh-credential-vault": "workspace:^",
+    "@deepseek-ai/dsh-device-registry": "workspace:^",
     "@deepseek-ai/dsh-execution-assertion": "workspace:^",
     "@deepseek-ai/dsh-run-budget": "workspace:^",
     "@deepseek-ai/dsh-run-scheduler": "workspace:^",

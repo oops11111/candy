@@ -6,6 +6,7 @@
   },
   "references": [
     { "path": "../control-plane" },
+    { "path": "../device-registry" },
     { "path": "../credential-vault" },
     { "path": "../execution-assertion" },
     { "path": "../run-budget" },
