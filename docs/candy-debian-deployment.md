@@ -130,12 +130,17 @@ The credential key is the one thing that must not be rolled back with everything
 <a id="backup-and-restore"></a>
 ## Backup and restore
 
-The control-plane database is the only thing that cannot be rebuilt. Back it up with SQLite's own online backup, not with `cp` — a copy taken mid-write is a file that opens and is missing rows:
+The control-plane database is the only thing that cannot be rebuilt. Back it up with SQLite's own online backup, which copies a live database page by page while the service keeps writing:
 
 ```sh
-sudo -u candy sqlite3 /var/lib/candy/control-plane.db \
-  ".backup '/var/backups/candy/control-plane-$(date -u +%Y%m%dT%H%M%SZ).db'"
+sudo -u candy node /opt/candy/packages/bundle/candy-app/deploy/candy-backup.mjs \
+  /var/lib/candy/control-plane.db \
+  "/var/backups/candy/control-plane-$(date -u +%Y%m%dT%H%M%SZ).db"
 ```
+
+It needs nothing the service does not already have. The backend runs `node:sqlite`, so the Node that runs Candy performs the copy; the `sqlite3` command-line package is not installed by the steps above and is not required. The destination is written under a temporary name and renamed only once the copy finishes, so an interrupted backup leaves no file that looks complete, and the source is opened read-only, so a mistyped path is an error rather than a new empty database.
+
+**Do not back up the database by copying the file.** The backend runs in WAL mode, so commits live in the `-wal` file beside the database until a checkpoint folds them in. A `cp` of `control-plane.db` alone is not a slightly stale backup — on a young database it is a file with no tables in it at all. The [rollback drill](../packages/bundle/candy-app/tests/rollback-drill.spec.ts) takes a backup while the control plane is writing, boots over the restore, and pins that difference.
 
 Back up `/etc/candy` separately and to somewhere else: it holds the two keys, and a backup of the database without them is a backup of records nothing can open.
 

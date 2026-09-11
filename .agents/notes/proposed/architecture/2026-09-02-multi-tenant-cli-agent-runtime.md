@@ -187,6 +187,16 @@ What is still missing is everything the token is *for*. Nothing consumes a devic
 - [ ] Deploy behind feature flags with per-provider canaries, resource dashboards, security alerts, backups, and a tested rollback procedure.
 - [ ] Remove obsolete Claude SDK paths only after migration verification and publish operator and user recovery guidance.
 
+Status correction (2026-09-11): the backup and rollback half of the third bullet is verified ([a backup nobody had taken](../../implemented/architecture/2026-09-11-a-backup-nobody-had-taken.md)), and two of the others need something this repository does not contain.
+
+The deployment page's backup command named `sqlite3`, which its own install steps never install, and justified itself with a claim that understated the hazard. `deploy/candy-backup.mjs` now takes the online backup through `node:sqlite`, the same library the storage backend uses, so the service's own Node performs it; it renames from a temporary name only on success and opens the source read-only. `tests/rollback-drill.spec.ts` performs the drill: a backup taken during continuous store writes, a restore the runtime boots over, every captured account present and a sealed credential still opening, and — deterministically, because WAL keeps uncheckpointed commits out of the database file — a file copy holding strictly fewer accounts than the online backup beside it. What is still unbuilt in that bullet is the feature flag, the per-provider canary, resource dashboards and security alerting, and rolling back the `/opt/candy` tree rather than the database.
+
+**The first bullet has no source format.** `ClauGod` appears nowhere in this repository except as a requirement in [Candy Runtime Boundaries](../../../../docs/candy-runtime-boundaries.md) and in this note. There is no ClauGod configuration schema, metadata shape, or sample to migrate from, so writing a migration would mean inventing the input — the guess the Claude CLI and Codex work both refused. It needs one real ClauGod configuration and metadata dump.
+
+**The fourth bullet is not Candy's to do.** The only Claude Agent SDK dependency is `dsh-subagent-claude-code`, and it is composed into the inherited `ptc`, `standard` and `cordis` agent presets. The Candy bundle layer does not compose it at all, so Candy already has no Claude SDK path; deleting the package would remove inherited functionality from every non-Candy harness user, which is a DSH product decision rather than a Candy migration step.
+
+The second bullet remains partly blocked for reasons R5 already recorded: Windows workspaces cannot run here, and reconnect replay needs the remote-host transport that does not exist.
+
 ## Alternatives considered
 
 **Continue building a custom agent loop.** This retains complete control but duplicates the Harness plugin, session, tool, and event foundations. The team would spend more time rebuilding infrastructure before improving tenant isolation and provider support.

@@ -130,12 +130,17 @@ sudo systemctl start candy
 <a id="backup-and-restore"></a>
 ## 备份与恢复
 
-控制面数据库是唯一无法重建的东西。用 SQLite 自带的在线备份来备份它，不要用 `cp`——写入过程中拿到的副本是一个能打开但缺行的文件：
+控制面数据库是唯一无法重建的东西。用 SQLite 自带的在线备份来备份它——它在服务继续写入的同时逐页复制一个活动的数据库：
 
 ```sh
-sudo -u candy sqlite3 /var/lib/candy/control-plane.db \
-  ".backup '/var/backups/candy/control-plane-$(date -u +%Y%m%dT%H%M%SZ).db'"
+sudo -u candy node /opt/candy/packages/bundle/candy-app/deploy/candy-backup.mjs \
+  /var/lib/candy/control-plane.db \
+  "/var/backups/candy/control-plane-$(date -u +%Y%m%dT%H%M%SZ).db"
 ```
+
+它不需要服务本身尚未具备的任何东西。后端使用 `node:sqlite`，因此由运行 Candy 的那个 Node 来完成复制；上面的步骤并不安装 `sqlite3` 命令行包，也不需要它。目标文件先以临时名写入，只有复制完成之后才重命名，因此被中断的备份不会留下一个看起来完整的文件；而源文件以只读方式打开，因此输错路径会报错，而不会新建一个空数据库。
+
+**不要用复制文件的方式备份数据库。**后端运行在 WAL 模式下，因此提交会先留在数据库旁边的 `-wal` 文件里，直到一次 checkpoint 把它们折入。单独 `cp` 一份 `control-plane.db` 并不是一份稍旧的备份——在一个还很年轻的数据库上，它是一个里面完全没有表的文件。[回滚演练](../packages/bundle/candy-app/tests/rollback-drill.spec.ts)会在控制面正在写入时取一份备份、在恢复结果上启动，并钉住这一差别。
 
 `/etc/candy` 要单独备份，并且备到别处：它持有那两把密钥，而一份没有它们的数据库备份，是一份没有任何东西能打开其记录的备份。
 

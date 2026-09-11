@@ -187,6 +187,16 @@ R3 的路由授权部分现在已由 [`dsh-tenant-route-policy`](../../../../pac
 - [ ] 在功能开关后发布，并配置按提供方 canary 测试、资源仪表盘、安全告警、备份和经过验证的回滚流程。
 - [ ] 仅在迁移验证后移除过时的 Claude SDK 路径，并发布运维和用户恢复指南。
 
+状态更正（2026-09-11）：第三条要点中备份与回滚的那一半已验证（[没人取过的备份](../../implemented/architecture/2026-09-11-a-backup-nobody-had-taken.zh.md)），而另外两条需要本仓库并不包含的东西。
+
+部署页的备份命令点名了 `sqlite3`，而它自己的安装步骤从不安装它；它给出的理由也低估了危害。`deploy/candy-backup.mjs` 现在通过 `node:sqlite` 取在线备份——那正是存储后端所用的同一个库——因此由服务自己的 Node 执行它；它只在成功后才从临时名重命名，并以只读方式打开源。`tests/rollback-drill.spec.ts` 执行这次演练：在存储持续写入期间取备份、运行时在恢复结果上启动、所捕获的每个账户都在且密封凭据仍能打开，以及——确定地，因为 WAL 让未 checkpoint 的提交不进入数据库文件——文件副本严格少于在旁边取的在线备份。该要点中仍未建成的是 feature flag、按提供方的 canary、资源仪表盘与安全告警，以及回滚 `/opt/candy` 目录树而非数据库。
+
+**第一条要点没有源格式。**`ClauGod` 在本仓库中除了作为 [Candy 运行时边界](../../../../docs/candy-runtime-boundaries.zh.md)里的一项要求、以及在本笔记中出现之外，别无踪影。不存在可供迁移的 ClauGod 配置 schema、元数据形状或样本，因此写一个迁移就意味着发明输入——那正是 Claude CLI 与 Codex 两项工作都拒绝的猜测。它需要一份真实的 ClauGod 配置与元数据导出。
+
+**第四条要点不是 Candy 该做的。**唯一依赖 Claude Agent SDK 的是 `dsh-subagent-claude-code`，而它被组合进继承来的 `ptc`、`standard` 与 `cordis` 三个 agent 预设。Candy 的 bundle 层根本不组合它，因此 Candy 本来就没有 Claude SDK 路径；删掉该包会从每一个非 Candy 的 harness 使用者那里移除继承来的功能，那是 DSH 的产品决定，而不是 Candy 的迁移步骤。
+
+第二条要点仍部分受阻，理由是 R5 已经记录过的：Windows 工作区无法在这里运行，而重连回放需要尚不存在的远程宿主传输。
+
 ## Alternatives considered
 
 **继续构建自定义 agent loop。** 这种方案保留完整控制权，但会重复建设 Harness 的插件、会话、工具和事件基础。团队需要先花更多时间重建基础设施，之后才能改进租户隔离和提供方支持。
