@@ -34,6 +34,12 @@ export function apply(ctx: Context, config: Config): void {
         at: Date.now(), userId: event.userId, event: 'refused', action: event.action, outcome: event.outcome,
       } satisfies RunAuditRecord], retain)
     },
+    log: (rejection, path) => {
+      ctx.logger.info(`audit-api: refused ${path} (${rejection})`)
+    },
+    report: (error, path) => {
+      ctx.logger.warn(`audit-api: ${path} failed: ${String(error)}`)
+    },
   }
   ctx.effect(() => registerApiRoute(ctx.webServer, host, {
     path: AUDIT_PATH,

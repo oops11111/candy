@@ -73,9 +73,11 @@ export interface ApiHost {
    * Harness Host web server destroys a response whose handler rejects after
    * its headers are sent, which replaces the decided `500` with a hang-up the
    * caller cannot tell from a crash. The error still has to reach somebody,
-   * and this is who.
+   * and this is who — which is why it is required rather than optional. An
+   * envelope that may discard the error it just swallowed is the defect the
+   * rethrow used to cover.
    */
-  readonly report?: (error: unknown, path: string) => void
+  readonly report: (error: unknown, path: string) => void
 }
 
 /** One management route's own policy and handler. */
@@ -352,7 +354,7 @@ export function registerApiRoute(server: ApiWebServer, host: ApiHost, route: Api
         // A handler that throws is a defect or a dependency that failed, and
         // either way its message is the deployment's to read and never the
         // caller's: it carries whatever the failing operation was holding.
-        host.report?.(error, route.path)
+        host.report(error, route.path)
         host.log?.('handler-failed', route.path)
         await host.audit({ userId: actor.userId, action: route.action, outcome: 'handler-failed' })
         reply(response, REJECTIONS['handler-failed'].status, REJECTIONS['handler-failed'].text)
@@ -436,7 +438,7 @@ export function registerAnonymousRoute(
       } catch (error) {
         // The message is the deployment's to read and never the caller's: it
         // carries whatever the failing operation was holding.
-        host.report?.(error, route.path)
+        host.report(error, route.path)
         host.log?.('handler-failed', route.path)
         reply(response, REJECTIONS['handler-failed'].status, REJECTIONS['handler-failed'].text)
         return

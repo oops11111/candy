@@ -107,7 +107,7 @@ A code is read off one screen and typed into another, so the two spellings diffe
 
 These are current package constraints, not a task backlog.
 
-- **Admission does not yet resolve the device** — [`dsh-run-admission`](../run-admission/README.md) reads the tenant, account and workspace grant an assertion names, and still passes its `deviceId` through unresolved. `admitDevice` is the rule that check will apply; nothing calls it on the run path today.
+- **Nothing checks a device outside run admission** — [`dsh-run-admission`](../run-admission/README.md) resolves the device an assertion names through `findDevice` and applies `admitDevice`, so a revoked binding stops the next run. No other operation consults the record: a run already admitted keeps its credential and allowance until it settles, and no transport refuses a device token mid-connection.
 - **Nothing expires a spent code** — consumed and expired records stay on the medium. A deployment that issues codes continuously grows that table until an eviction sweep exists, as [`ControlPlaneStore.evictNonces`](../control-plane-store/README.md) provides for replay nonces.
 - **A device holds one token for life** — there is no rotation. Replacing a compromised token means revoking the device and pairing the host again under a new id.
 - **No Cordis service** — nothing here registers on a `Context`; it is imported directly, like [`dsh-workspace-grant`](../workspace-grant/README.md).

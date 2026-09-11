@@ -115,14 +115,19 @@ describe('the rollback drill the deployment page documents', () => {
         written += 1
       }
     })()
-    while (written < 8) await new Promise(resolve => setTimeout(resolve, 5))
-
+    let captured: number
     const backup = join(root, 'backup.db')
-    await execFileAsync(process.execPath, [BACKUP_TOOL, live, backup])
-    const captured = storedAccounts(backup)
-
-    writing = false
-    await writer
+    try {
+      while (written < 8) await new Promise(resolve => setTimeout(resolve, 5))
+      await execFileAsync(process.execPath, [BACKUP_TOOL, live, backup])
+      captured = storedAccounts(backup)
+    } finally {
+      // Stopped and awaited on every path: a failure above would otherwise
+      // leave this loop writing into a store `afterEach` is about to close,
+      // and its rejection would surface in whichever test the worker runs next.
+      writing = false
+      await writer.catch(() => undefined)
+    }
 
     // The backup is a point in time, not the end state: it holds what was
     // committed when it ran, and that is what a restore gets back.

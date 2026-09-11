@@ -62,13 +62,14 @@ interface Harness {
  *
  * @param route - the route's own policy, minus the handler's defaults.
  * @param sessions - the token the store accepts, and the record it answers.
- * @param reporting - the deployment's optional log and error sink.
+ * @param reporting - the deployment's log and error sink; a case that does not
+ *   read them lets the no-op default stand.
  * @returns the port, the audit records written, and what the handler saw.
  */
 async function mount(
   route: Partial<ApiRoute> = {},
   sessions: { token?: string; csrf?: string; record?: UserSessionRecord } = {},
-  reporting: Pick<ApiHost, 'log' | 'report'> = {},
+  reporting: Partial<Pick<ApiHost, 'log' | 'report'>> = {},
 ): Promise<Harness> {
   const audits: ApiAuditEvent[] = []
   const handled: Harness['handled'] = { count: 0, actor: undefined, body: undefined }
@@ -84,6 +85,7 @@ async function mount(
       verifyUserSessionCsrf: (id, token) => id === record.id && token === csrf,
     },
     audit: (event) => { audits.push(event); return Promise.resolve() },
+    report: () => {},
     ...reporting,
   }
   registerApiRoute({ register: (r) => { registrations.push(r); return () => {} } }, host, {
@@ -164,6 +166,7 @@ function direct(): {
       verifyUserSessionCsrf: () => true,
     },
     audit: () => Promise.resolve(),
+    report: () => {},
   }, {
     path: '/api/candy/probe', methods: ['GET'], role: 'member', action: 'probe',
     handle: () => { seen.count += 1; return { kind: 'empty', status: 204 } },
@@ -344,6 +347,7 @@ describe('the authenticated management envelope', () => {
       },
       audit: (event) => { audits.push(event); return Promise.resolve() },
       log: (rejection, path) => { seen.push(`${rejection} ${path}`) },
+      report: () => {},
     }, {
       path: '/api/candy/probe', methods: ['GET'], role: 'member', action: 'probe',
       handle: () => ({ kind: 'empty', status: 204 }),
@@ -396,7 +400,7 @@ describe('the authenticated management envelope', () => {
     /** Mount one anonymous route on a real listening server. */
     async function mountAnonymous(
       route: Partial<AnonymousApiRoute> = {},
-      reporting: Pick<ApiHost, 'log' | 'report'> = {},
+      reporting: Partial<Pick<ApiHost, 'log' | 'report'>> = {},
     ): Promise<{ port: number; audits: ApiAuditEvent[]; handled: { count: number; body: unknown } }> {
       const audits: ApiAuditEvent[] = []
       const handled = { count: 0, body: undefined as unknown }
@@ -408,6 +412,7 @@ describe('the authenticated management envelope', () => {
           verifyUserSessionCsrf: () => false,
         },
         audit: (event) => { audits.push(event); return Promise.resolve() },
+        report: () => {},
         ...reporting,
       }, {
         path: '/api/candy/probe',
@@ -521,6 +526,7 @@ describe('the authenticated management envelope', () => {
           verifyUserSessionCsrf: () => false,
         },
         audit: () => Promise.resolve(),
+        report: () => {},
       }, {
         path: '/api/candy/probe', methods: ['POST'], action: 'exchange',
         handle: () => ({ kind: 'empty', status: 204 }),
@@ -547,6 +553,7 @@ describe('the authenticated management envelope', () => {
           verifyUserSessionCsrf: () => false,
         },
         audit: () => Promise.resolve(),
+        report: () => {},
       }, {
         path: '/api/candy/probe', methods: ['POST'], action: 'exchange',
         handle: () => ({ kind: 'empty', status: 204 }),
@@ -563,6 +570,7 @@ describe('the authenticated management envelope', () => {
       publicOrigin: ORIGIN,
       sessions: { authenticateUserSession: async () => undefined, verifyUserSessionCsrf: () => false },
       audit: () => Promise.resolve(),
+      report: () => {},
     }, {
       path: '/api/candy/probe', methods: ['GET'], role: 'member', action: 'probe',
       handle: () => ({ kind: 'empty', status: 204 }),

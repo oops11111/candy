@@ -107,7 +107,7 @@ export const boundTo = device.userId
 
 以下是当前的包约束，不是任务清单。
 
-- **准入尚未解析设备** —— [`dsh-run-admission`](../run-admission/README.zh.md) 会读取断言所指的租户、账户和工作区授权，但仍然原样透传其 `deviceId`。`admitDevice` 正是那道检查将要应用的规则；目前运行路径上没有任何调用方。
+- **运行准入之外没有任何地方检查设备** —— [`dsh-run-admission`](../run-admission/README.zh.md) 通过 `findDevice` 解析断言所指的设备并应用 `admitDevice`，因此被撤销的绑定会拦住下一次运行。没有其他操作查阅这条记录：已经被准入的运行会保留其凭据与额度直到结算，而也没有任何传输会在连接中途拒绝设备令牌。
 - **没有任何东西清理已用尽的配对码** —— 已兑换和已过期的记录留在介质上。持续签发配对码的部署会让该表不断增长，直到出现类似 [`ControlPlaneStore.evictNonces`](../control-plane-store/README.zh.md) 为重放随机数提供的清扫。
 - **设备终身持有一个令牌** —— 没有轮换。替换泄露的令牌意味着撤销该设备，再以新的 id 重新配对主机。
 - **没有 Cordis 服务** —— 这里没有任何东西注册到 `Context` 上；与 [`dsh-workspace-grant`](../workspace-grant/README.zh.md) 一样直接导入使用。

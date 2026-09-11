@@ -24,7 +24,7 @@ Nothing is filed against a tenant by the envelope for such a route, because it h
 
 `dsh-device-api` mounts the three tenant operations and the exchange. The pairing code is sixteen glyphs of five bits from a thirty-two glyph alphabet with no `I`, `L`, `O` or `U`. Eighty bits is fixed rather than configured: the code is a bearer credential presented over the public internet with no rate limit between a guess and an attempt, and that is what makes guessing one within its lifetime impossible rather than slow. The alphabet's size divides 256, so masking a random byte picks a glyph without the bias a remainder against 26 or 36 would introduce. The device id and the token are minted on the server for the reason the account API mints an account id: a host that chose its own could name another tenant's device and overwrite the record binding it.
 
-The rethrow is gone from both registrations. The error goes to a new optional `ApiHost.report`, so the deployment still reads what failed while the caller receives the answer the envelope decided.
+The rethrow is gone from both registrations. The error goes to a new `ApiHost.report`, so the deployment still reads what failed while the caller receives the answer the envelope decided. That member is required: a mounting plugin that omitted it would turn every handler failure into a `500` nobody can explain, which is worse than the hang-up the rethrow caused.
 
 ## Consequences
 
@@ -32,7 +32,7 @@ A tenant can now bring a machine into their deployment, and take it out again. P
 
 Every route on the envelope now answers a failing handler rather than hanging up on it. That is a behaviour change for the account and audit APIs as much as this one, and it is the behaviour their tests already asserted — they passed before only because two awaits happened to intervene.
 
-Nothing consumes the device token yet. A host holds it and no route accepts it, because what a paired host does next — reach the Remote Gateway, run a tool, resolve a workspace root — is inherited Harness behaviour that R5 still has to bind to a device. Admission does not resolve the device either: `admitDevice` is written and the run path does not call it.
+Nothing consumes the device token yet. A host holds it and no route accepts it, because what a paired host does next — reach the Remote Gateway, run a tool, resolve a workspace root — is inherited Harness behaviour that R5 still has to bind to a device. Admission resolves the device: `admitDevice` runs as its own stage, so a revoked device loses its runs immediately.
 
 Two costs are worth naming. A tenant can issue codes and pair devices without limit, exactly as they can create provider accounts, and nothing sweeps a spent code off the medium. Both are bounded by an authenticated member's own restraint until something bounds a tenant's footprint generally.
 

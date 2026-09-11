@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-a-caller-with-no-session.md
-2026-09-10-a-caller-with-no-session.md: 9d2cf719fcc61c273cc435c9db45183959828f43
-2026-09-10-a-caller-with-no-session.zh.md: f1b788e82d1ec996f51becf4344df3ddb23eaf9b
+2026-09-10-a-caller-with-no-session.md: 5960a4beeea7a37314d6fbe03a015ca767887837
+2026-09-10-a-caller-with-no-session.zh.md: 00b28630a032ba3ee3d43d93614a9a73fe444fad

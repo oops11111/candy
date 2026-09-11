@@ -27,7 +27,7 @@
  * @module @deepseek-ai/dsh-device-registry
  */
 
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import type { DeviceId, UserId } from '@deepseek-ai/dsh-control-plane'
 
 /** Longest device or pairing label this registry accepts, in UTF-16 code units. */
@@ -415,10 +415,18 @@ export type DeviceAuthentication =
 /**
  * Identify the device presenting one token.
  *
- * The stored digest is compared in constant time, so the answer's timing does
- * not narrow which digest was stored. A caller must answer `unknown` and
- * `revoked` identically to the presenter — the distinction is for the audit
- * record, where an operator needs to see a revoked host still trying.
+ * The returned record's own digest is checked against the one looked up. For a
+ * store that answers honestly this is already true, and it is not a timing
+ * defence — the token is 256 random bits and the lookup itself is not constant
+ * time. What it rejects is a store whose answer does not match the question:
+ * `dsh-control-plane-store` scans a per-process snapshot to narrow the lookup,
+ * so another process that rotated or replaced a record can leave this one
+ * holding a stale candidate, and authenticating from it would admit a device
+ * that no longer presents that token.
+ *
+ * A caller must answer `unknown` and `revoked` identically to the presenter —
+ * the distinction is for the audit record, where an operator needs to see a
+ * revoked host still trying.
  * @param store - the deployment's registry store.
  * @param token - the token the host presented.
  * @returns the device, or why the token identifies none.
@@ -430,11 +438,7 @@ export async function authenticateDevice(
   const digest = deviceTokenDigest(token)
   const record = await store.findDeviceByTokenDigest(digest)
   if (record === undefined) return { authenticated: false, rejection: 'unknown' }
-  const stored = Buffer.from(record.tokenDigest, 'utf8')
-  const presented = Buffer.from(digest, 'utf8')
-  if (stored.length !== presented.length || !timingSafeEqual(stored, presented)) {
-    return { authenticated: false, rejection: 'unknown' }
-  }
+  if (record.tokenDigest !== digest) return { authenticated: false, rejection: 'unknown' }
   if (!isDeviceUsable(record)) return { authenticated: false, rejection: 'revoked' }
   return { authenticated: true, device: record }
 }

@@ -49,7 +49,7 @@ export const dispose = registerApiRoute(server, host, {
 })
 ```
 
-`ApiHost` carries what every route shares: the exact `publicOrigin`, the session authority browser sign-in wrote, an `audit` sink, and an optional `log`.
+`ApiHost` carries what every route shares: the exact `publicOrigin`, the session authority browser sign-in wrote, an `audit` sink, a required `report` for the error behind a failed handler, and an optional `log` for the refusals the envelope decides itself.
 
 ### Answering
 
@@ -86,7 +86,7 @@ Nothing is filed against a tenant for one of these, either: the handler learns w
 
 ### Why a failed handler is answered rather than rethrown
 
-The Harness Host web server destroys a response whose handler rejects after its headers are sent. Rethrowing therefore replaced the `500` this envelope had just decided with a hang-up the caller could not tell from a crash. The error goes to `ApiHost.report` instead, so the deployment still reads what failed and the caller still receives the answer.
+The Harness Host web server destroys a response whose handler rejects after its headers are sent. Rethrowing therefore replaced the `500` this envelope had just decided with a hang-up the caller could not tell from a crash. The error goes to `ApiHost.report` instead, so the deployment still reads what failed and the caller still receives the answer. That member is required rather than optional: a mounting plugin that omitted it would turn every handler failure into a `500` nobody can explain, which is worse than the hang-up the rethrow caused.
 
 ### Why every reply is `no-store`
 
