@@ -27,7 +27,11 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { credentialKey, type CredentialKey, type CredentialRecord } from '@deepseek-ai/dsh-credentials'
 import { DeviceId, UserId } from '@deepseek-ai/dsh-control-plane'
-import { DEVICE_PATHS, type AuthenticatedDevice } from '@deepseek-ai/dsh-device-api'
+import {
+  DEVICE_PATHS,
+  type AuthenticatedDevice,
+  type DeviceCredential,
+} from '@deepseek-ai/dsh-device-api'
 
 /** Where the binding is stored; one key, because a host has one binding. */
 const BINDING_KEY: CredentialKey = credentialKey('device-binding', 'host')
@@ -75,6 +79,13 @@ export class DeviceBindingError extends Error {
 export class DeviceBindingVerificationError extends Error {
   constructor(readonly code: 'unexpected-status' | 'invalid-response') {
     super(`device binding verification ${code}`)
+  }
+}
+
+/** A deployment did not complete a pairing-code exchange. */
+export class DevicePairingError extends Error {
+  constructor(readonly code: 'rejected' | 'unexpected-status' | 'invalid-response') {
+    super(`device pairing ${code}`)
   }
 }
 
@@ -189,6 +200,48 @@ export class DeviceBinding extends Service {
   }
 
   /**
+   * Exchange one operator-supplied code and durably bind this host.
+   *
+   * An existing binding is refused before the one-shot code reaches the
+   * deployment. The exchange follows no redirects, and only a complete device
+   * credential from the deployment is allowed into the credential store.
+   *
+   * @param serverOrigin - deployment where the tenant issued the code.
+   * @param code - one-time pairing code copied by the operator.
+   * @param now - epoch milliseconds recorded as the binding's instant.
+   * @returns the binding installed from the exchange response.
+   * @throws DeviceBindingError when a binding already stands or the origin is
+   * invalid; DevicePairingError when the deployment refuses or malforms the
+   * exchange.
+   */
+  async pair(serverOrigin: string, code: string, now: number): Promise<HostDeviceBinding> {
+    const origin = normalizeServerOrigin(serverOrigin)
+    if (await this.read() !== undefined) throw new DeviceBindingError('already-bound')
+    const response = await globalThis.fetch(`${origin}${DEVICE_PATHS.exchange}`, {
+      method: 'POST',
+      redirect: 'error',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+    })
+    if (response.status === 400) throw new DevicePairingError('rejected')
+    if (response.status !== 201) throw new DevicePairingError('unexpected-status')
+    let value: unknown
+    try {
+      value = await response.json()
+    } catch (_malformedJson) {
+      throw new DevicePairingError('invalid-response')
+    }
+    const credential = readDeviceCredential(value)
+    if (credential === undefined) throw new DevicePairingError('invalid-response')
+    return this.bind({
+      serverOrigin: origin,
+      userId: UserId(credential.userId),
+      deviceId: DeviceId(credential.deviceId),
+      token: credential.token,
+    }, now)
+  }
+
+  /**
    * Ask the bound deployment whether this host's token still identifies it.
    *
    * This is one request, not a connection monitor. Network failure keeps
@@ -205,6 +258,7 @@ export class DeviceBinding extends Service {
     if (binding === undefined) return false
     const response = await globalThis.fetch(`${binding.serverOrigin}${DEVICE_PATHS.authenticate}`, {
       method: 'GET',
+      redirect: 'error',
       headers: { authorization: `Bearer ${binding.token}` },
     })
     if (response.status === 401) return false
@@ -289,6 +343,17 @@ export class DeviceBinding extends Service {
   async release(): Promise<void> {
     await this.ctx.credentials.deleteRecord(BINDING_KEY)
   }
+}
+
+/** Read the complete credential shape the exchange is required to return. */
+function readDeviceCredential(value: unknown): DeviceCredential | undefined {
+  if (value === null || typeof value !== 'object') return undefined
+  const credential = value as Partial<DeviceCredential>
+  if (typeof credential.userId !== 'string' || credential.userId === '') return undefined
+  if (typeof credential.deviceId !== 'string' || credential.deviceId === '') return undefined
+  if (typeof credential.label !== 'string' || credential.label === '') return undefined
+  if (typeof credential.token !== 'string' || credential.token === '') return undefined
+  return credential as DeviceCredential
 }
 
 /** Whether a wire reply names exactly the locally held tenant and device. */

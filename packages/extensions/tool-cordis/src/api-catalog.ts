@@ -1069,6 +1069,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the binding\'s server, tenant, device and instant, or `undefined` while this host is unpaired.',
       },
       {
+        signature: 'async pair(serverOrigin: string, code: string, now: number): Promise<HostDeviceBinding>',
+        description: 'Exchange one operator-supplied code and durably bind this host.\n\nAn existing binding is refused before the one-shot code reaches the deployment. The exchange follows no redirects, and only a complete device credential from the deployment is allowed into the credential store.',
+        parameters: [{ name: 'serverOrigin', description: 'deployment where the tenant issued the code.' }, { name: 'code', description: 'one-time pairing code copied by the operator.' }, { name: 'now', description: 'epoch milliseconds recorded as the binding\'s instant.' }],
+        returns: 'the binding installed from the exchange response.',
+        throws: ['DeviceBindingError when a binding already stands or the origin is invalid; DevicePairingError when the deployment refuses or malforms the exchange.'],
+      },
+      {
         signature: 'async verify(): Promise<boolean>',
         description: 'Ask the bound deployment whether this host\'s token still identifies it.\n\nThis is one request, not a connection monitor. Network failure keeps throwing for the inherited connection owner to classify; only the deployment\'s uniform `401` means the binding no longer authenticates.',
         parameters: [],

@@ -39,7 +39,7 @@ kind: "package-reference"
 
 它没有配置项。记录存放在哪里是凭据提供方的决定,本地提供方把它放在 `$DSH_HOME/.credentials.yaml`。
 
-### 取得绑定、读取它、交出它
+### 配对、读取绑定、交出绑定
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -51,12 +51,15 @@ declare const userId: UserId
 declare const deviceId: DeviceId
 declare const token: string
 
+await ctx.deviceBinding.pair('https://candy.example', 'ABCD-EFGH', Date.now())
 await ctx.deviceBinding.bind(
   { serverOrigin: 'https://candy.example', userId, deviceId, token },
   Date.now(),
 )
 export const serving = await ctx.deviceBinding.describe()
 ```
+
+`pair` 是主机侧的正常入口:它把运维人员输入的一次性配对码发送到部署已有的兑换路由,并把返回的身份装入凭据存储。已有绑定时,它会在发送之前拒绝;它不跟随重定向,也拒绝字段不完整的凭据回复。网络失败仍是留给调用方分类的错误,绝不会被报告成错误配对码。
 
 `read` 回答完整的绑定,包含令牌,供出示它的一方使用。`describe` 回答除令牌之外的一切,供任何报告"这是哪台机器"的地方使用。`release` 交出绑定。
 
@@ -117,6 +120,7 @@ export const serving = await ctx.deviceBinding.describe()
 - **没有任何东西用它去连接** —— 本服务回答该抵达哪台服务器、以谁的身份,并可为显式验证出示令牌。连接建立或重连时没有传输层读取它。
 - **撤销不会释放绑定** —— `verify` 返回 `false`,但主机会保留记录直到运维释放。离线或服务器故障绝不能被当成更换机器所属租户的许可。
 - **没有命令行界面** —— 配对与释放都是服务调用。没有 `dsh` 子命令、没有设置页,也没有引导运维输入配对码的提示流程。
+- **并发的第二次兑换可能消耗其配对码** —— `pair` 会在发送前拒绝已经存在的绑定,但两个进程可能在任一网络请求返回前都观察到空存储。凭据接缝仍只允许一条绑定胜出;失败一方的一次性配对码此时可能已经被消费。
 - **每个凭据存储一条绑定,而不是每台机器一条** —— 两个 `$DSH_HOME` 不同的安装,对这条记录而言就是两台主机。这与其他每一项凭据的行为一致,之所以在此说明,是因为「机器」是更自然的默认单位。
 
 <a id="dev-note"></a>

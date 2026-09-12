@@ -87,6 +87,94 @@ describe('the binding a host takes', () => {
     expect(await second.ctx.deviceBinding.read()).toEqual(taken)
   })
 
+  it('exchanges an operator pairing code and durably takes the issued identity', async () => {
+    const { ctx } = await boot()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      deviceId: DEVICE,
+      userId: ALICE,
+      label: 'Studio desktop',
+      token: 'issued-device-token',
+    }), { status: 201, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetcher)
+
+    const taken = await ctx.deviceBinding.pair(ORIGIN, 'ABCD-EFGH', NOW)
+
+    expect(taken).toEqual({
+      serverOrigin: ORIGIN,
+      userId: ALICE,
+      deviceId: DEVICE,
+      token: 'issued-device-token',
+      boundAt: NOW,
+    })
+    expect(await ctx.deviceBinding.read()).toEqual(taken)
+    expect(fetcher).toHaveBeenCalledWith(`${ORIGIN}/api/candy/devices/exchange`, {
+      method: 'POST',
+      redirect: 'error',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: 'ABCD-EFGH' }),
+    })
+  })
+
+  it('does not spend a pairing code when this host already serves someone', async () => {
+    const { ctx } = await boot()
+    await ctx.deviceBinding.bind(pairing(), NOW)
+    const fetcher = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', fetcher)
+
+    await expect(ctx.deviceBinding.pair('https://other.example', 'ABCD-EFGH', NOW + 1))
+      .rejects.toMatchObject({ code: 'already-bound' })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('keeps pairing refusal, protocol failure, and network failure distinct', async () => {
+    const { ctx } = await boot()
+    const fetcher = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', fetcher)
+
+    fetcher.mockResolvedValueOnce(new Response(undefined, { status: 400 }))
+    await expect(ctx.deviceBinding.pair(ORIGIN, 'REFUSED', NOW))
+      .rejects.toMatchObject({ code: 'rejected' })
+
+    fetcher.mockResolvedValueOnce(new Response(undefined, { status: 503 }))
+    await expect(ctx.deviceBinding.pair(ORIGIN, 'RETRY', NOW))
+      .rejects.toMatchObject({ code: 'unexpected-status' })
+
+    fetcher.mockResolvedValueOnce(new Response('not json', { status: 201 }))
+    await expect(ctx.deviceBinding.pair(ORIGIN, 'MALFORMED', NOW))
+      .rejects.toMatchObject({ code: 'invalid-response' })
+
+    fetcher.mockRejectedValueOnce(new Error('offline'))
+    await expect(ctx.deviceBinding.pair(ORIGIN, 'OFFLINE', NOW)).rejects.toThrow('offline')
+    expect(await ctx.deviceBinding.read()).toBeUndefined()
+  })
+
+  it('refuses every incomplete pairing credential', async () => {
+    const { ctx } = await boot()
+    const valid = { userId: ALICE, deviceId: DEVICE, label: 'Studio desktop', token: 'token' }
+    const malformed: unknown[] = [
+      null,
+      { ...valid, userId: 42 },
+      { ...valid, userId: '' },
+      { ...valid, deviceId: 42 },
+      { ...valid, deviceId: '' },
+      { ...valid, label: 42 },
+      { ...valid, label: '' },
+      { ...valid, token: 42 },
+      { ...valid, token: '' },
+    ]
+    const fetcher = vi.fn<typeof fetch>()
+    for (const value of malformed) {
+      fetcher.mockResolvedValueOnce(new Response(JSON.stringify(value), { status: 201 }))
+    }
+    vi.stubGlobal('fetch', fetcher)
+
+    for (const [index] of malformed.entries()) {
+      await expect(ctx.deviceBinding.pair(ORIGIN, `CODE-${String(index)}`, NOW))
+        .rejects.toMatchObject({ code: 'invalid-response' })
+    }
+    expect(await ctx.deviceBinding.read()).toBeUndefined()
+  })
+
   it('reports the binding without the token it holds', async () => {
     const { ctx } = await boot()
     await ctx.deviceBinding.bind(pairing(), NOW)
@@ -110,6 +198,7 @@ describe('the binding a host takes', () => {
     await expect(ctx.deviceBinding.verify()).resolves.toBe(true)
     expect(fetcher).toHaveBeenCalledWith(`${ORIGIN}/api/candy/devices/authenticate`, {
       method: 'GET',
+      redirect: 'error',
       headers: { authorization: 'Bearer device-token' },
     })
   })

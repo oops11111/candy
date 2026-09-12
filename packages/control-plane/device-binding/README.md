@@ -39,7 +39,7 @@ Connection state is not here. Reaching the server, noticing that the link droppe
 
 It has no configuration. Where the record lives is the credential provider's decision, and the local provider keeps it in `$DSH_HOME/.credentials.yaml`.
 
-### Taking a binding, reading it, giving it up
+### Pairing, reading the binding, giving it up
 
 ```ts
 import type { Context } from '@deepseek-ai/cordis'
@@ -51,12 +51,15 @@ declare const userId: UserId
 declare const deviceId: DeviceId
 declare const token: string
 
+await ctx.deviceBinding.pair('https://candy.example', 'ABCD-EFGH', Date.now())
 await ctx.deviceBinding.bind(
   { serverOrigin: 'https://candy.example', userId, deviceId, token },
   Date.now(),
 )
 export const serving = await ctx.deviceBinding.describe()
 ```
+
+`pair` is the normal host-side entry: it sends the operator's one-time code to the deployment's existing exchange route and installs the returned identity in the credential store. It refuses before sending when a binding already stands, follows no redirects, and rejects incomplete response credentials. A network failure remains an error for the caller to classify; it is never reported as a bad code.
 
 `read` answers the whole binding, token included, for whatever presents it. `describe` answers everything but the token, for anything that reports which machine this is. `release` gives the binding up.
 
@@ -117,6 +120,7 @@ These are current package constraints, not a task backlog.
 - **Nothing connects with it** — this service answers which server to reach and as whom, and can present its token for an explicit verification. No transport reads it during connection establishment or reconnect.
 - **Revocation does not release the binding** — `verify` returns `false`, but the host keeps the record until an operator releases it. An offline or failing deployment must never look like permission to change which tenant the machine serves.
 - **No command surface** — pairing and releasing are service calls. There is no `dsh` subcommand, no settings page, and no prompt that walks an operator through entering a code.
+- **A simultaneous second exchange can consume its code** — `pair` refuses an already-present binding before sending, but two processes can both observe an empty store before either network request returns. The credential seam still admits only one binding; the losing one-time code may already have been consumed.
 - **One binding per credential store, not per machine** — two installations with different `$DSH_HOME` values are two hosts as far as this record is concerned. That matches how every other credential behaves and is stated here because a machine is the more natural unit to assume.
 
 <a id="dev-note"></a>

@@ -562,6 +562,23 @@ async read(): Promise<HostDeviceBinding | undefined>
 async describe(): Promise<HostDeviceBindingView | undefined>
 
 /**
+ * Exchange one operator-supplied code and durably bind this host.
+ *
+ * An existing binding is refused before the one-shot code reaches the
+ * deployment. The exchange follows no redirects, and only a complete device
+ * credential from the deployment is allowed into the credential store.
+ *
+ * @param serverOrigin - deployment where the tenant issued the code.
+ * @param code - one-time pairing code copied by the operator.
+ * @param now - epoch milliseconds recorded as the binding's instant.
+ * @returns the binding installed from the exchange response.
+ * @throws DeviceBindingError when a binding already stands or the origin is
+ * invalid; DevicePairingError when the deployment refuses or malforms the
+ * exchange.
+ */
+async pair(serverOrigin: string, code: string, now: number): Promise<HostDeviceBinding>
+
+/**
  * Ask the bound deployment whether this host's token still identifies it.
  *
  * This is one request, not a connection monitor. Network failure keeps
