@@ -27,6 +27,9 @@
       "path": "../../packages/bundle/base"
     },
     {
+      "path": "../../packages/bundle/candy-host"
+    },
+    {
       "path": "../../packages/bundle/headless"
     },
     {

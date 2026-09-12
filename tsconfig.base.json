@@ -126,6 +126,7 @@
       // wildcard per group instead.
       "@deepseek-ai/dsh-host-*/invariant": ["./packages/host/*/src/invariant.ts"],
       "@deepseek-ai/dsh-client-*/invariant": ["./packages/client/*/src/invariant.ts"],
+      "@deepseek-ai/dsh-candy-host/startup": ["./packages/bundle/candy-host/src/startup.ts"],
       "@deepseek-ai/dsh-headless/startup": ["./packages/bundle/headless/src/startup.ts"],
       "@deepseek-ai/dsh-web-app/startup": ["./packages/bundle/web-app/src/startup.ts"],
       "@deepseek-ai/dsh-client-*/client": ["./packages/client/*/src/client"],
@@ -253,6 +254,7 @@
       "@deepseek-ai/dsh-bash-sandbox": ["./packages/shell/bash-sandbox/src"],
       "@deepseek-ai/dsh-brand": ["./packages/util/brand/src"],
       "@deepseek-ai/dsh-candy-app": ["./packages/bundle/candy-app/src"],
+      "@deepseek-ai/dsh-candy-host": ["./packages/bundle/candy-host/src"],
       "@deepseek-ai/dsh-claude-cli-binding": ["./packages/control-plane/claude-cli-binding/src"],
       "@deepseek-ai/dsh-claude-cli-protocol": ["./packages/llm/claude-cli-protocol/src"],
       "@deepseek-ai/dsh-claude-cli-route": ["./packages/control-plane/claude-cli-route/src"],

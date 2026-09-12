@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-13-a-code-with-no-command.md
+2026-09-13-a-code-with-no-command.md: 4d67a8fcc0b06095a0779c6ed6b2b09e295c9e82
+2026-09-13-a-code-with-no-command.zh.md: 9c45f58e8b835d8da205dd8394c8c2bf7b5d0061

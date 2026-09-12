@@ -1,0 +1,17 @@
+# Standalone one-shot device management for a Windows Candy Host. This profile
+# intentionally starts no Web server, Agent, file tool, shell or remote
+# transport; it only stores or removes the identity used by a later Host run.
+
+- insert:
+    - id: credentials
+      name: '@deepseek-ai/dsh-credentials-local'
+
+    - id: device-binding
+      name: '@deepseek-ai/dsh-device-binding'
+
+    - id: candy-host-startup
+      name: '@deepseek-ai/dsh-candy-host/startup'
+
+    - id: candy-host-command
+      name: '@deepseek-ai/dsh-candy-host'
+      inject: [candyHostStartup]

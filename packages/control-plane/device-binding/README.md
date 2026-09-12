@@ -119,7 +119,7 @@ These are current package constraints, not a task backlog.
 
 - **Nothing connects with it** — this service answers which server to reach and as whom, and can present its token for an explicit verification. No transport reads it during connection establishment or reconnect.
 - **Revocation does not release the binding** — `verify` returns `false`, but the host keeps the record until an operator releases it. An offline or failing deployment must never look like permission to change which tenant the machine serves.
-- **No command surface** — pairing and releasing are service calls. There is no `dsh` subcommand, no settings page, and no prompt that walks an operator through entering a code.
+- **No command surface in this service package** — the standalone [`dsh-candy-host`](../../bundle/candy-host/README.md) profile calls these methods for `pair`, `status`, and `release`. This package remains transport- and UI-independent, and there is no settings page yet.
 - **A simultaneous second exchange can consume its code** — `pair` refuses an already-present binding before sending, but two processes can both observe an empty store before either network request returns. The credential seam still admits only one binding; the losing one-time code may already have been consumed.
 - **One binding per credential store, not per machine** — two installations with different `$DSH_HOME` values are two hosts as far as this record is concerned. That matches how every other credential behaves and is stated here because a machine is the more natural unit to assume.
 

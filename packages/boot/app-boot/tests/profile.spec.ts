@@ -204,6 +204,10 @@ describe('loadProfile', () => {
       bundles: ['@deepseek-ai/dsh-sdk-minimal'],
       patchReload: 'startup',
     })
+    expect(PROFILE_TEMPLATES['candy-host']).toEqual({
+      bundles: ['@deepseek-ai/dsh-candy-host'],
+      patchReload: 'startup',
+    })
     try {
       loadProfile('t', 'web', anchor, home)
     } catch {
