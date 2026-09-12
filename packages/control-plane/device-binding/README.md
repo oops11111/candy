@@ -15,7 +15,7 @@ This service holds what a pairing produced — which deployment this host answer
 
 The binding is singular by construction. There is one record key, and `bind` refuses to replace a binding that already stands. A host serving two tenants at once is a host on which either tenant's work can reach the other's files; the operator action that changes who a machine serves is `release` followed by a new pairing, which is deliberately not something a stray call can do by accident.
 
-Connecting is not here. Reaching the server, noticing that the link dropped, backing off and reconnecting are the inherited transport's, and this package adds nothing to them. What it answers is which server to reach and as whom.
+Connection state is not here. Reaching the server, noticing that the link dropped, backing off and reconnecting are the inherited transport's. This package answers which server to reach and as whom, and `verify` performs one explicit authentication request without adding a monitor or retry schedule.
 
 ## Table of Contents
 
@@ -59,6 +59,8 @@ export const serving = await ctx.deviceBinding.describe()
 ```
 
 `read` answers the whole binding, token included, for whatever presents it. `describe` answers everything but the token, for anything that reports which machine this is. `release` gives the binding up.
+
+`verify` asks the stored deployment whether the token still identifies the exact stored tenant and device. It returns `false` for an unpaired host or the server's uniform `401`. Network failures remain thrown for the inherited connection owner, while an undocumented status or mismatched identity raises `DeviceBindingVerificationError`; neither case is mistaken for revocation and the binding is never deleted automatically.
 
 A second `bind` naming a different tenant, device or deployment is refused `already-bound`. One naming the same three replaces the token and keeps the instant the host was first bound, which is what a re-pair after a credential rotation is.
 
@@ -112,8 +114,8 @@ The machine has served this tenant since it was bound. A rotated token is a new 
 
 These are current package constraints, not a task backlog.
 
-- **Nothing connects with it** — this service answers which server to reach and as whom. No transport in this repository reads it, and no host presents the token it holds.
-- **A revoked device is not noticed here** — the server refuses a revoked device's next run, and this host keeps its binding until an operator releases it. Learning that a binding is dead requires asking the server, which nothing does yet.
+- **Nothing connects with it** — this service answers which server to reach and as whom, and can present its token for an explicit verification. No transport reads it during connection establishment or reconnect.
+- **Revocation does not release the binding** — `verify` returns `false`, but the host keeps the record until an operator releases it. An offline or failing deployment must never look like permission to change which tenant the machine serves.
 - **No command surface** — pairing and releasing are service calls. There is no `dsh` subcommand, no settings page, and no prompt that walks an operator through entering a code.
 - **One binding per credential store, not per machine** — two installations with different `$DSH_HOME` values are two hosts as far as this record is concerned. That matches how every other credential behaves and is stated here because a machine is the more natural unit to assume.
 

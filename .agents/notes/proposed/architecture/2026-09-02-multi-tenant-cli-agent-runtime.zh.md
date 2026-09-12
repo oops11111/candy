@@ -177,7 +177,9 @@ R3 的路由授权部分现在已由 [`dsh-tenant-route-policy`](../../../../pac
 
 主机现在可以持有配对交给它的东西了（[不知道自己服务于谁的主机](../../implemented/architecture/2026-09-10-a-host-that-did-not-know-whom-it-served.zh.md)）：`dsh-device-binding` 把部署 origin、租户、设备与令牌作为一条 `ctx.credentials` grant 记录保存，凭借该接缝跨进程的排他写入而唯一，只能释放而不能替换。连接状态、离线检测与重连被刻意原样保留——`dsh-client-connection` 拥有重试计划、离线信号与重连命令，而覆在其上的第二套状态机会成为「链路是否在线」的第二个答案。
 
-仍然缺失的是这枚令牌所*服务*的一切。没有任何东西消费设备令牌：没有路由接受它，没有传输读取这条绑定，也没有任何东西去问服务器某条绑定是否仍然成立，因此主机会一直持有它直到运维释放。继承而来的传输还没有可以指向的远程主机这一概念，而那正是下一片要填的空缺。设备没有浏览器页面，租户可配对的数量没有上限，用尽的配对码也没有清扫。
+令牌现在有了一个真实消费者（[没有路由接受的令牌](../../implemented/architecture/2026-09-12-a-token-no-route-accepted.zh.md)）：`dsh-device-api` 认证 Bearer 令牌并只返回租户/设备身份，对缺失、格式错误、未知和已撤销凭据都给出相同的空 `401`；`dsh-device-binding.verify` 执行一次询问，并拒绝任何不与本地保存身份完全一致的回复。它刻意不监视链路也不释放绑定，因此网络故障仍是继承连接所有者的事实，不能改变机器服务的租户。
+
+仍然缺失的是传输对这项认证的使用。没有传输在建立或恢复连接时读取并出示绑定，因此主机会一直持有它直到运维释放。继承而来的传输还没有可以指向的远程主机这一概念，而那正是下一片要填的空缺。设备没有浏览器页面，租户可配对的数量没有上限，用尽的配对码也没有清扫。
 - [ ] 在显式工作区根目录和操作类别授权之后，复用 `fs-local`、目录选择、PowerShell、Windows ACL 沙箱和 API Gateway 插件。这五个都已存在：[`dsh-fs-local`](../../../../packages/fs/fs-local)、带原生/浏览/自适应三种后端的 [`dsh-directory-picker`](../../../../packages/host/directory-picker)、连同其沙箱与持久化工具的 [`dsh-pwsh-local`](../../../../packages/shell/pwsh-local)、[`dsh-sandbox-windows-acl`](../../../../packages/sandbox/sandbox-windows-acl)，以及 [`dsh-api-gateway`](../../../../packages/api/gateway)。ACL 沙箱是其中最难的一块，而它已经是真实实现：受限令牌把写入限制在工作区与一个私有 temp 目录内，每个 Win32 调用都被检查，因此子进程绝不会以不受限的方式启动；它报告 `partial`，因为该令牌必须保留 Everyone 才能完成初始化，而 NTFS 硬链接会让一个文件对象跨路径别名。没有 Git 插件可供复用：仓库里只有 `dsh-webhook-github`，一个无关的 webhook 入口，因此 git 与其他命令一样，经由 bash 与 pwsh 工具抵达工作区。
 - [ ] 增加服务器 URL、配对、连接状态、撤销、离线检测、重连、幂等、输出限制和批准状态，但不定义第二套文件操作协议。
 - [ ] 在 Windows 上测试租户路由、Unicode 与长路径、分支发现、并发编辑、设备撤销、重连、junction 或符号链接逃逸和恶意路径输入。

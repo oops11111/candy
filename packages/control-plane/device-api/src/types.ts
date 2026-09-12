@@ -19,7 +19,17 @@ export const DEVICE_PATHS = {
    * whole of its claim.
    */
   exchange: '/api/candy/devices/exchange',
+  /** Prove that a held device token still identifies a live binding. */
+  authenticate: '/api/candy/devices/authenticate',
 } as const
+
+/** Identity a live device token proves, with no token or registry metadata. */
+export interface AuthenticatedDevice {
+  /** Device presenting the token. */
+  readonly deviceId: string
+  /** Tenant that paired the device. */
+  readonly userId: string
+}
 
 /** What a tenant sends to issue one pairing code. */
 export interface PairDeviceRequest {

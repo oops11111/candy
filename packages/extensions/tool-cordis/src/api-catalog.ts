@@ -1069,6 +1069,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the binding\'s server, tenant, device and instant, or `undefined` while this host is unpaired.',
       },
       {
+        signature: 'async verify(): Promise<boolean>',
+        description: 'Ask the bound deployment whether this host\'s token still identifies it.\n\nThis is one request, not a connection monitor. Network failure keeps throwing for the inherited connection owner to classify; only the deployment\'s uniform `401` means the binding no longer authenticates.',
+        parameters: [],
+        returns: '`true` only when the deployment authenticates the exact tenant and device stored locally; `false` while unpaired or after a `401`.',
+        throws: ['DeviceBindingVerificationError when a successful reply names a different identity or the deployment answers an undocumented status.'],
+      },
+      {
         signature: 'async bind( request: { readonly serverOrigin: string readonly userId: UserId readonly deviceId: DeviceId readonly token: string }, now: number, ): Promise<HostDeviceBinding>',
         description: 'Take one binding, if this host holds none.\n\nRe-binding to the exact deployment, tenant and device already stored is accepted and replaces the token, because that is what a host does when a tenant re-pairs it after rotating its credential. Anything else is refused: changing which tenant a machine serves without releasing it first would leave one tenant\'s work reachable from the next tenant\'s session.',
         parameters: [{ name: 'request', description: 'the deployment, identity and token the pairing produced.' }, { name: 'now', description: 'epoch milliseconds recorded as the binding\'s instant.' }],

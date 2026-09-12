@@ -1,6 +1,6 @@
 /**
- * The four device operations: three a tenant performs from their browser
- * session, and one a host performs with a pairing code and nothing else.
+ * The five device operations: three a tenant performs from their browser
+ * session, the pairing-code exchange, and bearer-token authentication.
  *
  * No domain logic lives here. `dsh-device-registry` issues a code, exchanges
  * one, lists a tenant's devices and revokes one, and each of its operations
@@ -24,6 +24,7 @@
  */
 
 import { randomBytes, randomUUID } from 'node:crypto'
+import type { IncomingMessage } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
@@ -31,6 +32,7 @@ import { DeviceId, type UserId } from '@deepseek-ai/dsh-control-plane'
 import { tenantSubject, type RunAuditRecord } from '@deepseek-ai/dsh-control-plane-store'
 import {
   consumePairingCode,
+  authenticateDevice,
   DeviceRegistryError,
   issuePairingCode,
   listDevices,
@@ -49,10 +51,16 @@ import {
 
 export { DEVICE_PATHS } from './types.ts'
 export type {
-  DeviceCredential, ExchangeCodeRequest, IssuedPairingCode, PairDeviceRequest, RevokeDeviceRequest,
+  AuthenticatedDevice, DeviceCredential, ExchangeCodeRequest, IssuedPairingCode, PairDeviceRequest,
+  RevokeDeviceRequest,
 } from './types.ts'
 
-import { DEVICE_PATHS, type DeviceCredential, type IssuedPairingCode } from './types.ts'
+import {
+  DEVICE_PATHS,
+  type AuthenticatedDevice,
+  type DeviceCredential,
+  type IssuedPairingCode,
+} from './types.ts'
 
 /**
  * Alphabet one pairing code is spelled in.
@@ -79,6 +87,9 @@ const TOKEN_BYTES = 32
 
 /** Longest pairing code this API will even normalize, in UTF-16 code units. */
 const MAX_SUBMITTED_CODE_LENGTH = 200
+
+/** A 256-bit base64url device token has exactly this many glyphs. */
+const DEVICE_TOKEN_LENGTH = 43
 
 /** Cordis plugin name. */
 export const name = 'device-api'
@@ -167,8 +178,17 @@ function submittedCode(body: unknown): string | undefined {
   return code
 }
 
+/** Read the sole bearer credential form this endpoint accepts. */
+function submittedDeviceToken(request: IncomingMessage): string | undefined {
+  const authorization = request.headers.authorization
+  if (typeof authorization !== 'string') return undefined
+  const match = /^Bearer ([a-z0-9_-]{43})$/iu.exec(authorization)
+  const token = match?.[1]
+  return token?.length === DEVICE_TOKEN_LENGTH ? token : undefined
+}
+
 /**
- * Mount the three tenant operations and the host exchange.
+ * Mount the three tenant operations and two host operations.
  * @param ctx - the plugin context; the web server and store are injected.
  * @param config - the deployment's origin, code lifetime and audit retention.
  */
@@ -288,4 +308,31 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
   }), 'deviceApi.devices.exchange')
+
+  ctx.effect(() => registerAnonymousRoute(server, host, {
+    path: DEVICE_PATHS.authenticate,
+    methods: ['GET'],
+    action: 'devices.authenticate',
+    handle: async (_body: unknown, request: IncomingMessage): Promise<ApiResult> => {
+      const token = submittedDeviceToken(request)
+      if (token === undefined) {
+        ctx.logger.info(`device-api: refused ${DEVICE_PATHS.authenticate} (unauthenticated)`)
+        return { kind: 'empty', status: 401 }
+      }
+      const authentication = await authenticateDevice(store, token)
+      if (!authentication.authenticated) {
+        ctx.logger.info(`device-api: refused ${DEVICE_PATHS.authenticate} (unauthenticated)`)
+        if (authentication.rejection === 'revoked') {
+          await file(authentication.device.userId, 'devices.authenticate', 'revoked')
+        }
+        return { kind: 'empty', status: 401 }
+      }
+      const identity: AuthenticatedDevice = {
+        deviceId: authentication.device.id,
+        userId: authentication.device.userId,
+      }
+      await file(authentication.device.userId, 'devices.authenticate', 'ok')
+      return { kind: 'json', status: 200, body: identity }
+    },
+  }), 'deviceApi.devices.authenticate')
 }

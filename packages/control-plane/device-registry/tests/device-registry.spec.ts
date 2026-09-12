@@ -311,9 +311,10 @@ describe('a host presenting its token', () => {
     expect(await authenticateDevice(store, 'other-token'))
       .toEqual({ authenticated: false, rejection: 'unknown' })
     await revokeDevice(store, ALICE, DEVICE, NOW + MINUTE)
+    const revoked = store.devices.get(DEVICE)
     // The distinction is for the audit record; a caller answers both alike.
     expect(await authenticateDevice(store, 'device-token'))
-      .toEqual({ authenticated: false, rejection: 'revoked' })
+      .toEqual({ authenticated: false, rejection: 'revoked', device: revoked })
   })
 
   it('refuses a record whose stored digest does not match the token', async () => {

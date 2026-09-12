@@ -54,7 +54,7 @@ A code is refused as `pairing-code-unknown` when nothing resolves it, `pairing-c
 
 ### Reading a token back, and taking it away
 
-`authenticateDevice` identifies the device presenting a token and reports `unknown` or `revoked` when none is identified. Answer a presenter the same for both; the distinction is for the audit record, where an operator needs to see a revoked host still trying.
+`authenticateDevice` identifies the device presenting a token and reports `unknown` or `revoked` when none is identified. A revoked result retains the record for the audit sink; answer a presenter the same for both, while an operator can still see which withdrawn host tried again.
 
 `revokeDevice` withdraws a binding and keeps the record. `admitDevice` is the assertion-time rule, the same shape [`admitWorkspaceGrant`](../workspace-grant/README.md) takes: `not-found`, `revoked`, or `tenant-mismatch`.
 
@@ -107,7 +107,7 @@ A code is read off one screen and typed into another, so the two spellings diffe
 
 These are current package constraints, not a task backlog.
 
-- **Nothing checks a device outside run admission** — [`dsh-run-admission`](../run-admission/README.md) resolves the device an assertion names through `findDevice` and applies `admitDevice`, so a revoked binding stops the next run. No other operation consults the record: a run already admitted keeps its credential and allowance until it settles, and no transport refuses a device token mid-connection.
+- **No transport checks a device mid-connection** — [`dsh-device-api`](../device-api/README.md) authenticates a held token on demand, and [`dsh-run-admission`](../run-admission/README.md) resolves the device an assertion names before a run starts. A run already admitted keeps its credential and allowance until it settles; the inherited transport does not yet attach token authentication to connection establishment or reconnect.
 - **Nothing expires a spent code** — consumed and expired records stay on the medium. A deployment that issues codes continuously grows that table until an eviction sweep exists, as [`ControlPlaneStore.evictNonces`](../control-plane-store/README.md) provides for replay nonces.
 - **A device holds one token for life** — there is no rotation. Replacing a compromised token means revoking the device and pairing the host again under a new id.
 - **No Cordis service** — nothing here registers on a `Context`; it is imported directly, like [`dsh-workspace-grant`](../workspace-grant/README.md).

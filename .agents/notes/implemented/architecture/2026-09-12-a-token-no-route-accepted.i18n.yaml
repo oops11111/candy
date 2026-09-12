@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-12-a-token-no-route-accepted.md
+2026-09-12-a-token-no-route-accepted.md: 549f5f89d2cfc1068fab41370477464e98262423
+2026-09-12-a-token-no-route-accepted.zh.md: 0cc3c349bc9410e620e93d8640f88ec0c65312b6

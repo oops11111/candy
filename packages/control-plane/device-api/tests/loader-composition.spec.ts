@@ -144,6 +144,7 @@ function call(ctx: Context, path: string, options: {
   body?: unknown
   origin?: string | null
   host?: string
+  authorization?: string
 } = {}): Promise<Reply> {
   const method = options.method ?? (options.body === undefined ? 'GET' : 'POST')
   const payload = options.body === undefined ? undefined : JSON.stringify(options.body)
@@ -153,6 +154,7 @@ function call(ctx: Context, path: string, options: {
     headers.cookie = options.browser.cookie
     headers['x-candy-csrf'] = options.browser.csrf
   }
+  if (options.authorization !== undefined) headers.authorization = options.authorization
   if (payload !== undefined) headers['content-type'] = 'application/json'
   return new Promise<Reply>((resolve, reject) => {
     const req = httpRequest({ host: '127.0.0.1', port: ctx.webServer.port, path, method, headers }, (res) => {
@@ -165,6 +167,15 @@ function call(ctx: Context, path: string, options: {
     if (payload !== undefined) req.write(payload)
     req.end()
   })
+}
+
+/** Ask whether a device token still identifies its binding. */
+function authenticate(ctx: Context, token?: string): Promise<Reply> {
+  return call(
+    ctx,
+    DEVICE_PATHS.authenticate,
+    token === undefined ? {} : { authorization: `Bearer ${token}` },
+  )
 }
 
 /** Issue one pairing code for a signed-in tenant. */
@@ -180,6 +191,41 @@ function exchange(ctx: Context, code: string): Promise<Reply> {
 }
 
 describe('the device pairing API', () => {
+  it('authenticates a live device and refuses its token after revocation', async () => {
+    const ctx = await boot(await deployment())
+    const alice = await signIn(ctx, ALICE)
+    const credential = JSON.parse((await exchange(ctx, await issue(ctx, alice))).body) as {
+      deviceId: string
+      userId: string
+      token: string
+    }
+
+    const live = await authenticate(ctx, credential.token)
+    expect(live.status).toBe(200)
+    expect(JSON.parse(live.body)).toEqual({ deviceId: credential.deviceId, userId: ALICE })
+    expect(live.body).not.toContain(credential.token)
+
+    await call(ctx, DEVICE_PATHS.revoke, { browser: alice, body: { id: credential.deviceId } })
+    const revoked = await authenticate(ctx, credential.token)
+    expect(revoked).toEqual({ status: 401, body: '' })
+    expect(ctx.controlPlaneStore.auditsOf(tenantSubject(ALICE)))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ action: 'devices.authenticate', outcome: 'revoked' }),
+      ]))
+  })
+
+  it('answers absent, malformed, and unknown device credentials alike', async () => {
+    const ctx = await boot(await deployment())
+
+    const absent = await authenticate(ctx)
+    const malformed = await call(ctx, DEVICE_PATHS.authenticate, { authorization: 'Basic not-a-device' })
+    const unknown = await authenticate(ctx, 'A'.repeat(43))
+
+    expect(absent).toEqual({ status: 401, body: '' })
+    expect(malformed).toEqual(absent)
+    expect(unknown).toEqual(absent)
+  })
+
   it('pairs a host to the tenant that issued the code', async () => {
     const ctx = await boot(await deployment())
     const alice = await signIn(ctx, ALICE)
@@ -321,7 +367,7 @@ describe('the device pairing API', () => {
     expect(JSON.parse(revoked.body)).toMatchObject({ id: credential.deviceId })
     // The token the host still holds now authenticates nothing.
     expect(await authenticateDevice(ctx.controlPlaneStore, credential.token))
-      .toEqual({ authenticated: false, rejection: 'revoked' })
+      .toMatchObject({ authenticated: false, rejection: 'revoked', device: { id: credential.deviceId } })
   })
 
   it('refuses every managed route to a caller with no session', async () => {

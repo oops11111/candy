@@ -580,7 +580,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/control-plane/device-api/src/index.ts:90`](../packages/control-plane/device-api/src/index.ts)
+来源：[`packages/control-plane/device-api/src/index.ts:101`](../packages/control-plane/device-api/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 

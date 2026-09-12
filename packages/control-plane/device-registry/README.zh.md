@@ -54,7 +54,7 @@ export const boundTo = device.userId
 
 ### 校验令牌，以及收回它
 
-`authenticateDevice` 识别出示令牌的设备；未识别出时报告 `unknown` 或 `revoked`。对出示方应当以同一种方式回答这两者；区分只服务于审计记录，运维需要在其中看到一台已撤销的主机仍在尝试。
+`authenticateDevice` 识别出示令牌的设备；未识别出时报告 `unknown` 或 `revoked`。撤销结果保留设备记录供审计接收方使用；对出示方以同一种方式回答两者，运维仍可看到哪台已撤销主机再次尝试。
 
 `revokeDevice` 撤回绑定并保留记录。`admitDevice` 是断言期的规则，与 [`admitWorkspaceGrant`](../workspace-grant/README.zh.md) 形状相同：`not-found`、`revoked` 或 `tenant-mismatch`。
 
@@ -107,7 +107,7 @@ export const boundTo = device.userId
 
 以下是当前的包约束，不是任务清单。
 
-- **运行准入之外没有任何地方检查设备** —— [`dsh-run-admission`](../run-admission/README.zh.md) 通过 `findDevice` 解析断言所指的设备并应用 `admitDevice`，因此被撤销的绑定会拦住下一次运行。没有其他操作查阅这条记录：已经被准入的运行会保留其凭据与额度直到结算，而也没有任何传输会在连接中途拒绝设备令牌。
+- **传输层不会在连接期间检查设备** —— [`dsh-device-api`](../device-api/README.zh.md) 按需认证持有的令牌，[`dsh-run-admission`](../run-admission/README.zh.md) 在运行启动前解析断言所指的设备。已经被准入的运行会保留其凭据与额度直到结算；继承的传输层尚未把令牌认证接入建连或重连。
 - **没有任何东西清理已用尽的配对码** —— 已兑换和已过期的记录留在介质上。持续签发配对码的部署会让该表不断增长，直到出现类似 [`ControlPlaneStore.evictNonces`](../control-plane-store/README.zh.md) 为重放随机数提供的清扫。
 - **设备终身持有一个令牌** —— 没有轮换。替换泄露的令牌意味着撤销该设备，再以新的 id 重新配对主机。
 - **没有 Cordis 服务** —— 这里没有任何东西注册到 `Context` 上；与 [`dsh-workspace-grant`](../workspace-grant/README.zh.md) 一样直接导入使用。

@@ -410,7 +410,8 @@ export type DeviceRejection =
 /** Whether a presented token identifies a device, and which one when it does. */
 export type DeviceAuthentication =
   | { readonly authenticated: true; readonly device: DeviceRecord }
-  | { readonly authenticated: false; readonly rejection: DeviceRejection }
+  | { readonly authenticated: false; readonly rejection: 'unknown' }
+  | { readonly authenticated: false; readonly rejection: 'revoked'; readonly device: DeviceRecord }
 
 /**
  * Identify the device presenting one token.
@@ -439,7 +440,7 @@ export async function authenticateDevice(
   const record = await store.findDeviceByTokenDigest(digest)
   if (record === undefined) return { authenticated: false, rejection: 'unknown' }
   if (record.tokenDigest !== digest) return { authenticated: false, rejection: 'unknown' }
-  if (!isDeviceUsable(record)) return { authenticated: false, rejection: 'revoked' }
+  if (!isDeviceUsable(record)) return { authenticated: false, rejection: 'revoked', device: record }
   return { authenticated: true, device: record }
 }
 

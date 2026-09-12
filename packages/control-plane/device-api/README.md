@@ -1,5 +1,5 @@
 ---
-description: "The four device operations over HTTP: three a tenant performs on their browser session, and the pairing exchange a Harness Host completes with a code and no session at all."
+description: "Five device operations over HTTP: tenant management, pairing exchange, and bearer-token authentication for a Harness Host."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-[`dsh-device-registry`](../device-registry/README.md) decides who a device belongs to. This package is how a tenant and a host reach those decisions: three routes on the [authenticated management envelope](../control-plane-api/README.md), and one that a browser session does not authenticate because the caller is not a browser.
+[`dsh-device-registry`](../device-registry/README.md) decides who a device belongs to. This package is how a tenant and a host reach those decisions: three routes on the [authenticated management envelope](../control-plane-api/README.md), plus pairing exchange and device authentication for a caller with no browser session.
 
 A Harness Host completing the exchange has not been anyone yet. The pairing code in its body is the whole of its claim, and the tenant it becomes bound to is the one that issued that code. The exchange is therefore registered through `registerAnonymousRoute`, which hands the handler no `Actor` at all — so the envelope's rule that an `Actor` means an authenticated session survives unchanged, rather than being loosened to admit this caller.
 
@@ -40,7 +40,7 @@ A code and a token each appear in exactly one reply and are never readable again
 
 `publicOrigin` must be the exact origin sign-in was configured with; a request addressing any other authority is refused before anything else runs. `pairingCodeTtlMs` is how long a person has to carry a code to the machine, from 30 seconds to a day, and defaults to 15 minutes.
 
-### The four operations
+### The five operations
 
 | Path | Method | Who may call it |
 | --- | --- | --- |
@@ -48,10 +48,13 @@ A code and a token each appear in exactly one reply and are never readable again
 | `/api/candy/devices/pair` | `POST` | A signed-in member, issuing one code |
 | `/api/candy/devices/revoke` | `POST` | A signed-in member, for their own device |
 | `/api/candy/devices/exchange` | `POST` | Anyone holding an unspent code |
+| `/api/candy/devices/authenticate` | `GET` | A host presenting its device token as a Bearer credential |
 
 `pair` answers `{ code, label, expiresAt }`. That reply is the only time the code exists in the clear; a tenant who loses it issues another.
 
 `exchange` answers `{ deviceId, userId, label, token }` once. The host keeps the token and presents it thereafter; a host that loses it is paired to a device it can no longer prove it is, and the fix is a revocation and a new code.
+
+`authenticate` answers `{ deviceId, userId }` for a live token. An absent, malformed, unknown, or revoked credential receives the same empty `401`; only the tenant audit distinguishes a revoked host, and no reply or log includes the token.
 
 `revoke` answers the device as it now stands. A device belonging to another tenant answers exactly as a device that does not exist.
 
@@ -67,7 +70,7 @@ A code and a token each appear in exactly one reply and are never readable again
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | The plugin: config, code minting, the four route registrations |
+| [`src/index.ts`](src/index.ts) | The plugin: config, credential minting, and the five route registrations |
 | [`src/types.ts`](src/types.ts) | The paths and the request and reply shapes a client reads |
 | — | No runtime invariant companion is published; the package registers routes and owns no mutable runtime data, and its refusals are checked by the composition test. |
 
@@ -112,7 +115,8 @@ These are current package constraints, not a task backlog.
 
 - **Nothing caps how many devices or codes a tenant may have** — an authenticated member can issue codes until the medium fills, exactly as they can create provider accounts. A cap belongs with whatever else bounds a tenant's footprint, and nothing yet does.
 - **No browser page** — the settings panel has a Candy account page and no device page. A tenant reaches these routes with an HTTP client until one exists.
-- **No host client** — nothing in this repository calls the exchange. The Harness Host that will hold a device token is the rest of R5.
+- **No pairing client** — the host-side [`dsh-device-binding`](../device-binding/README.md) can verify a stored token, but nothing calls the exchange and stores its reply yet.
+- **No transport binding** — authentication is an explicit request. The inherited Remote Gateway does not present the token when establishing or recovering its WebSocket.
 - **A code that is never exchanged stays on the medium** — this API issues codes and [`dsh-control-plane-store`](../control-plane-store/README.md) keeps them; neither sweeps the spent and expired ones.
 
 <a id="dev-note"></a>

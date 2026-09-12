@@ -11,7 +11,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { DeviceId, UserId } from '@deepseek-ai/dsh-control-plane'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import DeviceBinding, {
   describeBinding,
   DeviceBindingError,
@@ -28,6 +28,7 @@ const ORIGIN = 'https://candy.example'
 const cleanups: (() => Promise<void>)[] = []
 
 afterEach(async () => {
+  vi.unstubAllGlobals()
   while (cleanups.length > 0) await cleanups.pop()?.()
 })
 
@@ -95,6 +96,68 @@ describe('the binding a host takes', () => {
     expect(view).toEqual({ serverOrigin: ORIGIN, userId: ALICE, deviceId: DEVICE, boundAt: NOW })
     expect(JSON.stringify(view)).not.toContain('device-token')
     expect(describeBinding(await ctx.deviceBinding.read() as HostDeviceBinding)).toEqual(view)
+  })
+
+  it('asks the bound deployment whether this device still authenticates', async () => {
+    const { ctx } = await boot()
+    await ctx.deviceBinding.bind(pairing(), NOW)
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      deviceId: DEVICE,
+      userId: ALICE,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetcher)
+
+    await expect(ctx.deviceBinding.verify()).resolves.toBe(true)
+    expect(fetcher).toHaveBeenCalledWith(`${ORIGIN}/api/candy/devices/authenticate`, {
+      method: 'GET',
+      headers: { authorization: 'Bearer device-token' },
+    })
+  })
+
+  it('does not mistake an absent or refused binding for a live one', async () => {
+    const { ctx } = await boot()
+    const fetcher = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', fetcher)
+    await expect(ctx.deviceBinding.verify()).resolves.toBe(false)
+    expect(fetcher).not.toHaveBeenCalled()
+
+    await ctx.deviceBinding.bind(pairing(), NOW)
+    fetcher.mockResolvedValueOnce(new Response(undefined, { status: 401 }))
+    await expect(ctx.deviceBinding.verify()).resolves.toBe(false)
+  })
+
+  it('refuses an authenticated reply for another identity', async () => {
+    const { ctx } = await boot()
+    await ctx.deviceBinding.bind(pairing(), NOW)
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      deviceId: 'somebody-elses-device', userId: ALICE,
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetcher)
+
+    await expect(ctx.deviceBinding.verify())
+      .rejects.toMatchObject({ code: 'invalid-response' })
+  })
+
+  it('keeps server, protocol, and network failures distinct from revocation', async () => {
+    const { ctx } = await boot()
+    await ctx.deviceBinding.bind(pairing(), NOW)
+    const fetcher = vi.fn<typeof fetch>()
+    vi.stubGlobal('fetch', fetcher)
+
+    fetcher.mockResolvedValueOnce(new Response(undefined, { status: 503 }))
+    await expect(ctx.deviceBinding.verify())
+      .rejects.toMatchObject({ code: 'unexpected-status' })
+
+    fetcher.mockResolvedValueOnce(new Response('not json', { status: 200 }))
+    await expect(ctx.deviceBinding.verify())
+      .rejects.toMatchObject({ code: 'invalid-response' })
+
+    fetcher.mockResolvedValueOnce(new Response('null', { status: 200 }))
+    await expect(ctx.deviceBinding.verify())
+      .rejects.toMatchObject({ code: 'invalid-response' })
+
+    fetcher.mockRejectedValueOnce(new Error('offline'))
+    await expect(ctx.deviceBinding.verify()).rejects.toThrow('offline')
   })
 
   it('normalizes a server people type in more than one way', async () => {

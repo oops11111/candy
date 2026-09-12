@@ -562,6 +562,20 @@ async read(): Promise<HostDeviceBinding | undefined>
 async describe(): Promise<HostDeviceBindingView | undefined>
 
 /**
+ * Ask the bound deployment whether this host's token still identifies it.
+ *
+ * This is one request, not a connection monitor. Network failure keeps
+ * throwing for the inherited connection owner to classify; only the
+ * deployment's uniform `401` means the binding no longer authenticates.
+ *
+ * @returns `true` only when the deployment authenticates the exact tenant
+ * and device stored locally; `false` while unpaired or after a `401`.
+ * @throws DeviceBindingVerificationError when a successful reply names a
+ * different identity or the deployment answers an undocumented status.
+ */
+async verify(): Promise<boolean>
+
+/**
  * Take one binding, if this host holds none.
  *
  * Re-binding to the exact deployment, tenant and device already stored is

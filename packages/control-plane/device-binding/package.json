@@ -31,7 +31,8 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-control-plane": "workspace:^",
-    "@deepseek-ai/dsh-credentials": "workspace:^"
+    "@deepseek-ai/dsh-credentials": "workspace:^",
+    "@deepseek-ai/dsh-device-api": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-device-api",
-  "description": "Mounts tenant device pairing on the authenticated Candy management envelope, and the code-authenticated exchange a Harness Host completes once",
+  "description": "Mounts tenant device pairing, host exchange, and bearer-token device authentication on the Candy HTTP envelope",
   "version": "0.1.2-alpha.5",
   "publishConfig": {
     "access": "public"

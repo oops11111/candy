@@ -27,6 +27,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { credentialKey, type CredentialKey, type CredentialRecord } from '@deepseek-ai/dsh-credentials'
 import { DeviceId, UserId } from '@deepseek-ai/dsh-control-plane'
+import { DEVICE_PATHS, type AuthenticatedDevice } from '@deepseek-ai/dsh-device-api'
 
 /** Where the binding is stored; one key, because a host has one binding. */
 const BINDING_KEY: CredentialKey = credentialKey('device-binding', 'host')
@@ -67,6 +68,13 @@ export type DeviceBindingRejection =
 export class DeviceBindingError extends Error {
   constructor(readonly code: DeviceBindingRejection) {
     super(`device binding ${code}`)
+  }
+}
+
+/** A deployment answered a device verification with no usable decision. */
+export class DeviceBindingVerificationError extends Error {
+  constructor(readonly code: 'unexpected-status' | 'invalid-response') {
+    super(`device binding verification ${code}`)
   }
 }
 
@@ -181,6 +189,37 @@ export class DeviceBinding extends Service {
   }
 
   /**
+   * Ask the bound deployment whether this host's token still identifies it.
+   *
+   * This is one request, not a connection monitor. Network failure keeps
+   * throwing for the inherited connection owner to classify; only the
+   * deployment's uniform `401` means the binding no longer authenticates.
+   *
+   * @returns `true` only when the deployment authenticates the exact tenant
+   * and device stored locally; `false` while unpaired or after a `401`.
+   * @throws DeviceBindingVerificationError when a successful reply names a
+   * different identity or the deployment answers an undocumented status.
+   */
+  async verify(): Promise<boolean> {
+    const binding = await this.read()
+    if (binding === undefined) return false
+    const response = await globalThis.fetch(`${binding.serverOrigin}${DEVICE_PATHS.authenticate}`, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${binding.token}` },
+    })
+    if (response.status === 401) return false
+    if (response.status !== 200) throw new DeviceBindingVerificationError('unexpected-status')
+    let identity: unknown
+    try {
+      identity = await response.json()
+    } catch (_malformedJson) {
+      throw new DeviceBindingVerificationError('invalid-response')
+    }
+    if (!sameIdentity(identity, binding)) throw new DeviceBindingVerificationError('invalid-response')
+    return true
+  }
+
+  /**
    * Take one binding, if this host holds none.
    *
    * Re-binding to the exact deployment, tenant and device already stored is
@@ -250,6 +289,13 @@ export class DeviceBinding extends Service {
   async release(): Promise<void> {
     await this.ctx.credentials.deleteRecord(BINDING_KEY)
   }
+}
+
+/** Whether a wire reply names exactly the locally held tenant and device. */
+function sameIdentity(value: unknown, binding: HostDeviceBinding): value is AuthenticatedDevice {
+  if (value === null || typeof value !== 'object') return false
+  const identity = value as Partial<AuthenticatedDevice>
+  return identity.userId === binding.userId && identity.deviceId === binding.deviceId
 }
 
 /** Whether a stored binding names the same deployment, tenant and device. */

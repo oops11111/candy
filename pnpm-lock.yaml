@@ -4635,6 +4635,9 @@ importers:
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:^
         version: link:../../credentials/credentials
+      '@deepseek-ai/dsh-device-api':
+        specifier: workspace:^
+        version: link:../device-api
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

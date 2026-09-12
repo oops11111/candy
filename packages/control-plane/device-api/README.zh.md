@@ -1,5 +1,5 @@
 ---
-description: "四个设备操作的 HTTP 承载：三个由租户在浏览器会话上完成，另一个是 Harness Host 仅凭配对码、不带任何会话完成的兑换。"
+description: "五个设备操作的 HTTP 承载：租户管理、配对兑换，以及 Harness Host 的承载令牌认证。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-[`dsh-device-registry`](../device-registry/README.zh.md) 判定设备属于谁。本包是租户与主机抵达这些判定的方式:三条挂在[已认证管理信封](../control-plane-api/README.zh.md)上的路由,以及一条不由浏览器会话认证的路由——因为调用方不是浏览器。
+[`dsh-device-registry`](../device-registry/README.zh.md) 判定设备属于谁。本包是租户与主机抵达这些判定的方式:三条挂在[已认证管理信封](../control-plane-api/README.zh.md)上的路由,以及供没有浏览器会话的调用方使用的配对兑换和设备认证。
 
 完成兑换的 Harness Host 此前还不是任何人。它请求体中的配对码就是它声明的全部,而它将绑定到的租户,正是签发那个配对码的租户。因此兑换通过 `registerAnonymousRoute` 注册,该注册根本不向处理器交出 `Actor`——于是信封"持有 `Actor` 即意味着已认证会话"这条规则原封不动地保留下来,而不是被放宽以容纳这个调用方。
 
@@ -40,7 +40,7 @@ kind: "package-reference"
 
 `publicOrigin` 必须与登录所配置的来源完全一致;寻址到任何其他权威的请求都会在其余一切之前被拒绝。`pairingCodeTtlMs` 是一个人把配对码带到机器前所拥有的时间,取值从 30 秒到一天,默认 15 分钟。
 
-### 四个操作
+### 五个操作
 
 | 路径 | 方法 | 谁可以调用 |
 | --- | --- | --- |
@@ -48,10 +48,13 @@ kind: "package-reference"
 | `/api/candy/devices/pair` | `POST` | 已登录成员,签发一个配对码 |
 | `/api/candy/devices/revoke` | `POST` | 已登录成员,针对自己的设备 |
 | `/api/candy/devices/exchange` | `POST` | 任何持有未兑换配对码的一方 |
+| `/api/candy/devices/authenticate` | `GET` | 以 Bearer 凭据出示设备令牌的主机 |
 
 `pair` 回答 `{ code, label, expiresAt }`。这次回复是配对码唯一以明文存在的时刻;丢失它的租户重新签发一个。
 
 `exchange` 一次性回答 `{ deviceId, userId, label, token }`。主机保存该令牌并在此后出示它;丢失令牌的主机所配对的设备,它再也无法证明自己就是,补救办法是撤销并重新配对。
+
+`authenticate` 为有效令牌回答 `{ deviceId, userId }`。缺失、格式错误、未知或已撤销的凭据都收到相同的空 `401`;只有租户审计会区分已撤销主机,回复和日志都不包含令牌。
 
 `revoke` 回答设备当前的状态。属于另一租户的设备,与不存在的设备的回答完全一致。
 
@@ -67,7 +70,7 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件本体:配置、配对码铸造、四条路由的注册 |
+| [`src/index.ts`](src/index.ts) | 插件本体:配置、凭据铸造、五条路由的注册 |
 | [`src/types.ts`](src/types.ts) | 客户端读取的路径,以及请求与回复的形状 |
 | — | 不发布运行时不变量伴生包;本包注册路由、不拥有可变运行时数据,其拒绝行为由组合测试保证。 |
 
@@ -112,7 +115,8 @@ kind: "package-reference"
 
 - **没有任何东西限制租户可拥有的设备或配对码数量** —— 已认证成员可以一直签发配对码直到介质写满,正如他们可以一直创建服务商账户一样。上限属于其他限定租户占用的机制,而目前还没有这样的机制。
 - **没有浏览器页面** —— 设置面板有 Candy 账户页,没有设备页。在页面出现之前,租户用 HTTP 客户端访问这些路由。
-- **没有主机客户端** —— 本仓库中没有任何东西调用兑换。将持有设备令牌的 Harness Host 是 R5 的其余部分。
+- **没有配对客户端** —— 主机侧 [`dsh-device-binding`](../device-binding/README.zh.md) 可以验证已存令牌,但还没有组件调用兑换并保存其回复。
+- **没有传输绑定** —— 认证是显式请求。继承的 Remote Gateway 在建立或恢复 WebSocket 时尚不出示令牌。
 - **从未兑换的配对码留在介质上** —— 本 API 签发配对码,[`dsh-control-plane-store`](../control-plane-store/README.zh.md) 保存它们;两者都不清扫已用尽和已过期的记录。
 
 <a id="dev-note"></a>
