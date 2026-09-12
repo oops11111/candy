@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`KvTable.getCurrent` 是显式的介质读取路径：它要求后端提供 `readRecord`，校验返回记录，并刷新调用进程的快照。普通 `get` 与迭代仍是同步快照读取。
+`KvTable.getCurrent` 与 `KvTable.entriesCurrent` 是显式的介质读取路径。前者要求后端提供 `readRecord` 并刷新一个键；后者在查询无法预先知道键时重新加载并校验整张表。普通 `get` 与迭代仍是同步快照读取。
 
 `dsh-storage-domain` 是使用存储家族的类型化方式：由所属包声明一次领域——其名称、格式版本与 zod 记录 schema——宿主消费方在已路由后端上打开它，并通过 `ctx.storageDomain` 读写记录。读取同步取自具有最终决定权的内存状态；每次写入在 resolve 前都已持久，并发出 `domain/changed` 事件，因此读取永远不会与已存介质分叉。它是后端约定的唯一消费方——产品包绝不直接触碰后端。本层只面向宿主侧：它不注册工具、不注入提示词，也不追加会话事件，因此模型与 agent loop（智能体循环）永远不会看到它。
 
@@ -72,7 +72,7 @@ domain.table('workspaces').update(id, (r) => ({ ...r, path: newPath }))
 
 ### 可观察行为与失败
 
-每次写入只在后端确认持久后 resolve，并按写入顺序各发出一次 `domain/changed` 事件。`KvTable.compareExchange` 还会把一条记录与持久介质同步，并且只有在后端能把比较、替换与返回当前值做成同一个跨进程原子操作时才可用；否则它以 `facet-unsupported` 拒绝，绝不会从内存快照模拟安全边界。其他失败沿用同一组稳定的 `DomainError` 代码：`already-open`、`invalid-record`、`missing-key` 与 `closed`。`version-mismatch` 等后端失败会原样透传。
+每次写入只在后端确认持久后 resolve，并按写入顺序各发出一次 `domain/changed` 事件。`getCurrent` 与 `entriesCurrent` 会从介质显式替换本地快照的相应部分；由于写入发生在别处，两者都不发出变更事件。`KvTable.compareExchange` 还会把一条记录与持久介质同步，并且只有在后端能把比较、替换与返回当前值做成同一个跨进程原子操作时才可用；否则它以 `facet-unsupported` 拒绝，绝不会从内存快照模拟安全边界。其他失败沿用同一组稳定的 `DomainError` 代码：`already-open`、`invalid-record`、`missing-key` 与 `closed`。`version-mismatch` 等后端失败会原样透传。
 
 -----
 
@@ -150,7 +150,7 @@ domain.table('workspaces').update(id, (r) => ({ ...r, path: newPath }))
 
 这些限制说明领域层何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是任务积压。
 
-- **变更只在单进程内可见**——`domain/changed` 是进程内事件；在跨进程修订模式落地前，第二个主机进程或重新连接的 GUI 无法观察变更（[Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)）。
+- **没有跨进程变更推送**——`domain/changed` 是进程内事件。消费方可以用 `getCurrent` 显式刷新已知记录，或用 `entriesCurrent` 刷新整张表，但在跨进程修订模式落地前，第二个主机进程或重新连接的 GUI 不会收到通知（[Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)）。
 - **没有跨表事务、二级索引或多段键**——每次写入只触碰一条记录；这些扩展列在 Agent Note 的范围外清单中。
 - **没有数据迁移**——已存版本与 spec 不同的领域会在打开时拒绝（`version-mismatch`）；修改 schema 需要手工迁移已存数据。
 

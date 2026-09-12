@@ -462,14 +462,14 @@ async saveGrant(record: WorkspaceGrantRecord): Promise<void>
  * @param id - the device id.
  * @returns the device, or `undefined` when nothing resolves the id.
  */
-findDevice(id: DeviceId): Promise<DeviceRecord | undefined>
+async findDevice(id: DeviceId): Promise<DeviceRecord | undefined>
 
 /**
  * Read one tenant's devices, revoked ones included.
  * @param userId - the tenant.
  * @returns their devices, in no defined order.
  */
-listDevicesOfUser(userId: UserId): Promise<readonly DeviceRecord[]>
+async listDevicesOfUser(userId: UserId): Promise<readonly DeviceRecord[]>
 
 /**
  * Read the device presenting one token digest.
@@ -495,14 +495,14 @@ async saveDevice(record: DeviceRecord): Promise<void>
  * @param digest - the normalized code's digest.
  * @returns the code, or `undefined` when nothing resolves the digest.
  */
-findPairingCode(digest: string): Promise<PairingCodeRecord | undefined>
+async findPairingCode(digest: string): Promise<PairingCodeRecord | undefined>
 
 /**
  * Read one tenant's pairing codes, consumed and expired ones included.
  * @param userId - the tenant.
  * @returns their codes, in no defined order.
  */
-listPairingCodesOfUser(userId: UserId): Promise<readonly PairingCodeRecord[]>
+async listPairingCodesOfUser(userId: UserId): Promise<readonly PairingCodeRecord[]>
 
 /**
  * Write one pairing code, replacing any record under the same digest.

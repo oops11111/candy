@@ -888,6 +888,8 @@ describe('a booted control-plane store', () => {
         .toBeUndefined()
     } finally {
       await other.fiber.dispose()
+      await reader.fiber.dispose()
+      context = undefined
     }
   })
 
@@ -963,6 +965,51 @@ describe('a booted control-plane store', () => {
         .toMatchObject({ deviceId: DEVICE })
     } finally {
       await loser.fiber.dispose()
+    }
+  })
+
+  it('discovers pairing and device records written after another runtime opened', async () => {
+    root = await mkdtemp(join(tmpdir(), 'dsh-cp-store-'))
+    const reader = await boot(root)
+    const writer = await boot(root)
+    const digest = pairingCodeDigest('RJKM-4T7Q')
+    const code: PairingCodeRecord = {
+      digest,
+      userId: ALICE,
+      label: 'Studio desktop',
+      issuedAt: NOW,
+      expiresAt: NOW + 900_000,
+      consumedAt: undefined,
+      deviceId: undefined,
+    }
+    const paired: DeviceRecord = {
+      id: DEVICE,
+      userId: ALICE,
+      label: 'Studio desktop',
+      tokenDigest: deviceTokenDigest('device-token'),
+      pairedAt: NOW,
+      revokedAt: undefined,
+    }
+
+    try {
+      // Both runtimes were already alive before either record existed. In a
+      // canary deployment, issuing or pairing can land on one process while
+      // the next request is routed to the other.
+      await writer.controlPlaneStore.savePairingCode(code)
+      expect(await reader.controlPlaneStore.listPairingCodesOfUser(ALICE)).toEqual([code])
+      expect(await reader.controlPlaneStore.findPairingCode(digest)).toEqual(code)
+      expect(await reader.controlPlaneStore.claimPairingCode(digest, DEVICE, NOW + 1))
+        .toEqual(code)
+
+      await writer.controlPlaneStore.saveDevice(paired)
+      expect(await reader.controlPlaneStore.listDevicesOfUser(ALICE)).toEqual([paired])
+      expect(await reader.controlPlaneStore.findDeviceByTokenDigest(paired.tokenDigest))
+        .toEqual(paired)
+      expect(await reader.controlPlaneStore.findDevice(DEVICE)).toEqual(paired)
+    } finally {
+      await writer.fiber.dispose()
+      await reader.fiber.dispose()
+      context = undefined
     }
   })
 })

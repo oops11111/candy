@@ -893,13 +893,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution once the medium holds it.',
       },
       {
-        signature: 'findDevice(id: DeviceId): Promise<DeviceRecord | undefined>',
+        signature: 'async findDevice(id: DeviceId): Promise<DeviceRecord | undefined>',
         description: 'Read one device by the id an assertion names.',
         parameters: [{ name: 'id', description: 'the device id.' }],
         returns: 'the device, or `undefined` when nothing resolves the id.',
       },
       {
-        signature: 'listDevicesOfUser(userId: UserId): Promise<readonly DeviceRecord[]>',
+        signature: 'async listDevicesOfUser(userId: UserId): Promise<readonly DeviceRecord[]>',
         description: 'Read one tenant\'s devices, revoked ones included.',
         parameters: [{ name: 'userId', description: 'the tenant.' }],
         returns: 'their devices, in no defined order.',
@@ -917,13 +917,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution once the medium holds it.',
       },
       {
-        signature: 'findPairingCode(digest: string): Promise<PairingCodeRecord | undefined>',
+        signature: 'async findPairingCode(digest: string): Promise<PairingCodeRecord | undefined>',
         description: 'Read one pairing code by digest, consumed and expired ones included.',
         parameters: [{ name: 'digest', description: 'the normalized code\'s digest.' }],
         returns: 'the code, or `undefined` when nothing resolves the digest.',
       },
       {
-        signature: 'listPairingCodesOfUser(userId: UserId): Promise<readonly PairingCodeRecord[]>',
+        signature: 'async listPairingCodesOfUser(userId: UserId): Promise<readonly PairingCodeRecord[]>',
         description: 'Read one tenant\'s pairing codes, consumed and expired ones included.',
         parameters: [{ name: 'userId', description: 'the tenant.' }],
         returns: 'their codes, in no defined order.',
@@ -4787,7 +4787,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'KvTable',
-    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    getCurrent(key: K): Promise<V | undefined>;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    compareExchange(key: K, expected: V | undefined, replacement: V | undefined): Promise<{\n        exchanged: boolean;\n        current: V | undefined;\n    }>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n}',
+    declaration: 'export interface KvTable<K extends string, V> {\n    get(key: K): V | undefined;\n    getCurrent(key: K): Promise<V | undefined>;\n    entriesCurrent(): Promise<readonly (readonly [\n        K,\n        V\n    ])[]>;\n    entries(): IterableIterator<[\n        K,\n        V\n    ]>;\n    keys(): IterableIterator<K>;\n    readonly size: number;\n    put(key: K, value: V): Promise<void>;\n    compareExchange(key: K, expected: V | undefined, replacement: V | undefined): Promise<{\n        exchanged: boolean;\n        current: V | undefined;\n    }>;\n    delete(key: K): Promise<boolean>;\n    update(key: K, fn: (current: V) => V): Promise<V>;\n}',
   },
   {
     name: 'KvUnit',

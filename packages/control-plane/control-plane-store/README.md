@@ -157,7 +157,7 @@ A code is single-use, and two hosts exchanging one both read it outstanding. `cl
 
 ### Why a token lookup re-reads the medium
 
-The snapshot narrows the scan to one candidate; the answer comes from `getCurrent`. A device another process revoked is still standing in this one's snapshot, and authenticating from it would admit a binding the tenant has already withdrawn. A record replaced under the same id no longer presents that digest, so the stale snapshot resolves to nobody rather than to its successor.
+`entriesCurrent` discovers a candidate from the medium even when another process created it after this one opened, and `getCurrent` confirms that candidate still presents the digest. A device another process revoked or replaced must not authenticate from an old local snapshot. The same explicit medium reads serve device ids, pairing-code claims, and tenant device/code lists, so request routing cannot decide which device state a caller sees.
 
 ### Why a run record names its account
 
@@ -202,7 +202,7 @@ These are current package constraints, not a task backlog.
 - **Recovery repairs one damage shape, not every one** — a record naming a parent the store does not hold is settled against its own tenant and cleared, because recovery settles every root it restores anyway. Damage this does not name — a record that fails its schema, a tenant allowance that is gone — still fails the boot, and there is no repair path for those.
 - **One runtime per audience** — `runsOf` partitions by the runtime stamp, so two processes sharing an audience recover each other's records. An assertion is audience-bound already, so this is a deployment rule rather than a check made here.
 - **Nothing evicts a spent pairing code** — consumed and expired records stay in `pairing_codes`, unlike `spent_nonces`, which `evictNonces` sweeps. A deployment issuing codes continuously grows that table.
-- **Device and pairing reads are process-local snapshots, except the token lookup** — `findDevice` and the two list operations answer from this process's snapshot, so a device another process paired or revoked is not visible until this one restarts. `findDeviceByTokenDigest` and `claimPairingCode` reach the medium, because authenticating a withdrawn binding and pairing one code twice are the two failures that must not happen.
+- **Device and pairing visibility is pull-based** — their public store reads explicitly refresh a known record or the relevant whole table from the medium, so another live process's pairing and revocation reach the next read. `storage-domain` still sends no cross-process change event; a consumer that caches one returned record beyond the operation that requested it can make that cache stale again.
 - **A run's grants are its tenant and account** — the record carries what a child can be checked against. A workspace grant is not among them: narrowing one is legitimate and nothing here models containment.
 - **`runsOfSession` scans** — the domain keeps every run record in memory and this filters them, which is right at a runtime's live-run count and would not be at a fleet's.
 - **Read-modify-writes are serialized store-wide** — a slow medium therefore orders a charge for one tenant behind an audit append for another. The alternative is per-record chains, which nothing yet needs.

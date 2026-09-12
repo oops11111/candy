@@ -142,6 +142,29 @@ describe('DomainFacility.open', () => {
     })
     const domain = await facility.open(bareSpec)
     expect(domain.table('rows').size).toBe(0)
+    expect(await domain.table('rows').entriesCurrent()).toEqual([])
+  })
+
+  it('refreshes a whole table when a caller needs current cross-process enumeration', async () => {
+    const pool = new MemoryMediaPool()
+    const { facility } = await harness({ pool })
+    const domain = await facility.open(spec)
+    const table = domain.table('items')
+    await table.put('old', { label: 'old', count: 1 })
+
+    const medium = pool.media.get('demo')!.tables.get('items')!
+    medium.delete('old')
+    medium.set('new', { label: 'new', count: 2 })
+
+    // Ordinary iteration remains the stable local snapshot. The explicit
+    // current read replaces it with one validated snapshot from the medium.
+    expect([...table.entries()]).toEqual([['old', { label: 'old', count: 1 }]])
+    expect(await table.entriesCurrent()).toEqual([['new', { label: 'new', count: 2 }]])
+    expect([...table.entries()]).toEqual([['new', { label: 'new', count: 2 }]])
+
+    medium.set('broken', { label: 'broken', count: 'NaN' })
+    await expect(table.entriesCurrent()).rejects.toMatchObject({ code: 'invalid-record' })
+    expect([...table.entries()]).toEqual([['new', { label: 'new', count: 2 }]])
   })
 
   it('rejects stored records that fail their schema, naming table and key', async () => {

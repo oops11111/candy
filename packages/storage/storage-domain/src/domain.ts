@@ -51,6 +51,12 @@ export interface KvTable<K extends string, V> {
   getCurrent(key: K): Promise<V | undefined>
 
   /**
+   * Re-read this whole table from the durable medium and refresh this process's snapshot.
+   * @returns one stable, validated snapshot of the table's current entries.
+   */
+  entriesCurrent(): Promise<readonly (readonly [K, V])[]>
+
+  /**
    * Snapshot iterator over `[key, record]` pairs. A snapshot, not a live
    * view: iteration stays stable while queued writes land.
    * @returns the pair iterator.
@@ -338,6 +344,19 @@ class KvTableImpl<K extends string, V> implements KvTable<K, V> {
       const parsed = this.parseCurrent(value)
       this.records.set(key, parsed)
       return parsed
+    })
+  }
+
+  entriesCurrent(): Promise<readonly (readonly [K, V])[]> {
+    return this.host.enqueue(async () => {
+      const snapshot = await this.host.unit.loadAll()
+      const next = new Map<K, V>()
+      for (const [key, value] of Object.entries(snapshot.tables[this.tableName] ?? {})) {
+        next.set(key as K, this.parseCurrent(value))
+      }
+      this.records.clear()
+      for (const [key, value] of next) this.records.set(key, value)
+      return [...next.entries()]
     })
   }
 

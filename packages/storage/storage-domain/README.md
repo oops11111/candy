@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`KvTable.getCurrent` is the explicit medium-read path: it requires backend `readRecord`, validates the returned record, and refreshes the calling process's snapshot. Ordinary `get` and iteration remain synchronous snapshot reads.
+`KvTable.getCurrent` and `KvTable.entriesCurrent` are the explicit medium-read paths. The former requires backend `readRecord` and refreshes one key; the latter reloads and validates one whole table when a lookup cannot know the key in advance. Ordinary `get` and iteration remain synchronous snapshot reads.
 
 `dsh-storage-domain` is the typed way to use the storage family: an owning package declares a domain once — its name, format version, and zod record schemas — and host consumers open it over a routed backend and read and write records through `ctx.storageDomain`. Reads are synchronous from authoritative in-memory state; every write is durable before it resolves and emits a `domain/changed` event, so reads never diverge from the stored medium. It is the only consumer of the backend contract — product packages never touch backends directly. The layer is host-side only: it registers no tools, injects no prompts, and appends no session events, so the model and the agent loop never see it.
 
@@ -72,7 +72,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Observable behavior and failures
 
-Every write resolves only after the backend acknowledges durability, and each emits one `domain/changed` event in write order. `KvTable.compareExchange` additionally synchronizes one record with the durable medium and is available only when the backend can make the comparison, replacement, and returned current value one cross-process atomic operation. Otherwise it rejects with `facet-unsupported`; it never emulates a security boundary from the in-memory snapshot. Other failures carry the same stable `DomainError` vocabulary: `already-open`, `invalid-record`, `missing-key`, and `closed`. Backend failures such as `version-mismatch` pass through unchanged.
+Every write resolves only after the backend acknowledges durability, and each emits one `domain/changed` event in write order. `getCurrent` and `entriesCurrent` explicitly replace the relevant part of the local snapshot from the medium; neither emits a change event because the write happened elsewhere. `KvTable.compareExchange` additionally synchronizes one record with the durable medium and is available only when the backend can make the comparison, replacement, and returned current value one cross-process atomic operation. Otherwise it rejects with `facet-unsupported`; it never emulates a security boundary from the in-memory snapshot. Other failures carry the same stable `DomainError` vocabulary: `already-open`, `invalid-record`, `missing-key`, and `closed`. Backend failures such as `version-mismatch` pass through unchanged.
 
 -----
 
@@ -150,7 +150,7 @@ Independent: domain reads and writes never touch request prefixes, so nothing he
 
 These limits define when the domain layer is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
 
-- **Single-process change visibility** — `domain/changed` is an in-process event; a second host process or a reconnecting GUI observes no changes until the cross-process revision pattern lands ([Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md)).
+- **No cross-process change push** — `domain/changed` is an in-process event. A consumer can explicitly refresh a known record with `getCurrent` or a whole table with `entriesCurrent`, but a second host process or reconnecting GUI receives no notification until the cross-process revision pattern lands ([Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md)).
 - **No cross-table transactions, secondary indexes, or multi-segment keys** — each write touches one record; these extensions are deferred in the Agent Note's out-of-scope list.
 - **No data migration** — a domain whose stored version differs from its spec rejects at open (`version-mismatch`); changing a schema requires migrating the stored data by hand.
 

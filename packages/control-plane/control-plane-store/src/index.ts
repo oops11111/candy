@@ -860,9 +860,9 @@ export class ControlPlaneStore extends Service implements DeviceRegistryStore, P
    * @param id - the device id.
    * @returns the device, or `undefined` when nothing resolves the id.
    */
-  findDevice(id: DeviceId): Promise<DeviceRecord | undefined> {
-    const stored = this.devices.get(id)
-    return Promise.resolve(stored === undefined ? undefined : fromStoredDevice(stored))
+  async findDevice(id: DeviceId): Promise<DeviceRecord | undefined> {
+    const stored = await this.devices.getCurrent(id)
+    return stored === undefined ? undefined : fromStoredDevice(stored)
   }
 
   /**
@@ -870,12 +870,12 @@ export class ControlPlaneStore extends Service implements DeviceRegistryStore, P
    * @param userId - the tenant.
    * @returns their devices, in no defined order.
    */
-  listDevicesOfUser(userId: UserId): Promise<readonly DeviceRecord[]> {
+  async listDevicesOfUser(userId: UserId): Promise<readonly DeviceRecord[]> {
     const records: DeviceRecord[] = []
-    for (const [, stored] of this.devices.entries()) {
+    for (const [, stored] of await this.devices.entriesCurrent()) {
       if (stored.userId === userId) records.push(fromStoredDevice(stored))
     }
-    return Promise.resolve(records)
+    return records
   }
 
   /**
@@ -889,7 +889,7 @@ export class ControlPlaneStore extends Service implements DeviceRegistryStore, P
    * @returns the device, or `undefined` when none holds that digest.
    */
   async findDeviceByTokenDigest(tokenDigest: string): Promise<DeviceRecord | undefined> {
-    for (const [id, snapshot] of this.devices.entries()) {
+    for (const [id, snapshot] of await this.devices.entriesCurrent()) {
       if (snapshot.tokenDigest !== tokenDigest) continue
       const stored = await this.devices.getCurrent(id)
       if (stored === undefined || stored.tokenDigest !== tokenDigest) return undefined
@@ -912,9 +912,9 @@ export class ControlPlaneStore extends Service implements DeviceRegistryStore, P
    * @param digest - the normalized code's digest.
    * @returns the code, or `undefined` when nothing resolves the digest.
    */
-  findPairingCode(digest: string): Promise<PairingCodeRecord | undefined> {
-    const stored = this.pairingCodes.get(digest)
-    return Promise.resolve(stored === undefined ? undefined : fromStoredPairingCode(stored))
+  async findPairingCode(digest: string): Promise<PairingCodeRecord | undefined> {
+    const stored = await this.pairingCodes.getCurrent(digest)
+    return stored === undefined ? undefined : fromStoredPairingCode(stored)
   }
 
   /**
@@ -922,12 +922,12 @@ export class ControlPlaneStore extends Service implements DeviceRegistryStore, P
    * @param userId - the tenant.
    * @returns their codes, in no defined order.
    */
-  listPairingCodesOfUser(userId: UserId): Promise<readonly PairingCodeRecord[]> {
+  async listPairingCodesOfUser(userId: UserId): Promise<readonly PairingCodeRecord[]> {
     const records: PairingCodeRecord[] = []
-    for (const [, stored] of this.pairingCodes.entries()) {
+    for (const [, stored] of await this.pairingCodes.entriesCurrent()) {
       if (stored.userId === userId) records.push(fromStoredPairingCode(stored))
     }
-    return Promise.resolve(records)
+    return records
   }
 
   /**
@@ -958,7 +958,7 @@ export class ControlPlaneStore extends Service implements DeviceRegistryStore, P
     deviceId: DeviceId,
     at: number,
   ): Promise<PairingCodeRecord | undefined> {
-    let expected = this.pairingCodes.get(digest)
+    let expected = await this.pairingCodes.getCurrent(digest)
     for (let attempt = 0; attempt < 8; attempt += 1) {
       if (expected === undefined || expected.consumedAt !== undefined || expected.expiresAt <= at) {
         return undefined
