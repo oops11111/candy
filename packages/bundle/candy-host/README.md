@@ -22,7 +22,7 @@ This standalone profile gives a Windows Harness Host an operator-facing way to c
 
 ## Use this package
 
-Issue a pairing code from the authenticated Candy device API, then enter it on the Windows machine:
+Issue a pairing code from the Devices page in the existing DSH settings panel, then enter it on the Windows machine:
 
 ```powershell
 dsh --profile candy-host pair --server https://candy.example --code ABCD-EFGH-IJKL-MNPQ
@@ -49,6 +49,7 @@ This is a management surface, not the missing remote-host transport. The existin
 
 - [`dsh-device-binding`](../../control-plane/device-binding/README.md) — the singular durable binding and pairing exchange.
 - [`dsh-device-api`](../../control-plane/device-api/README.md) — server-side code issue, exchange, authentication, listing, and revocation.
+- [`dsh-client-ui-settings-candy-account`](../../client/ui-settings-candy-account/README.md) — the inherited settings-panel pages that issue codes and revoke devices.
 - [Candy runtime boundaries](../../../docs/candy-runtime-boundaries.md) — Candy/DSH ownership rules.
 
 ## Model Experience
@@ -62,7 +63,6 @@ None; no provider request is created.
 ## Known Limitations and Deferred Work
 
 - The profile manages identity only; it does not connect the Host to Candy.
-- There is no browser device-management page yet; codes are currently issued through the authenticated API.
 - `release` removes only the local binding. Server-side revocation remains a separate tenant action.
 
 ### Dev Note

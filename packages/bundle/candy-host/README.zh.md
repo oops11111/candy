@@ -23,7 +23,7 @@ kind: "package-bundle"
 <a id="use-this-package"></a>
 ## 使用本包
 
-先从已认证的 Candy 设备 API 签发配对码，再在 Windows 机器上输入：
+先从现有 DSH 设置面板的“设备”页签发配对码，再在 Windows 机器上输入：
 
 ```powershell
 dsh --profile candy-host pair --server https://candy.example --code ABCD-EFGH-IJKL-MNPQ
@@ -52,6 +52,7 @@ dsh --profile candy-host release
 
 - [`dsh-device-binding`](../../control-plane/device-binding/README.zh.md) —— 唯一持久绑定与配对兑换。
 - [`dsh-device-api`](../../control-plane/device-api/README.zh.md) —— 服务端签发、兑换、认证、列表与撤销。
+- [`dsh-client-ui-settings-candy-account`](../../client/ui-settings-candy-account/README.zh.md) —— 签发配对码并撤销设备的继承设置面板页面。
 - [Candy 运行时边界](../../../docs/candy-runtime-boundaries.zh.md) —— Candy/DSH 归属规则。
 
 <a id="model-experience"></a>
@@ -67,7 +68,6 @@ dsh --profile candy-host release
 ## 已知限制与延期工作
 
 - 该 profile 只管理身份，不负责把 Host 连接到 Candy。
-- 尚无浏览器设备管理页面；当前通过已认证 API 签发配对码。
 - `release` 只移除本地绑定；服务端撤销仍是独立的租户操作。
 
 <a id="dev-note"></a>

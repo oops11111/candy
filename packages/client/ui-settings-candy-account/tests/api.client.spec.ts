@@ -7,7 +7,9 @@
  * without ever coming back.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { CandyApiError, createCandyAccountApi, type CandyBrowser } from '../src/client/api.ts'
+import {
+  CandyApiError, createCandyAccountApi, createCandyDeviceApi, type CandyBrowser,
+} from '../src/client/api.ts'
 
 const ACCOUNT = {
   id: 'account-1',
@@ -158,5 +160,44 @@ describe('the Candy account transport', () => {
     expect(failure).toBeInstanceOf(CandyApiError)
     expect((failure as CandyApiError).kind).toBe('unavailable')
     expect((failure as CandyApiError).message).toBe('network')
+  })
+})
+
+describe('the Candy device transport', () => {
+  it('reads secret-free device and pairing metadata', async () => {
+    const roster = {
+      devices: [{ id: 'device-1', label: 'Office PC', pairedAt: 1 }],
+      pairingCodes: [{ label: 'Office PC', issuedAt: 1, expiresAt: 2 }],
+    }
+    const harness = browser([json(roster)])
+
+    await expect(createCandyDeviceApi(harness.browser).list()).resolves.toEqual(roster)
+
+    const [path, init] = harness.fetch.mock.calls[0] as [string, RequestInit]
+    expect(path).toBe('/api/candy/devices')
+    expect(init.method).toBe('GET')
+    expect(new Headers(init.headers).get('x-candy-csrf')).toBeNull()
+    expect(JSON.stringify(roster)).not.toContain('token')
+    expect(JSON.stringify(roster)).not.toContain('code')
+  })
+
+  it('issues a code and revokes a device with the browser CSRF token', async () => {
+    const issued = { code: 'ABCD-EFGH', label: 'Office PC', expiresAt: 9 }
+    const device = { id: 'device-1', label: 'Office PC', pairedAt: 1, revokedAt: 2 }
+    const harness = browser([json(issued, 201), json(device)])
+    const api = createCandyDeviceApi(harness.browser)
+
+    await expect(api.pair('Office PC')).resolves.toEqual(issued)
+    await expect(api.revoke('device-1')).resolves.toEqual(device)
+
+    const calls = harness.fetch.mock.calls as [string, RequestInit][]
+    expect(calls.map(call => call[0])).toEqual([
+      '/api/candy/devices/pair', '/api/candy/devices/revoke',
+    ])
+    expect(JSON.parse(calls[0]![1].body as string)).toEqual({ label: 'Office PC' })
+    expect(JSON.parse(calls[1]![1].body as string)).toEqual({ id: 'device-1' })
+    for (const call of calls) {
+      expect(new Headers(call[1]?.headers).get('x-candy-csrf')).toBe('csrf-token')
+    }
   })
 })

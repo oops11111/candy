@@ -1,5 +1,5 @@
 ---
-description: "Candy account settings page: the signed-in tenant's provider accounts, managed inside the dsh settings panel over the control plane's own authenticated routes."
+description: "Candy control-plane settings pages for the signed-in tenant's provider accounts, Windows devices, and administrator audit window, inside the existing dsh settings panel."
 kind: "package-reference"
 ---
 
@@ -9,11 +9,11 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package contributes one page to the dsh settings panel: who this browser is signed in to Candy as, and the provider accounts that tenant owns. It adds no shell, no navigation, no theme and no layout of its own — the settings panel already has all four, and a section is exactly the seat it offers a feature that owns a page.
+This package lets a signed-in tenant manage provider accounts and Windows devices from the dsh settings panel, and gives administrators a separate audit-window view. It adds no shell, navigation, theme, or layout of its own; each page occupies the settings sections the existing Web client provides.
 
 Its data does not ride `ctx.remote`. Candy's control-plane routes authenticate a browser user through the session cookie its OAuth callback set, while the dsh `/api` carrier authenticates a process launch token; the two are different authorities over the same origin, so the page speaks same-origin HTTP and injects no Remote namespace.
 
-A credential goes in and never comes back. The create form is the only field that holds one, it is cleared when the form closes, and every row is drawn from the control plane's secret-free account view. The server CLI summary derives configured, revoked-only, and absent states from that same authenticated tenant roster; it never inspects or reuses the service user's Claude or Codex home.
+A provider credential goes in and never comes back. A device pairing code is likewise returned by one issue call, kept only in the volatile device-page store, and cleared when that page closes; later roster reads contain metadata but not the code or device token. The server CLI summary never inspects or reuses the service user's Claude or Codex home.
 
 ## Table of Contents
 
@@ -29,9 +29,9 @@ A credential goes in and never comes back. The create form is the only field tha
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this browser plugin in a deployment whose Host serves [`dsh-provider-account-api`](../../control-plane/provider-account-api/README.md) and [`dsh-oauth-sign-in-web`](../../control-plane/oauth-sign-in-web/README.md). The **Account** page then appears in the settings panel, ahead of Models: which provider account a run bills to is decided before which model it asks for.
+Mount this browser plugin in a deployment whose Host serves [`dsh-provider-account-api`](../../control-plane/provider-account-api/README.md), [`dsh-device-api`](../../control-plane/device-api/README.md), and [`dsh-oauth-sign-in-web`](../../control-plane/oauth-sign-in-web/README.md). The **Account**, **Audit**, and **Devices** pages then appear in the existing settings panel.
 
-The page has no configuration. It reads the paths those two plugins mount, at the origin it is served from.
+The pages have no configuration. They read the paths those Host plugins mount, at the origin they are served from.
 
 ### What a tenant does here
 
@@ -43,10 +43,14 @@ The page has no configuration. It reads the paths those two plugins mount, at th
 | Revoke credential | Ends the credential, keeping the record readable |
 | Delete | Removes the account and blocks its identifier from being issued again |
 | Sign out | Ends the browser session and returns to the sign-in entry point |
+| Generate pairing code | Creates a short-lived, single-use code and shows the exact `candy-host` command once |
+| Revoke device | Withdraws a device binding while keeping its record visible |
 
 The Claude CLI and Codex CLI summary is an account state, not a live process probe. A usable tenant account reads **Configured**, an all-revoked provider reads **Credential revoked**, and a provider with no account reads **Not configured**. CLI providers have no live credential check here, so the page does not claim that an ambient system CLI session is authenticated.
 
 Revoked accounts stay listed, because seeing why a provider stopped working is the reason to come here; deleted ones are gone from the roster entirely.
+
+The Devices page lists live and revoked devices plus pending, consumed, and expired pairing records. It never recovers a clear-text code from that roster. Closing the page clears the only browser-held copy; losing it means generating another code.
 
 -----
 
@@ -58,6 +62,8 @@ Revoked accounts stay listed, because seeing why a provider stopped working is t
 | [`src/client/api.ts`](src/client/api.ts) | The control-plane calls, the CSRF echo, and what each status means |
 | [`src/client/store.ts`](src/client/store.ts) | Page state and the operations that settle it |
 | [`src/client/CandyAccountSection.tsx`](src/client/CandyAccountSection.tsx) | The page itself |
+| [`src/client/device-store.ts`](src/client/device-store.ts) | Device roster, one-time code lifetime, and mutation state |
+| [`src/client/CandyDeviceSection.tsx`](src/client/CandyDeviceSection.tsx) | Device issue, list, and revoke presentation |
 | [`src/client/locales.ts`](src/client/locales.ts) | The `settings.candyAccount` dictionaries |
 | — | No runtime invariant companion is published; this package owns no event stream and no cross-plugin mutable relation, and its one slot registration proves disposal in the apply spec. |
 
@@ -75,6 +81,10 @@ Making one account the default clears the flag on another, and deleting one prom
 
 It never carries one. The tenant is derived from the session cookie by [`dsh-control-plane-api`](../../control-plane/control-plane-api/README.md), and an id that tenant does not own answers `404` — the same answer an id that was never issued gets.
 
+### Why a pairing code leaves with the page
+
+The issue response is the only control-plane answer that contains a pairing code. The device store keeps that response in memory so a person can move it to the Windows Host, then clears it when the settings section unmounts or the user dismisses it. A roster refresh carries only issue time, expiry, consumption, and resulting device metadata.
+
 -----
 
 <a id="further-exploration"></a>
@@ -82,6 +92,8 @@ It never carries one. The tenant is derived from the session cookie by [`dsh-con
 
 - [ui-settings](../ui-settings/README.md) — the settings domain base and the `settings.section` seat this page fills.
 - [dsh-provider-account-api](../../control-plane/provider-account-api/README.md) — the six operations behind this page.
+- [dsh-device-api](../../control-plane/device-api/README.md) — tenant-scoped device issue, list, exchange, authentication, and revocation.
+- [dsh-candy-host](../../bundle/candy-host/README.md) — the Windows command that consumes the displayed code.
 - [dsh-oauth-sign-in-web](../../control-plane/oauth-sign-in-web/README.md) — the sign-in that establishes the session cookie the page sends.
 - [Web Client architecture](../../../docs/subsystems/web-client.md) — the layering every client plugin follows.
 
@@ -105,6 +117,7 @@ These are current package constraints, not a task backlog.
 - **Only DeepSeek credentials have a live check** — the deployment validates `deepseek-api` through its model catalog. Claude CLI and Codex CLI show the tenant's stored account state and answer `unsupported-provider` when checked; they never inspect a shared CLI home.
 - **No administrator view** — the page acts on the acting tenant's own accounts. An administrator managing another tenant's has no surface here, because the API has none either.
 - **The roster is answered whole** — there is no pagination; the count is bounded by what an operator provisions.
+- **Pairing codes cannot be recovered** — leaving the Devices page clears its volatile copy; the tenant must issue another code if it was not transferred.
 - **A signed-out page cannot recover in place** — the sign-in entry point is a full navigation, so an expired session ends the page rather than refreshing it behind a dialog.
 
 <a id="dev-note"></a>
@@ -117,4 +130,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package registers one settings section over its own store; it emits no cordis events, owns no cross-plugin mutable relation, and its registration proves disposal through the apply spec's fiber-dispose case.
+**Runtime invariant:** No companion is published. This package registers three settings sections over local stores; it emits no cordis events, owns no cross-plugin mutable relation, and its registrations prove disposal through the apply spec's fiber-dispose case.

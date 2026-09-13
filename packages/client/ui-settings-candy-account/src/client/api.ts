@@ -21,6 +21,13 @@ const ACCOUNT_PATHS = {
   delete: '/api/candy/provider-accounts/delete',
 } as const
 
+/** Where the tenant's device operations are mounted. */
+const DEVICE_PATHS = {
+  list: '/api/candy/devices',
+  pair: '/api/candy/devices/pair',
+  revoke: '/api/candy/devices/revoke',
+} as const
+
 /** Where the OAuth session is read and ended. */
 const SESSION_PATH = '/auth/session'
 const LOGOUT_PATH = '/auth/logout'
@@ -61,6 +68,46 @@ export interface CandyIdentity {
 export interface CandyValidation {
   readonly valid: boolean
   readonly reason?: string
+}
+
+/** One paired device as the control plane returns it; no token field exists. */
+export interface CandyDeviceView {
+  readonly id: string
+  readonly label: string
+  readonly pairedAt: number
+  readonly revokedAt: number | undefined
+}
+
+/** One issued invitation as a later roster read returns it; the code is absent. */
+export interface CandyPairingCodeView {
+  readonly label: string
+  readonly issuedAt: number
+  readonly expiresAt: number
+  readonly consumedAt: number | undefined
+  readonly deviceId: string | undefined
+}
+
+/** The tenant-scoped device roster. */
+export interface CandyDeviceRoster {
+  readonly devices: readonly CandyDeviceView[]
+  readonly pairingCodes: readonly CandyPairingCodeView[]
+}
+
+/** A newly issued code, returned once and never present in a roster read. */
+export interface CandyIssuedPairingCode {
+  readonly code: string
+  readonly label: string
+  readonly expiresAt: number
+}
+
+/** Device operations driven by the Candy settings page. */
+export interface CandyDeviceApi {
+  /** Read this tenant's devices and code metadata. */
+  list: () => Promise<CandyDeviceRoster>
+  /** Issue one single-use pairing code for a named Host. */
+  pair: (label: string) => Promise<CandyIssuedPairingCode>
+  /** Revoke one device owned by this tenant. */
+  revoke: (id: string) => Promise<CandyDeviceView>
 }
 
 /**
@@ -151,11 +198,11 @@ function failureOf(status: number): CandyFailureKind {
 }
 
 /**
- * Build the page's operations over one browser.
+ * Build the shared same-origin caller over one browser.
  * @param browser - transport, cookie reader, and sign-in redirect.
- * @returns the operations, each throwing {@link CandyApiError} on refusal.
+ * @returns a caller that throws {@link CandyApiError} on refusal.
  */
-export function createCandyAccountApi(browser: CandyBrowser): CandyAccountApi {
+function createCall(browser: CandyBrowser): (path: string, body?: unknown) => Promise<unknown> {
   const call = async (path: string, body?: unknown): Promise<unknown> => {
     let response: Response
     try {
@@ -187,6 +234,17 @@ export function createCandyAccountApi(browser: CandyBrowser): CandyAccountApi {
     return await response.json()
   }
 
+  return call
+}
+
+/**
+ * Build the provider-account page's operations over one browser.
+ * @param browser - same-origin transport, CSRF cookie reader, and sign-in redirect.
+ * @returns tenant-scoped provider-account and session operations.
+ */
+export function createCandyAccountApi(browser: CandyBrowser): CandyAccountApi {
+  const call = createCall(browser)
+
   return {
     identity: async () => await call(SESSION_PATH) as CandyIdentity,
     list: async () => await call(ACCOUNT_PATHS.list) as readonly CandyAccountView[],
@@ -199,6 +257,20 @@ export function createCandyAccountApi(browser: CandyBrowser): CandyAccountApi {
       await call(LOGOUT_PATH, {})
       browser.restart()
     },
+  }
+}
+
+/**
+ * Build the device page's operations over one browser.
+ * @param browser - same-origin transport and CSRF cookie reader.
+ * @returns tenant-scoped device operations.
+ */
+export function createCandyDeviceApi(browser: CandyBrowser): CandyDeviceApi {
+  const call = createCall(browser)
+  return {
+    list: async () => await call(DEVICE_PATHS.list) as CandyDeviceRoster,
+    pair: async label => await call(DEVICE_PATHS.pair, { label }) as CandyIssuedPairingCode,
+    revoke: async id => await call(DEVICE_PATHS.revoke, { id }) as CandyDeviceView,
   }
 }
 

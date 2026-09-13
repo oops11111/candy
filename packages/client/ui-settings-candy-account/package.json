@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-settings-candy-account",
-  "description": "Candy account settings page: the signed-in tenant's provider accounts, managed inside the dsh settings panel",
+  "description": "Candy account, device, and audit settings pages inside the inherited dsh settings panel",
   "version": "0.1.2-alpha.5",
   "type": "module",
   "main": "lib/index.js",

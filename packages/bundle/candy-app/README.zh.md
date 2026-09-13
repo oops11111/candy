@@ -1,5 +1,5 @@
 ---
-description: "在 dsh 浏览器界面之上的 Candy 多租户部署层：控制面、按租户计费的调度器、登录、服务商账户与账户页，全部由环境变量配置。"
+description: "在 dsh 浏览器界面之上的 Candy 多租户部署层：控制面、按租户计费的调度器、登录、服务商账户、设备与审计窗口，全部由环境变量配置。"
 kind: "package-bundle"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-这一层把单用户的 dsh 浏览器界面变成一个 Candy 部署。它加入持久控制面、为每个租户准入并出资运行的调度器、OIDC 登录、六个服务商账户操作，以及管理它们的设置页——而它们背后的那个界面丝毫未变，那是 `dsh-web-app` 的。
+这一层把单用户的 dsh 浏览器界面变成一个 Candy 部署。它加入持久控制面、为每个租户准入并出资运行的调度器、OIDC 登录、服务商账户与设备操作，以及账户、设备和审计设置页——而它们背后的那个界面丝毫未变，那是 `dsh-web-app` 的。
 
 每一个在不同安装之间不同的值都从环境读取，而不是写在这里。一个必需变量若未设置就解析为 `undefined`，读取它的那一行在加载时拒绝，因此配置错误的部署是启动失败，而不是带着一半配置启动。
 
@@ -27,7 +27,7 @@ kind: "package-bundle"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `dsh-web-app` 之后应用这一层，并给进程下面这套环境。部署随即在同一个来源上回答登录、账户 API 和浏览器界面。
+在 `dsh-web-app` 之后应用这一层，并给进程下面这套环境。部署随即在同一个来源上回答登录、控制面 API 和浏览器界面。
 
 ### 部署需要提供的环境
 
@@ -101,6 +101,7 @@ API 封存凭据，运行时打开它。用运行时打不开的版本封存的�
 - [`dsh-oauth-sign-in-web`](../../control-plane/oauth-sign-in-web/README.zh.md) —— 登录路由与管理员引导。
 - [`dsh-provider-account-api`](../../control-plane/provider-account-api/README.zh.md) —— 页面驱动的六个账户操作。
 - [`dsh-device-api`](../../control-plane/device-api/README.zh.md) —— 租户的设备配对,以及主机不带会话完成的兑换。
+- [`dsh-client-ui-settings-candy-account`](../../client/ui-settings-candy-account/README.zh.md) —— 贡献到继承设置面板中的账户、设备与审计页面。
 
 -----
 

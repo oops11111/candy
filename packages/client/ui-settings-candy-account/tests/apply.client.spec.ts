@@ -13,6 +13,7 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import { CandyAccountSection } from '../src/client/CandyAccountSection.tsx'
 import { CandyAuditSection } from '../src/client/CandyAuditSection.tsx'
+import { CandyDeviceSection, type CandyDeviceInjected } from '../src/client/CandyDeviceSection.tsx'
 import type { CandyAccountInjected } from '../src/client/CandyAccountSection.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
@@ -39,6 +40,13 @@ function injected(slots: SlotRegistry): CandyAccountInjected {
   const entry = slots.entries('settings.section')[0]
   if (entry === undefined) throw new Error('the account page did not register')
   return (entry.inject as unknown as () => CandyAccountInjected)()
+}
+
+/** The registered device entry's injected face. */
+function deviceInjected(slots: SlotRegistry): CandyDeviceInjected {
+  const entry = slots.entries('settings.section')[2]
+  if (entry === undefined) throw new Error('the device page did not register')
+  return (entry.inject as unknown as () => CandyDeviceInjected)()
 }
 
 describe('ui-settings-candy-account apply', () => {
@@ -69,9 +77,11 @@ describe('ui-settings-candy-account apply', () => {
     expect(after.slots.entries('settings.section')).toHaveLength(0)
     declare(after.slots)
     await Promise.resolve()
-    expect(after.slots.entries('settings.section')).toHaveLength(2)
+    expect(after.slots.entries('settings.section')).toHaveLength(3)
     expect(after.slots.entries('settings.section')[0]?.component).toBe(CandyAccountSection)
     expect(after.slots.entries('settings.section')[1]?.component).toBe(CandyAuditSection)
+    expect(after.slots.entries('settings.section')[2]?.component).toBe(CandyDeviceSection)
+    expect(after.slots.entries('settings.section')[2]?.options).toMatchObject({ id: 'candy-devices', order: 7 })
   })
 
   it('removes the contribution with the plugin fiber', async () => {
@@ -79,7 +89,7 @@ describe('ui-settings-candy-account apply', () => {
     declare(b.slots)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(b.slots.entries('settings.section')).toHaveLength(2)
+    expect(b.slots.entries('settings.section')).toHaveLength(3)
 
     await fiber.dispose()
 
@@ -115,6 +125,11 @@ describe('ui-settings-candy-account apply', () => {
     face.cancelCreate()
     expect(face.hooks.candyAccount.getSnapshot().draft).toBeNull()
     expect(face.formatTime(0)).toMatch(/1970/u)
+
+    const deviceFace = deviceInjected(b.slots)
+    expect(deviceInjected(b.slots).hooks.candyDevices).toBe(deviceFace.hooks.candyDevices)
+    deviceFace.editDeviceLabel('Office PC')
+    expect(deviceFace.hooks.candyDevices.getSnapshot().label).toBe('Office PC')
   })
 
   it('reads and leaves the browser through the page it is served on', async () => {
@@ -125,12 +140,13 @@ describe('ui-settings-candy-account apply', () => {
     const assign = vi.fn()
     vi.stubGlobal('fetch', fetch)
     vi.stubGlobal('document', { cookie })
-    vi.stubGlobal('location', { assign })
+    vi.stubGlobal('location', { assign, origin: 'https://candy.example' })
     try {
       const b = await bench()
       declare(b.slots)
       await b.ctx.plugin({ inject: [...inject], apply }).await()
       const face = injected(b.slots)
+      const deviceFace = deviceInjected(b.slots)
 
       await face.load()
       expect(fetch.mock.calls.map(call => call[0])).toEqual([
@@ -139,6 +155,7 @@ describe('ui-settings-candy-account apply', () => {
 
       face.signIn()
       expect(assign).toHaveBeenCalledWith('/auth/oauth/start')
+      expect(deviceFace.serverOrigin()).toBe('https://candy.example')
 
       // Every remaining callback reaches the same transport; a write also
       // reads the CSRF cookie back out of the document it is served on.

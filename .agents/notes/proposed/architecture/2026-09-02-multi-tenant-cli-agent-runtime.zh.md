@@ -183,7 +183,9 @@ R3 的路由授权部分现在已由 [`dsh-tenant-route-policy`](../../../../pac
 
 服务现在有了随发行提供的进程入口（[没有命令的配对码](../../implemented/architecture/2026-09-13-a-code-with-no-command.zh.md)）：独立的 `candy-host` profile 接受 `pair --server --code`，用 `status` 报告不含秘密的绑定，并且只在明确执行 `release` 时移除它。它不组合 Agent、Web 服务器、工具、Shell、Gateway 或重连循环；意外网络失败也不会把可能包含一次性配对码的请求转换成字符串后报告。
 
-仍然缺失的是传输对这项认证的使用。没有传输在建立或恢复连接时读取并出示绑定。继承而来的传输没有可以指向的远程主机这一概念：它的 Gateway 是浏览器到 Host 的路径，因此把令牌加在那里会认证错误的端点，也仍然无法让 Debian 调用 Windows 能力。设备没有浏览器页面，租户可配对的数量没有上限，用尽的配对码也没有清扫。
+继承的设置面板现在有了租户自有的“设备”页。它签发一次性配对码，只在页面的易失状态中保留明文；列出不含令牌的设备与配对元数据，并通过现有已认证 API 撤销设备。这个页面是另一个 `settings.section`，不是第二套 Candy Web/手机端；Host 通过一次性的 `candy-host` profile 消费配对码。
+
+仍然缺失的是传输对这项认证的使用。没有传输在建立或恢复连接时读取并出示绑定。继承而来的传输没有可以指向的远程主机这一概念：它的 Gateway 是浏览器到 Host 的路径，因此把令牌加在那里会认证错误的端点，也仍然无法让 Debian 调用 Windows 能力。租户可配对的设备数量仍没有上限，用尽的配对码也没有清扫。
 - [ ] 在显式工作区根目录和操作类别授权之后，复用 `fs-local`、目录选择、PowerShell、Windows ACL 沙箱和 API Gateway 插件。这五个都已存在：[`dsh-fs-local`](../../../../packages/fs/fs-local)、带原生/浏览/自适应三种后端的 [`dsh-directory-picker`](../../../../packages/host/directory-picker)、连同其沙箱与持久化工具的 [`dsh-pwsh-local`](../../../../packages/shell/pwsh-local)、[`dsh-sandbox-windows-acl`](../../../../packages/sandbox/sandbox-windows-acl)，以及 [`dsh-api-gateway`](../../../../packages/api/gateway)。ACL 沙箱是其中最难的一块，而它已经是真实实现：受限令牌把写入限制在工作区与一个私有 temp 目录内，每个 Win32 调用都被检查，因此子进程绝不会以不受限的方式启动；它报告 `partial`，因为该令牌必须保留 Everyone 才能完成初始化，而 NTFS 硬链接会让一个文件对象跨路径别名。没有 Git 插件可供复用：仓库里只有 `dsh-webhook-github`，一个无关的 webhook 入口，因此 git 与其他命令一样，经由 bash 与 pwsh 工具抵达工作区。
 - [ ] 增加服务器 URL、配对、连接状态、撤销、离线检测、重连、幂等、输出限制和批准状态，但不定义第二套文件操作协议。
 - [ ] 在 Windows 上测试租户路由、Unicode 与长路径、分支发现、并发编辑、设备撤销、重连、junction 或符号链接逃逸和恶意路径输入。

@@ -120,6 +120,6 @@
       config:
         publicOrigin: !!js process.env.CANDY_PUBLIC_ORIGIN
 
-    # The account page in the settings panel the Web surface already carries.
+    # Candy's account, audit, and device pages in the existing settings panel.
     - id: ui-settings-candy-account
       name: '@deepseek-ai/dsh-client-ui-settings-candy-account'

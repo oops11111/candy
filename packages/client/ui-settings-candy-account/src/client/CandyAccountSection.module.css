@@ -252,6 +252,40 @@
   color: var(--dsw-alias-state-success-primary);
 }
 
+.pairCode {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.code,
+.command {
+  max-width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.code {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.command {
+  display: block;
+  background: var(--dsw-alias-bg-base);
+  white-space: pre-wrap;
+}
+
 /* A phone-width settings panel: every row stacks rather than compressing its
    controls, and the identity strip stops sharing a line with its button. */
 @media (max-width: 560px) {

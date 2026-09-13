@@ -1,5 +1,5 @@
 ---
-description: "The Candy multi-tenant deployment layer over the dsh browser surface: the control plane, the tenant-scoped scheduler, sign-in, provider accounts, and the account page, all configured from the environment."
+description: "The Candy multi-tenant deployment layer over the dsh browser surface: the control plane, tenant-scoped scheduler, sign-in, provider accounts, devices, and audit window, all configured from the environment."
 kind: "package-bundle"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This layer turns a single-user dsh browser surface into a Candy deployment. It adds the durable control plane, a runtime scheduler that admits and funds each tenant's runs, OIDC sign-in, the six provider-account operations, and the settings page that manages them — and it changes nothing about the surface those sit behind, which is `dsh-web-app`'s.
+This layer turns a single-user dsh browser surface into a Candy deployment. It adds the durable control plane, a runtime scheduler that admits and funds each tenant's runs, OIDC sign-in, provider-account and device operations, and account, device, and audit settings pages — and it changes nothing about the surface those sit behind, which is `dsh-web-app`'s.
 
 Every value that differs between one install and the next is read from the environment, not written here. A required variable that is unset resolves to `undefined` and the row that reads it refuses at load, so a misconfigured deployment fails to start rather than starting half-configured.
 
@@ -27,7 +27,7 @@ Every value that differs between one install and the next is read from the envir
 <a id="use-this-package"></a>
 ## Use this package
 
-Apply this layer after `dsh-web-app` and give the process the environment below. The deployment then answers sign-in, the account API and the browser surface on one origin.
+Apply this layer after `dsh-web-app` and give the process the environment below. The deployment then answers sign-in, the control-plane APIs and the browser surface on one origin.
 
 ### The environment a deployment supplies
 
@@ -101,6 +101,7 @@ A bundle that hard-codes an origin, an issuer or a database path is a bundle tha
 - [`dsh-oauth-sign-in-web`](../../control-plane/oauth-sign-in-web/README.md) — the sign-in routes and the administrator bootstrap.
 - [`dsh-provider-account-api`](../../control-plane/provider-account-api/README.md) — the six account operations the page drives.
 - [`dsh-device-api`](../../control-plane/device-api/README.md) — tenant device pairing, and the exchange a host completes without a session.
+- [`dsh-client-ui-settings-candy-account`](../../client/ui-settings-candy-account/README.md) — the account, device, and audit pages contributed to the inherited settings panel.
 
 -----
 

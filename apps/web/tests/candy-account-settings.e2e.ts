@@ -1,7 +1,7 @@
-// Web e2e scenario: the Candy account page inside the real settings panel, at
-// a desktop width and at a phone width. The shell, navigation, theme and
-// responsive layout are the panel's own, so this is what proves the page
-// reuses them rather than bringing its own — it is mounted through the shipped
+// Web e2e scenario: Candy's account and device pages inside the real settings
+// panel, at desktop and phone widths. The shell, navigation, theme and
+// responsive layout are the panel's own, so this proves the pages reuse them
+// rather than bringing their own — they are mounted through the shipped
 // Web surface and driven with a real browser.
 //
 // The control-plane answers are scripted at the network boundary. The routes
@@ -38,9 +38,28 @@ interface Account {
   isDefault: boolean
 }
 
+/** One device exactly as the control plane reports it. */
+interface Device {
+  id: string
+  label: string
+  pairedAt: number
+  revokedAt: number | undefined
+}
+
+/** Pairing metadata deliberately omits the once-disclosed code. */
+interface PairingRecord {
+  label: string
+  issuedAt: number
+  expiresAt: number
+  consumedAt: number | undefined
+  deviceId: string | undefined
+}
+
 /** The scripted control plane: the roster it answers, and what it was asked. */
 interface ControlPlane {
   accounts: Account[]
+  devices: Device[]
+  pairingCodes: PairingRecord[]
   /** Path and parsed body of every write, in order. */
   writes: { path: string; body: unknown; csrf: string | null }[]
 }
@@ -60,6 +79,10 @@ async function scriptControlPlane(page: Page, origin: string): Promise<ControlPl
       revokedAt: undefined,
       isDefault: true,
     }],
+    devices: [{
+      id: 'device-existing', label: 'Home PC', pairedAt: NOW, revokedAt: undefined,
+    }],
+    pairingCodes: [],
     writes: [],
   }
   const json = async (route: Route, body: unknown, status = 200): Promise<void> => {
@@ -113,6 +136,31 @@ async function scriptControlPlane(page: Page, origin: string): Promise<ControlPl
     }
     await route.fulfill({ status: 404, contentType: 'text/plain; charset=utf-8', body: 'not found' })
   })
+  await page.route(`${origin}/api/candy/devices`, async (route) => {
+    await json(route, { devices: plane.devices, pairingCodes: plane.pairingCodes })
+  })
+  await page.route(`${origin}/api/candy/devices/*`, async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    const body = request.postDataJSON() as { id?: string; label?: string }
+    plane.writes.push({ path, body, csrf: await request.headerValue('x-candy-csrf') })
+    if (path.endsWith('/pair')) {
+      const issued = { code: 'ABCD-EFGH-IJKL-MNPQ', label: body.label!, expiresAt: NOW + 600_000 }
+      plane.pairingCodes.push({
+        label: body.label!, issuedAt: NOW, expiresAt: issued.expiresAt,
+        consumedAt: undefined, deviceId: undefined,
+      })
+      await json(route, issued, 201)
+      return
+    }
+    if (path.endsWith('/revoke')) {
+      const target = plane.devices.find(device => device.id === body.id)
+      if (target !== undefined) target.revokedAt = NOW
+      await json(route, target)
+      return
+    }
+    await route.fulfill({ status: 404, contentType: 'text/plain; charset=utf-8', body: 'not found' })
+  })
   return plane
 }
 
@@ -125,7 +173,7 @@ async function openAccountPage(page: Page): Promise<void> {
   await dialog.getByText('Account and credentials').waitFor({ timeout: 10_000 })
 }
 
-describe('web e2e: the Candy account page in the settings panel', () => {
+describe('web e2e: Candy control-plane pages in the settings panel', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
@@ -152,10 +200,11 @@ describe('web e2e: the Candy account page in the settings panel', () => {
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await dialog.waitFor({ timeout: 10_000 })
-    const nav = await dialog.getByRole('button', { name: /^(General|Account|Models|Agent presets|Plugins)$/u })
+    const nav = await dialog.getByRole('button', { name: /^(General|Account|Audit|Devices|Models|Agent presets|Plugins)$/u })
       .allTextContents()
 
     expect(nav).toContain('Account')
+    expect(nav).toContain('Devices')
     expect(nav.indexOf('Account')).toBeLessThan(nav.indexOf('Models'))
   })
 
@@ -233,6 +282,37 @@ describe('web e2e: the Candy account page in the settings panel', () => {
     expect(plane.writes.some(write => write.path.endsWith('/delete'))).toBe(false)
   })
 
+  it('issues a one-time Host command and revokes a tenant device', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-candy-devices'))
+    const dialog = page.getByRole('dialog', { name: 'Settings' })
+    await dialog.getByRole('button', { name: 'Devices', exact: true }).click()
+    await dialog.getByText('Windows devices').waitFor({ timeout: 10_000 })
+
+    const existing = dialog.getByRole('listitem').filter({ hasText: 'Home PC' })
+    await existing.waitFor({ timeout: 10_000 })
+    await dialog.getByPlaceholder('Office PC').fill('Build PC')
+    await dialog.getByRole('button', { name: 'Generate pairing code' }).click()
+
+    const code = dialog.getByText('ABCD-EFGH-IJKL-MNPQ', { exact: true })
+    await code.first().waitFor({ timeout: 10_000 })
+    expect(await dialog.getByText(
+      `dsh --profile candy-host pair --server ${scaffold.baseUrl.replace(/\/$/u, '')} --code ABCD-EFGH-IJKL-MNPQ`,
+      { exact: true },
+    ).count()).toBe(1)
+    const issue = plane.writes.find(write => write.path.endsWith('/devices/pair'))
+    expect(issue).toMatchObject({ body: { label: 'Build PC' } })
+    expect(issue?.csrf).not.toBeNull()
+    expect(await dialog.getByRole('listitem').filter({ hasText: 'Build PC' }).count()).toBe(1)
+
+    await dialog.getByRole('button', { name: 'I saved it' }).click()
+    expect(await code.count()).toBe(0)
+
+    await existing.getByRole('button', { name: 'Revoke device' }).click()
+    await existing.getByText('Revoked').waitFor({ timeout: 10_000 })
+    expect(plane.writes.find(write => write.path.endsWith('/devices/revoke'))?.body)
+      .toEqual({ id: 'device-existing' })
+  })
+
   it('fits a phone viewport without scrolling the panel sideways', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-candy-account-phone'))
     // A common phone width; the settings panel is the shell's, so what this
@@ -240,6 +320,7 @@ describe('web e2e: the Candy account page in the settings panel', () => {
     await page.setViewportSize({ width: 390, height: 844 })
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     if (await dialog.count() === 0) await openAccountPage(page)
+    else await dialog.getByRole('button', { name: 'Account', exact: true }).click()
     await dialog.getByText('Account and credentials').waitFor({ timeout: 10_000 })
 
     // This account is its provider's default and still live, so it offers
@@ -258,6 +339,25 @@ describe('web e2e: the Candy account page in the settings panel', () => {
     expect(overflow).toEqual({ document: 0, body: 0 })
 
     // Every visible control of the page stays inside the viewport.
+    const escapes = await dialog.getByRole('button').evaluateAll((nodes, width) => nodes
+      .map(node => node.getBoundingClientRect())
+      .filter(box => box.width > 0 && (box.left < 0 || box.right > width))
+      .length, 390)
+    expect(escapes).toBe(0)
+  })
+
+  it('keeps the device controls inside a phone viewport', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-candy-devices-phone'))
+    const dialog = page.getByRole('dialog', { name: 'Settings' })
+    await dialog.getByRole('button', { name: 'Devices', exact: true }).click()
+    await dialog.getByText('Windows devices').waitFor({ timeout: 10_000 })
+
+    const overflow = await page.evaluate(() => ({
+      document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      body: document.body.scrollWidth - document.body.clientWidth,
+    }))
+    expect(overflow).toEqual({ document: 0, body: 0 })
+
     const escapes = await dialog.getByRole('button').evaluateAll((nodes, width) => nodes
       .map(node => node.getBoundingClientRect())
       .filter(box => box.width > 0 && (box.left < 0 || box.right > width))

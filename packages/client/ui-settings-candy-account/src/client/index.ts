@@ -1,7 +1,7 @@
 /**
- * Candy account settings plugin, browser half. It contributes one page to the
- * dsh settings panel — the shell, navigation, theme and responsive layout are
- * the panel's, and this package adds nothing of its own to them.
+ * Candy settings plugin, browser half. It contributes account, audit, and
+ * device pages to the dsh settings panel — the shell, navigation, theme and
+ * responsive layout are the panel's, and this package adds none of its own.
  *
  * The page's data does not ride `ctx.remote`. Candy's control-plane routes
  * authenticate a browser user through the session cookie its OAuth callback
@@ -17,11 +17,15 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { CANDY_SIGN_IN_PATH, createCandyAccountApi, type CandyBrowser } from './api.ts'
+import {
+  CANDY_SIGN_IN_PATH, createCandyAccountApi, createCandyDeviceApi, type CandyBrowser,
+} from './api.ts'
 import { CandyAccountController } from './store.ts'
+import { CandyDeviceController } from './device-store.ts'
 import { CandyAccountSection } from './CandyAccountSection.tsx'
 import { CandyAuditSection } from './CandyAuditSection.tsx'
 import type { CandyAccountInjected } from './CandyAccountSection.tsx'
+import { CandyDeviceSection, type CandyDeviceInjected } from './CandyDeviceSection.tsx'
 import { en, NS, zh, type CandyAccountKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -32,10 +36,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 export type { CandyAccountInjected, CandyAccountSectionProps } from './CandyAccountSection.tsx'
+export type { CandyDeviceInjected, CandyDeviceSectionProps } from './CandyDeviceSection.tsx'
 export type {
-  CandyAccountApi, CandyAccountView, CandyBrowser, CandyFailureKind, CandyIdentity, CandyProvider,
+  CandyAccountApi, CandyAccountView, CandyBrowser, CandyDeviceApi, CandyDeviceRoster, CandyDeviceView,
+  CandyFailureKind, CandyIdentity, CandyIssuedPairingCode, CandyPairingCodeView, CandyProvider,
 } from './api.ts'
 export type { CandyAccountDraft, CandyAccountNotice, CandyAccountState } from './store.ts'
+export type { CandyDeviceState } from './device-store.ts'
 export type { CandyAccountKey } from './locales.ts'
 
 /**
@@ -55,8 +62,8 @@ function windowBrowser(): CandyBrowser {
 }
 
 /**
- * Register the Candy account page once the `settings.section` declaration is
- * on the ledger.
+ * Register Candy's control-plane pages once the `settings.section`
+ * declaration is on the ledger.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -64,6 +71,7 @@ export function apply(ctx: ClientContext): void {
 
   const browser = windowBrowser()
   const controller = new CandyAccountController(createCandyAccountApi(browser))
+  const devices = new CandyDeviceController(createCandyDeviceApi(browser))
   // Bound once, at the registration site that owns the locale injection; the
   // page receives callbacks and never a context.
   const t = ctx.locale.bind(NS)
@@ -86,6 +94,16 @@ export function apply(ctx: ClientContext): void {
     signIn: () => { browser.restart() },
     formatTime: at => timestamps.format(at),
   })
+  const deviceInjected = (): CandyDeviceInjected => ({
+    hooks: { candyDevices: devices.store },
+    loadDevices: () => devices.load(),
+    editDeviceLabel: (label) => { devices.editLabel(label) },
+    issueDeviceCode: () => devices.issue(),
+    clearDeviceCode: () => { devices.clearIssued() },
+    revokeDevice: id => devices.revoke(id),
+    formatTime: at => timestamps.format(at),
+    serverOrigin: () => globalThis.location.origin,
+  })
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
@@ -102,4 +120,9 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.section', id: 'candy-audit', order: 6,
     label: () => t('auditNav'), locale: NS, inject: () => ({}),
   }, CandyAuditSection))
+
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section', id: 'candy-devices', order: 7,
+    label: () => t('deviceNav'), locale: NS, inject: deviceInjected,
+  }, CandyDeviceSection))
 }
