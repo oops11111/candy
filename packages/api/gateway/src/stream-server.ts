@@ -19,6 +19,16 @@ export type RemoteStreamOpener = (
 /** Convert an invocation or carrier failure to a stable wire value. */
 export type RemoteStreamFailureMapper = (error: unknown) => RemoteStreamFailure
 
+/**
+ * Optional transport authenticator.  The callback runs before the HTTP
+ * upgrade is handed to `ws`; a status rejects the carrier and `undefined`
+ * accepts it.  Consumers may validate an opaque, short-lived device
+ * assertion here without creating a second WebSocket protocol.
+ */
+export type RemoteStreamUpgradeAuthorizer = (
+  req: IncomingMessage,
+) => Promise<401 | 403 | undefined> | 401 | 403 | undefined
+
 const MAX_MISSED_HEARTBEATS = 2
 
 /** Own the no-server WebSocket acceptor and every active logical stream. */
@@ -37,6 +47,7 @@ export class RemoteStreamMuxServer {
     private readonly open: RemoteStreamOpener,
     private readonly failure: RemoteStreamFailureMapper,
     private readonly heartbeatIntervalMs: number,
+    private readonly authorizeUpgrade?: RemoteStreamUpgradeAuthorizer,
   ) {}
 
   /**
@@ -46,7 +57,7 @@ export class RemoteStreamMuxServer {
    * @param head - bytes already read after the HTTP upgrade headers.
    */
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
-    this.server.handleUpgrade(req, socket, head, (websocket) => {
+    const accept = (): void => this.server.handleUpgrade(req, socket, head, (websocket) => {
       this.missedHeartbeats.set(websocket, 0)
       websocket.on('pong', () => { this.missedHeartbeats.set(websocket, 0) })
       this.startHeartbeat()
@@ -55,6 +66,14 @@ export class RemoteStreamMuxServer {
       this.connections.add(done)
       void done.then(() => { this.connections.delete(done) })
     })
+    if (this.authorizeUpgrade === undefined) {
+      accept()
+      return
+    }
+    Promise.resolve(this.authorizeUpgrade(req)).then((status) => {
+      if (status === undefined) accept()
+      else rejectRemoteStreamUpgrade(socket, status)
+    }, () => rejectRemoteStreamUpgrade(socket, 401))
   }
 
   /** Terminate all sockets and wait until every iterator has returned. */

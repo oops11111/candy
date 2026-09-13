@@ -36,6 +36,7 @@ import type {
 import {
   RemoteStreamMuxServer,
   rejectRemoteStreamUpgrade,
+  type RemoteStreamUpgradeAuthorizer,
 } from './stream-server.ts'
 import {
   REMOTE_EVENT_STREAM_ENDPOINT,
@@ -70,6 +71,7 @@ export type {
   TypertRemoteEventSource,
 } from './types.ts'
 export type { RemoteEventHostInfo } from './stream-protocol.ts'
+export type { RemoteStreamUpgradeAuthorizer } from './stream-server.ts'
 
 interface GatewayErrorOptions {
   readonly cause?: unknown
@@ -180,6 +182,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   }
 
   private srcClaims: ReadonlySet<string> | undefined
+  private upgradeAuthorizer: RemoteStreamUpgradeAuthorizer | undefined
   private remoteEvents: RegisteredRemoteEventSource | undefined
   private readonly remoteEventClients = new Map<RemoteEventClientId, RemoteEventClient>()
   private readonly pendingRemoteEvents = new Map<RemoteEventId, PendingRemoteEvent>()
@@ -207,6 +210,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         (endpoint, payload, signal) => this.openWireStream(endpoint, payload, signal),
         this.wireStream.failure,
         resolved.websocketHeartbeatIntervalMs,
+        req => this.upgradeAuthorizer?.(req),
       )
       webCtx.effect(() => {
         const route: WebUpgradeRoute = {
@@ -261,6 +265,15 @@ export class TypertGatewayService extends Service implements TypertGateway {
       }
       await registration.done
     }
+  }
+
+  /**
+   * Install the optional assertion check used by remote-host deployments.
+   * The callback is evaluated for every upgrade, including reconnects; it is
+   * intentionally not part of the wire protocol and never receives payloads.
+   */
+  setUpgradeAuthorizer(authorizer: RemoteStreamUpgradeAuthorizer | undefined): void {
+    this.upgradeAuthorizer = authorizer
   }
 
   private claimsEndpoint(endpoint: string): boolean {
