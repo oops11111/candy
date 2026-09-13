@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-13-windows-host-transport-boundary.md
+2026-09-13-windows-host-transport-boundary.md: c842705ff53133d875ba3b15bd923e32ec92dc64
+2026-09-13-windows-host-transport-boundary.zh.md: f785d8f5f5cb24edb4a7ed059e77686ef1ac2d8d
