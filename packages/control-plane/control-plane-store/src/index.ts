@@ -940,6 +940,15 @@ export class ControlPlaneStore extends Service implements DeviceRegistryStore, P
   }
 
   /**
+   * Delete one terminal pairing-code record.
+   * @param digest - the record key selected by tenant-scoped retention cleanup.
+   * @returns resolution once the medium no longer holds it.
+   */
+  async deletePairingCode(digest: string): Promise<void> {
+    await this.pairingCodes.delete(digest)
+  }
+
+  /**
    * Mark one outstanding, unexpired code consumed by one device, indivisibly.
    *
    * The compare/exchange is what makes a code single-use across processes and

@@ -37,6 +37,7 @@ import {
   issuePairingCode,
   listDevices,
   listPairingCodes,
+  sweepPairingCodes,
   MAX_DEVICE_LABEL_LENGTH,
   revokeDevice,
   type DeviceRegistryStore,
@@ -108,6 +109,8 @@ export interface Config {
    * a minute in one deployment and an afternoon in another.
    */
   pairingCodeTtlMs: number
+  /** How long consumed and expired pairing-code records remain visible, in milliseconds. */
+  pairingRecordRetentionMs: number
   /** Most audit records kept per tenant. */
   auditRetention: number
 }
@@ -115,6 +118,7 @@ export interface Config {
 export const Config: z<Config> = z.object({
   publicOrigin: z.string().required(),
   pairingCodeTtlMs: z.number().step(1).min(30_000).max(86_400_000).default(900_000),
+  pairingRecordRetentionMs: z.number().step(1).min(0).max(31_536_000_000).default(604_800_000),
   auditRetention: z.number().step(1).min(1).default(200),
 })
 
@@ -224,14 +228,17 @@ export function apply(ctx: Context, config: Config): void {
       methods: ['GET'],
       role: 'member' as const,
       action: 'devices.list',
-      handle: async (actor: { userId: UserId }): Promise<ApiResult> => ({
-        kind: 'json',
-        status: 200,
-        body: {
-          devices: await listDevices(store, actor.userId),
-          pairingCodes: await listPairingCodes(store, actor.userId),
-        },
-      }),
+      handle: async (actor: { userId: UserId }): Promise<ApiResult> => {
+        await sweepPairingCodes(store, actor.userId, Date.now(), config.pairingRecordRetentionMs)
+        return {
+          kind: 'json',
+          status: 200,
+          body: {
+            devices: await listDevices(store, actor.userId),
+            pairingCodes: await listPairingCodes(store, actor.userId),
+          },
+        }
+      },
     },
     {
       path: DEVICE_PATHS.pair,
@@ -244,6 +251,7 @@ export function apply(ctx: Context, config: Config): void {
         const now = Date.now()
         const code = mintCode()
         return attempt(async () => {
+          await sweepPairingCodes(store, actor.userId, now, config.pairingRecordRetentionMs)
           const issued = await issuePairingCode(store, {
             userId: actor.userId,
             label,

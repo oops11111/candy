@@ -43,8 +43,12 @@ afterEach(async () => {
 })
 
 /** Boot storage, the control plane, the real web server and this plugin. */
-async function boot(at: string, options: { ttlMs?: number; mounted?: boolean } = {}): Promise<Context> {
+async function boot(
+  at: string,
+  options: { ttlMs?: number; retentionMs?: number; mounted?: boolean } = {},
+): Promise<Context> {
   const ttlMs = options.ttlMs
+  const retentionMs = options.retentionMs
   const configPath = join(at, 'cordis.yml')
   await writeFile(configPath, [
     '- id: storage',
@@ -70,6 +74,7 @@ async function boot(at: string, options: { ttlMs?: number; mounted?: boolean } =
       '  config:',
       `    publicOrigin: ${JSON.stringify(PUBLIC_ORIGIN)}`,
       ...ttlMs === undefined ? [] : [`    pairingCodeTtlMs: ${ttlMs}`],
+      ...retentionMs === undefined ? [] : [`    pairingRecordRetentionMs: ${retentionMs}`],
     ],
     '',
   ].join('\n'))
@@ -326,6 +331,29 @@ describe('the device pairing API', () => {
     expect(expired.body).toContain('pairing-code-expired')
   })
 
+  it('sweeps only this tenant terminal code records after the configured window', async () => {
+    const ctx = await boot(await deployment(), { retentionMs: 0 })
+    const alice = await signIn(ctx, ALICE)
+    const bobby = await signIn(ctx, BOBBY)
+    await issue(ctx, alice, 'Alice expired')
+    await issue(ctx, bobby, 'Bobby expired')
+    const aliceCode = (await ctx.controlPlaneStore.listPairingCodesOfUser(ALICE))[0]!
+    const bobbyCode = (await ctx.controlPlaneStore.listPairingCodesOfUser(BOBBY))[0]!
+    await ctx.controlPlaneStore.savePairingCode({ ...aliceCode, expiresAt: Date.now() - 1 })
+    await ctx.controlPlaneStore.savePairingCode({ ...bobbyCode, expiresAt: Date.now() - 1 })
+
+    const listed = JSON.parse((await call(ctx, DEVICE_PATHS.list, { browser: alice })).body) as {
+      pairingCodes: unknown[]
+    }
+    expect(listed.pairingCodes).toEqual([])
+    expect(await ctx.controlPlaneStore.findPairingCode(aliceCode.digest)).toBeUndefined()
+    expect(await ctx.controlPlaneStore.findPairingCode(bobbyCode.digest)).toBeDefined()
+
+    // Issuing also performs cleanup, so tenants need not open the list first.
+    expect((await call(ctx, DEVICE_PATHS.pair, { browser: bobby, body: { label: 'new' } })).status).toBe(201)
+    expect((await ctx.controlPlaneStore.listPairingCodesOfUser(BOBBY)).map(one => one.label)).toEqual(['new'])
+  })
+
   it('never lets a request select the tenant a device binds to', async () => {
     // There is no parameter through which a caller can name a tenant: the
     // session supplies it for the three managed routes, and the code's own
@@ -478,7 +506,10 @@ describe('the device pairing API', () => {
     const ctx = await boot(await deployment(), { mounted: false })
     const alice = await signIn(ctx, ALICE)
     const fiber = ctx.plugin(DeviceApi, {
-      publicOrigin: PUBLIC_ORIGIN, pairingCodeTtlMs: 900_000, auditRetention: 200,
+      publicOrigin: PUBLIC_ORIGIN,
+      pairingCodeTtlMs: 900_000,
+      pairingRecordRetentionMs: 604_800_000,
+      auditRetention: 200,
     })
     await fiber.await()
     expect((await call(ctx, DEVICE_PATHS.list, { browser: alice })).status).toBe(200)

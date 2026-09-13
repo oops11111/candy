@@ -60,7 +60,7 @@ A code is refused as `pairing-code-unknown` when nothing resolves it, `pairing-c
 
 ### Storing one
 
-`DeviceRegistryStore` is the port a deployment satisfies; [`dsh-control-plane-store`](../control-plane-store/README.md) implements it over SQLite. One member of the port is not an ordinary read or write: `claimPairingCode` must mark a code consumed and check its expiry in a single step no concurrent caller can interleave with.
+`DeviceRegistryStore` is the port a deployment satisfies; [`dsh-control-plane-store`](../control-plane-store/README.md) implements it over SQLite. One member of the port is not an ordinary read or write: `claimPairingCode` must mark a code consumed and check its expiry in a single step no concurrent caller can interleave with. `sweepPairingCodes` is tenant-scoped and deletes only consumed or expired records after their retention window; an outstanding code is never cleanup input.
 
 -----
 

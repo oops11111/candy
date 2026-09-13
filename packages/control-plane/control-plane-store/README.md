@@ -155,6 +155,8 @@ An execution assertion names a workspace grant by id, and the record is the auth
 
 A code is single-use, and two hosts exchanging one both read it outstanding. `claimPairingCode` therefore decides consumption and expiry in one compare/exchange — the same mechanism `spendNonce` uses, and for the same reason: only the exchange can tell the two apart, and it has to hold across processes and restarts, not just within this one's queue.
 
+Terminal pairing-code retention uses `deletePairingCode` after the registry has selected records from one tenant. Consumption and expiry never reverse, so this deletion does not need the claim's compare/exchange; a code that remains outstanding is never selected.
+
 ### Why a token lookup re-reads the medium
 
 `entriesCurrent` discovers a candidate from the medium even when another process created it after this one opened, and `getCurrent` confirms that candidate still presents the digest. A device another process revoked or replaced must not authenticate from an old local snapshot. The same explicit medium reads serve device ids, pairing-code claims, and tenant device/code lists, so request routing cannot decide which device state a caller sees.

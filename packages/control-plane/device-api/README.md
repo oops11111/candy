@@ -36,9 +36,10 @@ A code and a token each appear in exactly one reply and are never readable again
   config:
     publicOrigin: 'https://candy.example'
     pairingCodeTtlMs: 900000
+    pairingRecordRetentionMs: 604800000
 ```
 
-`publicOrigin` must be the exact origin sign-in was configured with; a request addressing any other authority is refused before anything else runs. `pairingCodeTtlMs` is how long a person has to carry a code to the machine, from 30 seconds to a day, and defaults to 15 minutes.
+`publicOrigin` must be the exact origin sign-in was configured with; a request addressing any other authority is refused before anything else runs. `pairingCodeTtlMs` is how long a person has to carry a code to the machine, from 30 seconds to a day, and defaults to 15 minutes. `pairingRecordRetentionMs` is how long consumed and expired records remain visible, from zero to one year, and defaults to seven days. Listing devices or issuing another code sweeps this tenant's terminal records after that window; outstanding codes and every other tenant are untouched.
 
 ### The five operations
 
@@ -114,10 +115,8 @@ The three tenant routes are recorded against the session's tenant, successes inc
 These are current package constraints, not a task backlog.
 
 - **Nothing caps how many devices or codes a tenant may have** — an authenticated member can issue codes until the medium fills, exactly as they can create provider accounts. A cap belongs with whatever else bounds a tenant's footprint, and nothing yet does.
-- **No browser page** — the settings panel has a Candy account page and no device page. A tenant reaches these routes with an HTTP client until one exists.
-- **No pairing client** — the host-side [`dsh-device-binding`](../device-binding/README.md) can verify a stored token, but nothing calls the exchange and stores its reply yet.
 - **No transport binding** — authentication is an explicit request. The inherited Remote Gateway does not present the token when establishing or recovering its WebSocket.
-- **A code that is never exchanged stays on the medium** — this API issues codes and [`dsh-control-plane-store`](../control-plane-store/README.md) keeps them; neither sweeps the spent and expired ones.
+- **Cleanup is opportunistic** — a quiet tenant's terminal records remain until that tenant next lists devices or issues a code. A deployment that needs wall-clock deletion without tenant activity still needs an external maintenance trigger.
 
 <a id="dev-note"></a>
 ## Dev Note

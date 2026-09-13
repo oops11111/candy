@@ -19,6 +19,7 @@ import {
   normalizePairingCode,
   pairingCodeDigest,
   revokeDevice,
+  sweepPairingCodes,
   type DeviceRecord,
   type DeviceRegistryStore,
   type PairingCodeRecord,
@@ -53,6 +54,10 @@ function memoryStore(): DeviceRegistryStore & {
     listPairingCodesOfUser: userId => Promise.resolve([...codes.values()].filter(one => one.userId === userId)),
     savePairingCode: (record) => {
       codes.set(record.digest, record)
+      return Promise.resolve()
+    },
+    deletePairingCode: (digest) => {
+      codes.delete(digest)
       return Promise.resolve()
     },
     claimPairingCode: (digest, deviceId, at) => {
@@ -156,6 +161,39 @@ describe('pairing codes', () => {
     const codes = await listPairingCodes(store, ALICE)
     expect(codes.map(one => one.label)).toEqual(['Laptop', 'Studio desktop'])
     expect(await listPairingCodes(store, BOB)).toHaveLength(1)
+  })
+
+  it('sweeps only terminal records whose tenant retention window closed', async () => {
+    const store = memoryStore()
+    await issued(store, { code: 'AAAA-1111', expiresAt: NOW + MINUTE })
+    await issued(store, { code: 'BBBB-2222', expiresAt: NOW + 3 * MINUTE })
+    await issued(store, { code: 'CCCC-3333', expiresAt: NOW + MINUTE, userId: BOB })
+    await issued(store, { code: 'DDDD-4444', expiresAt: NOW + 3 * MINUTE })
+    const consumed = store.codes.get(pairingCodeDigest('DDDD-4444'))
+    store.codes.set(consumed!.digest, { ...consumed!, consumedAt: NOW + MINUTE, deviceId: DEVICE })
+
+    expect(await sweepPairingCodes(store, ALICE, NOW + 2 * MINUTE, MINUTE)).toBe(2)
+    expect([...store.codes.keys()]).toEqual([
+      pairingCodeDigest('BBBB-2222'),
+      pairingCodeDigest('CCCC-3333'),
+    ])
+    expect((await listPairingCodes(store, BOB)).map(one => one.label)).toEqual(['Studio desktop'])
+  })
+
+  it('keeps pending records and terminal records still inside retention', async () => {
+    const store = memoryStore()
+    await issued(store, { code: 'AAAA-1111', expiresAt: NOW + MINUTE })
+    await issued(store, { code: 'BBBB-2222', expiresAt: NOW + 4 * MINUTE })
+
+    expect(await sweepPairingCodes(store, ALICE, NOW + 2 * MINUTE, MINUTE + 1)).toBe(0)
+    expect(store.codes.size).toBe(2)
+  })
+
+  it('refuses clocks and retention values that cannot define a safe window', async () => {
+    const store = memoryStore()
+    expect(await refusal(() => sweepPairingCodes(store, ALICE, Number.NaN, 0))).toBe('invalid-lifetime')
+    expect(await refusal(() => sweepPairingCodes(store, ALICE, NOW, -1))).toBe('invalid-lifetime')
+    expect(await refusal(() => sweepPairingCodes(store, ALICE, NOW, 0.5))).toBe('invalid-lifetime')
   })
 })
 

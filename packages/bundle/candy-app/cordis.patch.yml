@@ -115,6 +115,8 @@
     # `pairingCodeTtlMs` is left at its default: how long a person needs to
     # carry a code to a machine is a preference rather than a fact about the
     # deployment, and a bundle that demanded it would refuse to start over one.
+    # Terminal code records likewise use the seven-day default and are swept
+    # on this tenant's next list or issue operation.
     - id: device-api
       name: '@deepseek-ai/dsh-device-api'
       config:

@@ -60,7 +60,7 @@ export const boundTo = device.userId
 
 ### 存储
 
-`DeviceRegistryStore` 是部署需要满足的端口；[`dsh-control-plane-store`](../control-plane-store/README.zh.md) 在 SQLite 上实现它。该端口有一个成员不是普通的读写：`claimPairingCode` 必须在并发调用无法插入的单一步骤中，同时标记配对码已兑换并检查其有效期。
+`DeviceRegistryStore` 是部署需要满足的端口；[`dsh-control-plane-store`](../control-plane-store/README.zh.md) 在 SQLite 上实现它。该端口有一个成员不是普通的读写：`claimPairingCode` 必须在并发调用无法插入的单一步骤中，同时标记配对码已兑换并检查其有效期。`sweepPairingCodes` 按租户工作，并且只在保留窗口结束后删除已消费或已过期记录；尚可使用的配对码绝不成为清理输入。
 
 -----
 

@@ -123,6 +123,8 @@ export interface DeviceRegistryStore {
   readonly listPairingCodesOfUser: (userId: UserId) => Promise<readonly PairingCodeRecord[]>
   /** Write one pairing code, replacing any record under the same digest. */
   readonly savePairingCode: (record: PairingCodeRecord) => Promise<void>
+  /** Delete one terminal pairing-code record by digest. */
+  readonly deletePairingCode: (digest: string) => Promise<void>
   /**
    * Mark one outstanding, unexpired code consumed by one device, indivisibly.
    *
@@ -292,6 +294,38 @@ export async function listPairingCodes(
 ): Promise<readonly PairingCodeView[]> {
   const records = await store.listPairingCodesOfUser(userId)
   return [...records].sort((left, right) => right.issuedAt - left.issuedAt).map(pairingView)
+}
+
+/**
+ * Delete one tenant's consumed and expired pairing-code records after a retention window.
+ *
+ * Outstanding codes are never removed, and the tenant-scoped read means a caller
+ * cannot use cleanup to affect another tenant. Consumption and expiry are terminal:
+ * neither record can become exchangeable again, so deletion needs no claim-like
+ * compare/exchange.
+ * @param store - the deployment's registry store.
+ * @param userId - the tenant whose terminal records may be removed.
+ * @param now - epoch milliseconds at which retention is evaluated.
+ * @param retainTerminalMs - how long terminal records remain visible.
+ * @returns the number of records selected for deletion.
+ */
+export async function sweepPairingCodes(
+  store: DeviceRegistryStore,
+  userId: UserId,
+  now: number,
+  retainTerminalMs: number,
+): Promise<number> {
+  if (!Number.isSafeInteger(now) || !Number.isSafeInteger(retainTerminalMs) || retainTerminalMs < 0) {
+    throw new DeviceRegistryError('invalid-lifetime')
+  }
+  const cutoff = now - retainTerminalMs
+  const records = await store.listPairingCodesOfUser(userId)
+  const terminal = records.filter((record) => {
+    const terminalAt = record.consumedAt ?? (record.expiresAt <= now ? record.expiresAt : undefined)
+    return terminalAt !== undefined && terminalAt <= cutoff
+  })
+  await Promise.all(terminal.map(record => store.deletePairingCode(record.digest)))
+  return terminal.length
 }
 
 /** One host's device identity, returned exactly once. */

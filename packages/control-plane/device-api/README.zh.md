@@ -36,9 +36,10 @@ kind: "package-reference"
   config:
     publicOrigin: 'https://candy.example'
     pairingCodeTtlMs: 900000
+    pairingRecordRetentionMs: 604800000
 ```
 
-`publicOrigin` 必须与登录所配置的来源完全一致;寻址到任何其他权威的请求都会在其余一切之前被拒绝。`pairingCodeTtlMs` 是一个人把配对码带到机器前所拥有的时间,取值从 30 秒到一天,默认 15 分钟。
+`publicOrigin` 必须与登录所配置的来源完全一致;寻址到任何其他权威的请求都会在其余一切之前被拒绝。`pairingCodeTtlMs` 是一个人把配对码带到机器前所拥有的时间,取值从 30 秒到一天,默认 15 分钟。`pairingRecordRetentionMs` 是已消费和已过期记录继续可见的时间,取值从零到一年,默认七天。列出设备或再次签发配对码时,会清扫该租户超过窗口的终态记录;未用配对码及其他租户完全不受影响。
 
 ### 五个操作
 
@@ -114,10 +115,8 @@ kind: "package-reference"
 以下是当前的包约束,不是任务清单。
 
 - **没有任何东西限制租户可拥有的设备或配对码数量** —— 已认证成员可以一直签发配对码直到介质写满,正如他们可以一直创建服务商账户一样。上限属于其他限定租户占用的机制,而目前还没有这样的机制。
-- **没有浏览器页面** —— 设置面板有 Candy 账户页,没有设备页。在页面出现之前,租户用 HTTP 客户端访问这些路由。
-- **没有配对客户端** —— 主机侧 [`dsh-device-binding`](../device-binding/README.zh.md) 可以验证已存令牌,但还没有组件调用兑换并保存其回复。
 - **没有传输绑定** —— 认证是显式请求。继承的 Remote Gateway 在建立或恢复 WebSocket 时尚不出示令牌。
-- **从未兑换的配对码留在介质上** —— 本 API 签发配对码,[`dsh-control-plane-store`](../control-plane-store/README.zh.md) 保存它们;两者都不清扫已用尽和已过期的记录。
+- **清理按需发生** —— 不活跃租户的终态记录会一直保留到该租户下次列出设备或签发配对码。若部署要求在租户无活动时仍按绝对时间删除,还需要外部维护触发器。
 
 <a id="dev-note"></a>
 ## 开发备注
